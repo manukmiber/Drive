@@ -93,5 +93,5 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 
 ## Fase 12 — Hardening & rilis
 - [ ] E2E, k6, audit keamanan, Lighthouse
-- [ ] Draf kebijakan + LAUNCH-CHECKLIST
+- [x] Draf kebijakan (/kebijakan/*, label DRAF) + docs/LAUNCH-CHECKLIST.md + ekspor data & hapus akun (UU PDP)
 - [ ] Deploy staging

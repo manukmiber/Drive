@@ -48,6 +48,7 @@ export interface Me {
     adCityCode: string | null;
   };
   hasPasskey: boolean;
+  deleteRequestedAt: number | string | null;
   space: {
     poolId: string;
     personalRootId: string;

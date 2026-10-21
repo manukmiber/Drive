@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Check, Gauge, Lock, Share2 } from 'lucide-react';
 import { formatBytes, formatRupiah } from '../../shared/format';
+import { LEGAL } from '../../shared/legal.id';
 import { t } from '../../shared/strings.id';
 import { Logo } from '../components/Logo';
 import { api } from '../lib/api';
@@ -106,6 +107,16 @@ export function Landing() {
       </main>
 
       <footer className="border-t border-[var(--border)] py-6 text-center text-xs text-[var(--fg-muted)]">
+        <nav className="mb-2 flex flex-wrap justify-center gap-4">
+          {Object.entries(LEGAL).map(([k, d]) => (
+            <Link key={k} to="/kebijakan/$slug" params={{ slug: k }} className="hover:underline">
+              {d.title}
+            </Link>
+          ))}
+          <Link to="/lapor" className="hover:underline">
+            Lapor penyalahgunaan
+          </Link>
+        </nav>
         © {new Date().getFullYear()} {t.app.fullName}
       </footer>
     </div>

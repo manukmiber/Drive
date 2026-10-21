@@ -5,7 +5,8 @@ import { formatDate } from '../../shared/format';
 import { t } from '../../shared/strings.id';
 import { Button } from '../components/Button';
 import { TotpSetup } from '../components/TotpSetup';
-import { api, sendJson } from '../lib/api';
+import { api, ApiError, sendJson } from '../lib/api';
+import { downloadZip } from '../lib/files';
 import { authClient } from '../lib/auth-client';
 import { meQueryKey, useMe } from '../lib/session';
 
@@ -135,6 +136,8 @@ export function Settings() {
 
       <NotificationPrefs />
 
+      <AccountData />
+
       <section className={card} aria-labelledby="telegram">
         <h2 id="telegram" className="flex items-center gap-2 font-medium">
           <Send className="h-4 w-4" aria-hidden="true" /> {t.settings.telegramTitle}
@@ -210,6 +213,84 @@ function NotificationPrefs() {
           ))}
         </tbody>
       </table>
+    </section>
+  );
+}
+
+function AccountData() {
+  const qc = useQueryClient();
+  const me = useMe();
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  if (!me.data) return null;
+  const data = me.data;
+  const pending = data.deleteRequestedAt;
+  const days = 7;
+  return (
+    <section className={card} aria-labelledby="akun">
+      <h2 id="akun" className="font-medium">
+        {t.account.title}
+      </h2>
+      <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.account.exportNote}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <a
+          href="/api/me/export"
+          className="inline-flex h-10 items-center rounded-full border border-[var(--border)] px-4 text-sm hover:bg-[var(--bg-subtle)]"
+        >
+          {t.account.exportJson}
+        </a>
+        <Button variant="secondary" onClick={() => void downloadZip([data.space.personalRootId])}>
+          {t.account.exportFiles}
+        </Button>
+      </div>
+      <hr className="my-5 border-[var(--border)]" />
+      {pending ? (
+        <div className="space-y-2">
+          <p className="text-sm text-red-700">
+            {t.account.deleteRequested(formatDate(new Date(pending).getTime() + days * 86_400_000))}
+          </p>
+          <Button
+            variant="secondary"
+            onClick={() =>
+              void sendJson('DELETE', '/api/me/delete').then(() =>
+                qc.invalidateQueries({ queryKey: meQueryKey }),
+              )
+            }
+          >
+            {t.account.cancelDelete}
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-red-700">{t.account.delete}</p>
+          <p className="text-sm text-[var(--fg-muted)]">{t.account.deleteBody(days)}</p>
+          <input
+            className={input}
+            placeholder={t.account.confirmEmail}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            autoComplete="off"
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <Button
+            variant="danger"
+            disabled={confirm.trim().toLowerCase() !== data.user.email.toLowerCase()}
+            onClick={() =>
+              void sendJson('POST', '/api/me/delete', { confirmEmail: confirm })
+                .then(() => qc.invalidateQueries({ queryKey: meQueryKey }))
+                .catch((e) =>
+                  setError(
+                    e instanceof ApiError && e.code === 'CONFLICT'
+                      ? t.account.familyOwner
+                      : t.errors.generic,
+                  ),
+                )
+            }
+          >
+            {t.account.delete}
+          </Button>
+        </div>
+      )}
     </section>
   );
 }

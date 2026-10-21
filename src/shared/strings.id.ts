@@ -368,6 +368,21 @@ export const t = {
       ad_status: 'Status iklan',
     } as Record<string, string>,
   },
+  account: {
+    title: 'Data & akun',
+    exportJson: 'Unduh data saya (JSON)',
+    exportFiles: 'Unduh semua file (ZIP)',
+    exportNote:
+      'Salinan data pribadi kamu: profil, tagihan, daftar file, link share, dan notifikasi.',
+    delete: 'Hapus akun',
+    deleteBody: (days: number) =>
+      `Akun dan semua file akan dihapus permanen ${days} hari setelah permintaan. Invoice tetap disimpan tanpa identitas untuk keperluan pembukuan.`,
+    confirmEmail: 'Ketik email kamu untuk konfirmasi',
+    deleteRequested: (d: string) => `Akun dijadwalkan terhapus pada ${d}.`,
+    cancelDelete: 'Batalkan penghapusan',
+    deleteCancelled: 'Penghapusan akun dibatalkan.',
+    familyOwner: 'Keluarkan dulu semua anggota keluarga sebelum menghapus akun.',
+  },
   settings: {
     telegramTitle: 'Telegram',
     telegramBody:

@@ -8,6 +8,7 @@ import {
   sendRenewalReminders,
 } from '../services/billing';
 import { purgeExpiredTrash } from '../services/nodes';
+import { deletionReminders, processAccountDeletions } from '../services/account';
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
 import { registerCronTask } from '.';
@@ -82,4 +83,13 @@ registerCronTask(CRON.nightly, {
 registerCronTask(CRON.nightly, {
   name: 'renewal_reminders',
   run: async (ctx) => void (await sendRenewalReminders(ctx)),
+});
+
+// ── Account deletion (UU PDP, SPEC §14.5) ──
+registerCronTask(CRON.nightly, {
+  name: 'account_deletions',
+  async run(ctx) {
+    await deletionReminders(ctx);
+    await processAccountDeletions(ctx);
+  },
 });

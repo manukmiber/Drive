@@ -12,6 +12,7 @@ import { Recent, Search, Shared, Starred } from './pages/Lists';
 import { Billing, InvoicePage } from './pages/Billing';
 import { Admin } from './pages/Admin';
 import { Report } from './pages/Report';
+import { Legal } from './pages/Legal';
 import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
 import { Placeholder } from './pages/Placeholder';
@@ -61,6 +62,14 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: Landing }),
   createRoute({ getParentRoute: () => rootRoute, path: '/masuk', component: SignIn }),
   reportRoute,
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/kebijakan/$slug',
+    component: function LegalPage() {
+      const { slug } = useParams({ from: '/kebijakan/$slug' });
+      return <Legal slug={slug} />;
+    },
+  }),
   appRoute.addChildren([
     createRoute({
       getParentRoute: () => appRoute,

@@ -19,7 +19,8 @@ export type NotificationType =
   | 'payment_paid'
   | 'invoice'
   | 'plan_changed'
-  | 'family_invite';
+  | 'family_invite'
+  | 'account_delete';
 
 export function notificationStmt(
   ctx: Ctx,
@@ -108,6 +109,15 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
         cta: { label: 'Tambah ruang', url: `${app}/paket` },
       };
     }
+    case 'account_delete':
+      return {
+        title: 'Akun Zeiko kamu akan dihapus besok',
+        paragraphs: [
+          `Sesuai permintaanmu, akun dan semua file akan dihapus permanen pada ${formatDateTime(Number(p.deleteAt))}.`,
+          'Berubah pikiran? Batalkan dari Pengaturan sebelum waktu itu.',
+        ],
+        cta: { label: 'Buka Pengaturan', url: `${app}/pengaturan` },
+      };
     case 'payment_paid':
       return {
         title: 'Pembayaran berhasil',
@@ -174,7 +184,12 @@ export async function deliverNotification(ctx: Ctx, notificationId: string): Pro
 const notificationUser = (row: { user_id: string }) => row.user_id;
 
 /** Legal/billing notices can't be switched off by email (ADR-029). */
-export const MANDATORY_EMAIL: readonly string[] = ['renewal_failed', 'dunning', 'invoice'];
+export const MANDATORY_EMAIL: readonly string[] = [
+  'renewal_failed',
+  'dunning',
+  'invoice',
+  'account_delete',
+];
 export const PREF_TYPES = [
   'file_rejected',
   'quota',
