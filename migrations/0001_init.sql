@@ -663,7 +663,7 @@ CREATE INDEX notifications_user_idx ON notifications (user_id, created_at);
 CREATE TABLE notification_prefs (
   user_id  TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   type     TEXT NOT NULL,
-  channel  TEXT NOT NULL,                       -- inapp | email | telegram
+  channel  TEXT NOT NULL,                       -- email | telegram (in-app is always on; missing row = on)
   enabled  INTEGER NOT NULL,
   PRIMARY KEY (user_id, type, channel)
 );

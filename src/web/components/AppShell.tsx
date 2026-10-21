@@ -23,6 +23,7 @@ import { StorageMeter } from './StorageMeter';
 import { UploadPanel } from './UploadPanel';
 import { Toaster } from './ui/Toast';
 import { BillingBanner } from '../pages/Billing';
+import { Bell } from './Bell';
 
 interface NavItem {
   to: string;
@@ -144,6 +145,7 @@ export function AppShell() {
               aria-label={t.nav.searchPlaceholder}
             />
           </form>
+          <Bell />
           <Link
             to="/pengaturan"
             className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white"

@@ -347,6 +347,27 @@ export const t = {
     sent: 'Terima kasih, laporan sudah kami terima.',
     badLink: 'Link tidak dikenali. Tempel link lengkap dari Zeiko.',
   },
+  notifications: {
+    readAll: 'Tandai semua dibaca',
+    empty: 'Belum ada notifikasi.',
+    prefsTitle: 'Notifikasi',
+    prefsBody: 'Notifikasi di aplikasi selalu aktif. Atur email dan Telegram per jenis.',
+    email: 'Email',
+    telegram: 'Telegram',
+    locked: 'wajib',
+    types: {
+      file_rejected: 'File ditolak pemindai',
+      quota: 'Kuota hampir/sudah penuh',
+      billing_reminder: 'Pengingat perpanjangan',
+      payment_paid: 'Pembayaran berhasil',
+      invoice: 'Invoice',
+      plan_changed: 'Perubahan paket',
+      family_invite: 'Undangan keluarga',
+      archive_ready: 'Arsip siap diunduh',
+      compress_done: 'Kompres selesai',
+      ad_status: 'Status iklan',
+    } as Record<string, string>,
+  },
   settings: {
     telegramTitle: 'Telegram',
     telegramBody:

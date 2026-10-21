@@ -2,8 +2,8 @@
 // clean/skipped → reservation becomes usage, nodes `ready`; infected → object deleted, reservation
 // released, nodes `rejected`, hash blocklisted, uploader notified.
 import type { Ctx } from '../context';
-import { ulid } from '../lib/ids';
 import { log } from '../lib/log';
+import { checkQuotaThresholds, notificationStmt } from './notify';
 import { track } from '../lib/analytics';
 
 interface BlobRow {
@@ -84,6 +84,7 @@ export async function processScan(
            scanned_at = ?7, scan_attempts = scan_attempts + 1 WHERE id = ?1`,
       ).bind(blobId, status, result.sha256, result.crc32, result.sniffedMime, detail, now),
     ]);
+    await checkQuotaThresholds(ctx, blob.pool_id);
   } else {
     const { results: affected } = await DB.prepare(
       `SELECT id, name, created_by FROM nodes WHERE blob_id = ?1 AND status IN ('scanning', 'ready')`,
@@ -110,19 +111,17 @@ export async function processScan(
         ).bind(result.sha256, detail ?? 'malware', now),
       );
     }
-    for (const n of affected) {
-      stmts.push(
-        DB.prepare(
-          `INSERT INTO notifications (id, user_id, type, payload_json, created_at) VALUES (?1, ?2, 'file_rejected', ?3, ?4)`,
-        ).bind(
-          ulid(now),
-          n.created_by,
-          JSON.stringify({ nodeId: n.id, name: n.name, reason: detail }),
-          now,
-        ),
-      );
-    }
+    const notes = affected.map((n) =>
+      notificationStmt(ctx, n.created_by, 'file_rejected', {
+        nodeId: n.id,
+        name: n.name,
+        reason: detail,
+      }),
+    );
+    stmts.push(...notes.map((x) => x.stmt));
     await DB.batch(stmts);
+    for (const x of notes)
+      await ctx.env.NOTIFY_QUEUE.send({ type: 'notification', notificationId: x.id });
     const held = await DB.prepare('SELECT 1 AS h FROM legal_holds WHERE blob_id = ?1')
       .bind(blobId)
       .first<{ h: number }>();

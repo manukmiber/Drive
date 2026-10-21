@@ -133,6 +133,8 @@ export function Settings() {
           )}
       </section>
 
+      <NotificationPrefs />
+
       <section className={card} aria-labelledby="telegram">
         <h2 id="telegram" className="flex items-center gap-2 font-medium">
           <Send className="h-4 w-4" aria-hidden="true" /> {t.settings.telegramTitle}
@@ -150,5 +152,64 @@ export function Settings() {
         </Button>
       </section>
     </div>
+  );
+}
+
+function NotificationPrefs() {
+  const qc = useQueryClient();
+  const q = useQuery({
+    queryKey: ['notification-prefs'],
+    queryFn: () =>
+      api<{
+        items: Array<{ type: string; email: boolean; telegram: boolean; emailLocked: boolean }>;
+      }>('/api/notifications/prefs'),
+  });
+  const set = (type: string, channel: 'email' | 'telegram', enabled: boolean) =>
+    void sendJson('PUT', '/api/notifications/prefs', { type, channel, enabled }).then(() =>
+      qc.invalidateQueries({ queryKey: ['notification-prefs'] }),
+    );
+  return (
+    <section className={card} aria-labelledby="notif">
+      <h2 id="notif" className="font-medium">
+        {t.notifications.prefsTitle}
+      </h2>
+      <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.notifications.prefsBody}</p>
+      <table className="mt-3 w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-[var(--fg-muted)]">
+            <th className="py-1 font-normal" />
+            <th className="w-20 font-normal">{t.notifications.email}</th>
+            <th className="w-20 font-normal">{t.notifications.telegram}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(q.data?.items ?? []).map((p) => (
+            <tr key={p.type} className="border-t border-[var(--border)]">
+              <td className="py-2">{t.notifications.types[p.type] ?? p.type}</td>
+              <td>
+                {p.emailLocked ? (
+                  <span className="text-xs text-[var(--fg-muted)]">{t.notifications.locked}</span>
+                ) : (
+                  <input
+                    type="checkbox"
+                    checked={p.email}
+                    onChange={(e) => set(p.type, 'email', e.target.checked)}
+                    aria-label={`${t.notifications.email}: ${t.notifications.types[p.type]}`}
+                  />
+                )}
+              </td>
+              <td>
+                <input
+                  type="checkbox"
+                  checked={p.telegram}
+                  onChange={(e) => set(p.type, 'telegram', e.target.checked)}
+                  aria-label={`${t.notifications.telegram}: ${t.notifications.types[p.type]}`}
+                />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }

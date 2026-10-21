@@ -223,3 +223,9 @@ terverifikasi.
 - **CSRF hanya untuk request yang membawa sesi.** Form anonim (Lapor) cukup dilindungi cek `Origin`;
   request bersesi tetap wajib token double-submit.
 - **Pengguna dibekukan** → semua sesi dihapus, link share-nya mati (`shareState` cek status pembuat).
+
+## ADR-029 — Notifikasi: wajib vs bisa dimatikan
+In-app selalu aktif. Email untuk `invoice`, `renewal_failed`, dan `dunning` tidak bisa dimatikan, karena
+itu pemberitahuan tagihan/penghapusan data yang harus sampai. Jenis lain bisa dimatikan per kanal (email,
+Telegram). Notifikasi kuota dikirim sekali per ambang (80/95/100 %) per batas kuota, jadi naik paket
+membuka ambang baru.
