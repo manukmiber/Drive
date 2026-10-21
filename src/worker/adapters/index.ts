@@ -4,12 +4,14 @@ import { MockPaymentProvider, type PaymentProvider } from './payment';
 import { ContainerScanner, MockScanner, type Scanner } from './scanner';
 import { MockCsamDetector, type CsamDetector } from './csam';
 import type { Clock } from './clock';
+import { BotApiTelegram, MockTelegram, type TelegramClient } from './telegram';
 
 export interface Adapters {
   email: EmailSender;
   payment: PaymentProvider;
   scanner: Scanner;
   csam: CsamDetector;
+  telegram: TelegramClient;
 }
 
 export function createAdapters(env: Env, clock: Clock): Adapters {
@@ -26,5 +28,9 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
       ? new ContainerScanner(env.BUCKET, env.SCANNER, Number(env.SCANNER_INSTANCES ?? 3))
       : new MockScanner(env.BUCKET);
   const csam = new MockCsamDetector();
-  return { email, payment, scanner, csam };
+  const telegram: TelegramClient =
+    env.TELEGRAM_BOT_TOKEN && env.APP_ENV !== 'dev'
+      ? new BotApiTelegram(env.TELEGRAM_BOT_TOKEN)
+      : new MockTelegram(env.CONFIG_KV);
+  return { email, payment, scanner, csam, telegram };
 }

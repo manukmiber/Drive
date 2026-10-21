@@ -115,3 +115,13 @@ describe('hashing', () => {
     expect(sniffMime(new TextEncoder().encode('hello'))).toBeNull();
   });
 });
+
+describe('demo seed', () => {
+  it('uses valid ULIDs (download tokens reject anything else)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const src = readFileSync(new URL('../../dev/seed-demo.ts', import.meta.url), 'utf8');
+    const ids = [...src.matchAll(/id: '([^']+)'/g)].map((m) => m[1]!);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(isUlid(id)).toBe(true);
+  });
+});

@@ -31,3 +31,38 @@ export function otpEmail(otp: string): { subject: string; text: string; html: st
   );
   return { subject, text, html };
 }
+
+export function shareEmail(p: {
+  senderName: string;
+  senderEmail: string;
+  title: string;
+  url: string;
+  sizeText: string;
+  expiresText: string | null;
+  message: string | null;
+  unsubscribeUrl: string;
+  reportUrl: string;
+}): { subject: string; text: string; html: string } {
+  const subject = `${p.senderName} membagikan file lewat Zeiko`;
+  const text = [
+    `${p.senderName} membagikan "${p.title}" (${p.sizeText}) lewat Zeiko.`,
+    p.message ? `\nPesan: ${p.message}\n` : '',
+    `Unduh: ${p.url}`,
+    p.expiresText ? `Berlaku sampai ${p.expiresText}.` : '',
+    `\nDikirim atas nama ${p.senderEmail} · Laporkan penyalahgunaan: ${p.reportUrl}`,
+    `Berhenti menerima email seperti ini: ${p.unsubscribeUrl}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const html = layout(
+    subject,
+    `<p style="font-size:14px">${escapeHtml(p.senderName)} membagikan <b>${escapeHtml(p.title)}</b> (${escapeHtml(p.sizeText)}).</p>
+${p.message ? `<blockquote style="margin:12px 0;padding:12px;border-left:3px solid #c7d2fe;background:#eef2ff;white-space:pre-wrap;font-size:14px">${escapeHtml(p.message)}</blockquote>` : ''}
+<p><a href="${escapeHtml(p.url)}" style="display:inline-block;background:#4338ca;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600">Unduh</a></p>
+${p.expiresText ? `<p style="font-size:13px;color:#6b7280">Berlaku sampai ${escapeHtml(p.expiresText)}.</p>` : ''}
+<p style="font-size:12px;color:#6b7280;margin-top:20px">Dikirim atas nama ${escapeHtml(p.senderEmail)} ·
+<a href="${escapeHtml(p.reportUrl)}" style="color:#6b7280">Laporkan penyalahgunaan</a> ·
+<a href="${escapeHtml(p.unsubscribeUrl)}" style="color:#6b7280">Berhenti menerima email seperti ini</a></p>`,
+  );
+  return { subject, text, html };
+}

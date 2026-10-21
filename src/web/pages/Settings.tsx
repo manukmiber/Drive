@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, ShieldCheck, Trash2 } from 'lucide-react';
+import { KeyRound, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { formatDate } from '../../shared/format';
 import { t } from '../../shared/strings.id';
 import { Button } from '../components/Button';
 import { TotpSetup } from '../components/TotpSetup';
-import { sendJson } from '../lib/api';
+import { api, sendJson } from '../lib/api';
 import { authClient } from '../lib/auth-client';
 import { meQueryKey, useMe } from '../lib/session';
 
@@ -131,6 +131,23 @@ export function Settings() {
               Akun staf wajib memakai passkey atau TOTP sebelum bisa membuka panel admin.
             </p>
           )}
+      </section>
+
+      <section className={card} aria-labelledby="telegram">
+        <h2 id="telegram" className="flex items-center gap-2 font-medium">
+          <Send className="h-4 w-4" aria-hidden="true" /> {t.settings.telegramTitle}
+        </h2>
+        <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.settings.telegramBody}</p>
+        <Button
+          variant="secondary"
+          className="mt-3"
+          onClick={async () => {
+            const { url } = await api<{ url: string }>('/api/shares/telegram/link');
+            window.open(url, '_blank', 'noopener');
+          }}
+        >
+          {t.settings.telegramLink}
+        </Button>
       </section>
     </div>
   );

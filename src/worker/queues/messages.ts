@@ -4,7 +4,9 @@ export type ArchiveMessage = { type: 'archive'; jobId: string };
 export type CompressMessage = { type: 'compress'; jobId: string };
 export type NotifyMessage =
   | { type: 'notification'; notificationId: string }
-  | { type: 'share_email'; sendId: string }
+  // The recipient address travels only in the message, never stored raw in D1 (SPEC §6.8).
+  | { type: 'share_email'; sendId: string; to: string }
+  | { type: 'share_telegram'; sendId: string; chatId: string }
   | { type: 'admin_alert'; text: string };
 export type CleanupMessage =
   | { type: 'delete_blob'; blobId: string }

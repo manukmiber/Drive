@@ -1,6 +1,14 @@
 // Builds a complete Env out of shims and wires the real Worker (fetch/queue/scheduled) to it.
 // Used by the dev server and by integration tests.
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import worker from '../src/worker/index';
@@ -19,7 +27,7 @@ import {
   ShimSendEmail,
   unsupportedBinding,
 } from './shims/misc';
-import { applyMigrations } from './migrate';
+import { applyMigrations, migrationsFingerprint } from './migrate';
 import { DEV_DEFAULTS } from './vars';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -85,6 +93,17 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
   const temp = !opts.dataDir;
   const dir = opts.dataDir ?? mkdtempSync(join(tmpdir(), 'zeiko-'));
   mkdirSync(dir, { recursive: true });
+  if (!temp) {
+    // Migrations may still be edited before the first remote deploy (ADR-011): if an applied one
+    // changed, the local data no longer matches the schema — start over (dev data only).
+    const stamp = join(dir, 'migrations.sha256');
+    const fp = migrationsFingerprint();
+    if (existsSync(stamp) && readFileSync(stamp, 'utf8') !== fp) {
+      console.warn('[zeiko] migrasi berubah → data dev lokal direset');
+      for (const f of readdirSync(dir)) rmSync(join(dir, f), { recursive: true, force: true });
+    }
+    writeFileSync(stamp, fp);
+  }
   const now = () => (opts.clock ? opts.clock.now() : Date.now());
 
   const sqlite = openSqlite(temp ? ':memory:' : join(dir, 'd1.sqlite'));

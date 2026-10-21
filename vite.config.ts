@@ -21,6 +21,9 @@ export default defineConfig({
     proxy: {
       '/api': API,
       '/d/': API,
+      '/z/': API,
+      '/berhenti/': API,
+      '/share-target': API,
       '/ad/': API,
       '/__dev': API,
       // Share links: first path segment is exactly 64 base62 chars (SPEC §6.1).

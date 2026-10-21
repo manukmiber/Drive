@@ -144,3 +144,34 @@ Docs Cloudflare dicek 2026-10-21 lewat MCP dokumentasi Cloudflare.
   index keunikan. Saat `complete`, nama final dipasang: konflik → `replace` (file lama ke Sampah, kalau
   boleh) atau nama otomatis "nama (1).ext". Init tetap mengecek konflik agar UI bisa menampilkan dialog
   "Ganti / Simpan keduanya / Lewati".
+
+## ADR-022 — Prioritas "GDrive dulu" (arahan pemilik, 2026-10-21)
+**Konteks:** Pemilik: "user tinggal upload kek gdrive. Cuma perlu login dan browse file mereka, upload atau
+download file. Urusan backend kita yang urusin."
+**Keputusan:** Urutan kerja diubah: inti pengalaman Drive (login, jelajah, upload/download, cari, pratinjau,
+bintang, terbaru, sampah, share link, unduh ZIP) dirapikan dan siap deploy lebih dulu. Fitur bisnis
+lanjutan (iklan, kompres, keluarga, billing penuh) tetap dibangun sesuai spec tetapi di belakang feature
+flag di `app_config.features` agar bisa dimatikan tanpa deploy. Deploy dilakukan setelah pemilik login
+ke Cloudflare (`wrangler login`/API token); semua resource dibuat lewat skrip yang bisa diulang.
+
+## ADR-023 — Tambahan kecil ala Google Drive di explorer
+Di luar teks spec, ditambahkan karena lazim di Drive dan murah:
+- Ctrl/⌘+C / Ctrl+X → Ctrl+V untuk salin/pindah antar folder; navigasi panah di list/grid; Backspace = Sampah.
+- "Unduh sebagai ZIP" untuk multi-pilih/folder memakai link `/z/{id}.{exp}.{sig}` (HMAC, tanpa cookie,
+  izin dicek ulang saat unduh). Isi tidak ditulis ulang ke R2; ZIP store mendukung Range.
+- Pratinjau PDF di USERCONTENT_ORIGIN tanpa `CSP: sandbox` (viewer PDF Chrome menolak dokumen sandboxed).
+  Aman karena origin itu tidak punya cookie atau kode aplikasi; SVG/HTML tetap disajikan sebagai teks.
+- Alert admin (`notify` → `admin_alert`) dikirim ke Telegram jika `ADMIN_ALERT_TELEGRAM_CHAT_ID` diisi.
+
+## ADR-024 — "Virtualisasi" daftar dengan `content-visibility`
+**Konteks:** DoD §8 minta folder 10.000 item tetap lancar. Explorer memuat halaman 100 item (keyset
+cursor) via infinite scroll; setelah digulir jauh DOM bisa berisi ribuan baris.
+**Keputusan:** Baris list/grid memakai `content-visibility: auto` + `contain-intrinsic-size`, sehingga
+browser melewati layout/paint baris di luar layar, tanpa library virtualisasi. Seleksi Shift, Ctrl+A,
+dan navigasi panah tetap bekerja di semua item. Kalau pengukuran di HP kelas bawah kurang, ganti ke
+`@tanstack/react-virtual` (perubahan terisolasi di `FileView.tsx`).
+
+## ADR-025 — PWA: service worker minimal + Web Share Target
+`/sw.js` hanya meng-cache shell (`/drive`) dan `/assets/*` (hash, immutable); `/api`, `/d`, `/z`, `/p`
+tidak pernah di-cache. File yang dibagikan dari aplikasi lain ke Zeiko (Android "Bagikan ke…") disimpan
+sementara di IndexedDB lalu di-upload ke Drive Saya. Tanpa SW, `POST /share-target` dialihkan ke `/drive`.

@@ -1,6 +1,7 @@
 // Demo data for local dev (never runs outside APP_ENV=dev). Idempotent.
 import { eq } from 'drizzle-orm';
 import { GIB } from '../src/shared/constants';
+import { ulid } from '../src/worker/lib/ids';
 import { createCtx } from '../src/worker/context';
 import { schema } from '../src/worker/db/client';
 import type { Env } from '../src/worker/env';
@@ -9,21 +10,21 @@ import { addBillingMonth } from '../src/shared/time';
 
 export const DEMO_USERS = [
   {
-    id: '01JDEMOUSER0000000000000001',
+    id: '01JD0000000000000000DEM0A1',
     email: 'demo@zeiko.local',
     name: 'Demo Zeiko',
     role: 'user',
     plan: 'plus',
   },
   {
-    id: '01JDEMOADMIN000000000000001',
+    id: '01JD0000000000000000ADM1N1',
     email: 'admin@zeiko.local',
     name: 'Admin Zeiko',
     role: 'admin',
     plan: 'max',
   },
   {
-    id: '01JDEMOFRESH000000000000001',
+    id: '01JD0000000000000000BAR001',
     email: 'baru@zeiko.local',
     name: 'Pengguna Baru',
     role: 'user',
@@ -59,7 +60,7 @@ export async function seedDemo(env: Env): Promise<void> {
     if (!plan) continue;
     const anchorDay = new Date(now + 7 * 3600_000).getUTCDate();
     await db.insert(schema.subscriptions).values({
-      id: `${u.id.slice(0, 20)}SUB001`,
+      id: ulid(now),
       poolId: space.poolId,
       payerUserId: u.id,
       planCode: plan.code,

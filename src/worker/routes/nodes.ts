@@ -4,7 +4,8 @@ import { AppError } from '../lib/errors';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
 import { requireNode } from '../services/access';
-import { downloadUrl } from '../services/download';
+import { listRecent, listStarred, parseType, search, setStar } from '../services/browse';
+import { downloadUrl, previewUrl } from '../services/download';
 import {
   breadcrumb,
   copyFile,
@@ -39,6 +40,44 @@ export const nodes = new Hono<AppBindings>()
   .use('/trash', requireUser)
   .use('/trash/*', requireUser)
   .use('/files/*', requireUser)
+  .use('/search', requireUser)
+  .use('/starred', requireUser)
+  .use('/recent', requireUser)
+  .get(
+    '/search',
+    validate(
+      'query',
+      z.object({
+        q: z.string().max(200),
+        type: z.string().max(20).optional(),
+        modifiedAfter: z.coerce.number().int().nonnegative().optional(),
+        space: z.enum(['personal', 'family']).optional(),
+      }),
+    ),
+    async (c) => {
+      const q = c.req.valid('query');
+      const items = await search(c.get('ctx'), c.get('user')!.id, {
+        ...q,
+        type: parseType(q.type),
+      });
+      return c.json({ items });
+    },
+  )
+  .get('/starred', async (c) =>
+    c.json({ items: await listStarred(c.get('ctx'), c.get('user')!.id) }),
+  )
+  .get('/recent', async (c) => c.json({ items: await listRecent(c.get('ctx'), c.get('user')!.id) }))
+  .put('/nodes/:id/star', async (c) => {
+    await setStar(c.get('ctx'), c.get('user')!.id, c.req.param('id'), true);
+    return c.body(null, 204);
+  })
+  .delete('/nodes/:id/star', async (c) => {
+    await setStar(c.get('ctx'), c.get('user')!.id, c.req.param('id'), false);
+    return c.body(null, 204);
+  })
+  .get('/files/:id/preview', async (c) =>
+    c.json(await previewUrl(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),
+  )
   .get('/nodes/:id', async (c) => {
     const ctx = c.get('ctx');
     const userId = c.get('user')!.id;

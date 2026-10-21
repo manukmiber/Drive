@@ -61,3 +61,12 @@ body {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;
 }
+
+/* Long folders: let the browser skip layout/paint for off-screen rows (ADR-024). */
+[role='listbox'] > [role='option'] {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
+}
+[data-grid] > [role='option'] {
+  contain-intrinsic-size: auto 220px;
+}

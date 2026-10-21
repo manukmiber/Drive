@@ -20,14 +20,23 @@ import { download } from './routes/download';
 import { health } from './routes/health';
 import { me } from './routes/me';
 import { nodes } from './routes/nodes';
+import { preview } from './routes/preview';
 import { publicAuth } from './routes/public-auth';
+import { archiveDownload } from './routes/archive-download';
+import { integrations } from './routes/integrations';
+import { sharePublic } from './routes/share-public';
+import { shares } from './routes/shares';
 import { uploads } from './routes/uploads';
+import { archives } from './routes/archives';
 import type { AppBindings } from './types';
 
 export function createApp() {
   const app = new Hono<AppBindings>();
 
   app.use('*', userContentGuard, requestContext);
+
+  // Webhooks authenticate with their own secret (no Origin/CSRF), so they sit before /api.
+  app.route('/', integrations);
 
   const api = new Hono<AppBindings>();
   api.use('*', apiHeaders, originCheck);
@@ -58,12 +67,20 @@ export function createApp() {
   api.route('/me', me);
   api.route('/admin', admin);
   api.route('/uploads', uploads);
+  api.route('/shares', shares);
+  api.route('/archives', archives);
   api.route('/', nodes);
   api.all('*', (c) => c.json(errorBody('NOT_FOUND', 'no such endpoint'), 404));
   app.route('/api', api);
 
   app.route('/d', download);
+  app.route('/p', preview);
+  app.route('/z', archiveDownload);
+  app.route('/', sharePublic);
   app.route('/__dev', dev);
+
+  // Web Share Target without the service worker (first launch) → just open the Drive.
+  app.post('/share-target', (c) => c.redirect('/drive', 303));
 
   // Everything else is the SPA / static assets (run_worker_first, see wrangler.jsonc).
   app.all('*', async (c) => {

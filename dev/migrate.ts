@@ -1,5 +1,6 @@
 // Applies migrations/*.sql in order, tracked in `d1_migrations` (same table wrangler uses).
 import type { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -32,4 +33,17 @@ export function applyMigrations(db: DatabaseSync, dir: string = MIGRATIONS_DIR):
     applied.push(file);
   }
   return applied;
+}
+
+/** Hash of every migration file; changes when an already-applied migration is edited (ADR-011). */
+export function migrationsFingerprint(dir: string = MIGRATIONS_DIR): string {
+  const h = createHash('sha256');
+  for (const f of readdirSync(dir)
+    .filter((x) => x.endsWith('.sql'))
+    .sort()) {
+    h.update(f)
+      .update('\0')
+      .update(readFileSync(join(dir, f)));
+  }
+  return h.digest('hex');
 }

@@ -12,6 +12,8 @@ export interface ServeOptions {
   disposition: 'attachment' | 'inline';
   /** Browser caching policy; defaults to private, no-store. */
   cacheControl?: string;
+  /** Omit the `CSP: sandbox` header (only for PDFs on USERCONTENT_ORIGIN). */
+  noSandbox?: boolean;
   extraHeaders?: Record<string, string>;
 }
 
@@ -39,6 +41,7 @@ export async function serveObject(
     'Referrer-Policy': 'no-referrer',
     ...o.extraHeaders,
   });
+  if (o.noSandbox) headers.delete('Content-Security-Policy');
 
   if (etagMatches(req.headers.get('if-none-match'), o.etag)) {
     return { response: new Response(null, { status: 304, headers }), bytes: 0, fromStart: false };

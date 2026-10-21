@@ -116,14 +116,26 @@ export function AppShell() {
           <Link to="/drive" className="md:hidden" aria-label="Zeiko">
             <Logo />
           </Link>
-          <label className="flex h-10 flex-1 items-center gap-2 rounded-full bg-[var(--bg-subtle)] px-4 text-sm">
+          <form
+            role="search"
+            className="flex h-10 flex-1 items-center gap-2 rounded-full bg-[var(--bg-subtle)] px-4 text-sm focus-within:bg-[var(--card)] focus-within:ring-2 focus-within:ring-brand-500"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const q = new FormData(e.currentTarget).get('q');
+              if (typeof q === 'string' && q.trim())
+                void navigate({ to: '/cari', search: { q: q.trim() } });
+            }}
+          >
             <Search className="h-4 w-4 text-[var(--fg-muted)]" aria-hidden="true" />
             <input
+              name="q"
+              type="search"
+              enterKeyHint="search"
               className="w-full bg-transparent outline-none"
               placeholder={t.nav.searchPlaceholder}
               aria-label={t.nav.searchPlaceholder}
             />
-          </label>
+          </form>
           <Link
             to="/pengaturan"
             className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white"

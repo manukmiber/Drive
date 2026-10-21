@@ -23,6 +23,7 @@ export interface Env {
   TURNSTILE_SITE_KEY?: string;
   ADMIN_ALERT_TELEGRAM_CHAT_ID?: string;
   SCANNER_INSTANCES?: string;
+  TELEGRAM_BOT_USERNAME?: string;
 
   // ── secrets (wrangler secret / .dev.vars) ──
   BETTER_AUTH_SECRET: string;

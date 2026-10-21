@@ -45,22 +45,22 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Infected → hapus, kuota kembali, notifikasi (baris `notifications`; kirim email/Telegram di Fase 5)
 
 ## Fase 4 — Explorer lengkap
-- [ ] Pencarian FTS5
-- [ ] Pratinjau USERCONTENT_ORIGIN
-- [ ] Bintang, Terbaru, panel detail, shortcut, drag-drop
-- [ ] Virtualisasi 10.000 item
-- [ ] PWA + Web Share Target
+- [x] Pencarian FTS5
+- [x] Pratinjau USERCONTENT_ORIGIN
+- [x] Bintang, Terbaru, panel detail, shortcut, drag-drop
+- [x] Virtualisasi 10.000 item (`content-visibility`, ADR-024 — belum diukur di HP kelas bawah)
+- [x] PWA + Web Share Target
 
 ## Fase 5 — Share
-- [ ] Link r64/s32 + verifikasi tanpa D1
-- [ ] Bot preview OG, password, statistik
-- [ ] QR, deeplink WA/TG
-- [ ] Bot Telegram
-- [ ] Email share via Queue `notify`
+- [x] Link r64/s32 + verifikasi tanpa D1
+- [x] Bot preview OG, password, statistik
+- [x] QR, deeplink WA/TG
+- [x] Bot Telegram (webhook + tautkan akun + kirim file; butuh `TELEGRAM_BOT_TOKEN` saat deploy)
+- [x] Email share via Queue `notify`
 
 ## Fase 6 — Download banyak file
-- [ ] ZIP store streaming + Range
-- [ ] ZIP deflate stream
+- [x] ZIP store streaming + Range (folder share + `/z/` multi-pilih, ZIP64)
+- [x] ZIP deflate stream (≤ zip_deflate_stream_max_bytes)
 - [ ] Job async + Container `archiver`
 
 ## Fase 7 — Billing

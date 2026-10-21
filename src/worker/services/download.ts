@@ -4,9 +4,13 @@ import type { Ctx } from '../context';
 import { hmacBase62, timingSafeEqual } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { isUlid } from '../lib/ids';
+import { previewKind, type PreviewKind } from '../../shared/preview';
 import { requireNode } from './access';
 
 const SIG_LEN = 32;
+
+/** `d` = download (/d/…), `p` = inline preview on USERCONTENT_ORIGIN (/p/…). */
+export type TokenPurpose = 'd' | 'p';
 
 async function sign(
   secret: string,
@@ -14,16 +18,19 @@ async function sign(
   nodeId: string,
   userId: string,
   exp: number,
+  purpose: TokenPurpose,
 ): Promise<string> {
-  return hmacBase62(secret, `d|${blobId}|${nodeId}|${userId}|${exp}`, SIG_LEN);
+  return hmacBase62(secret, `${purpose}|${blobId}|${nodeId}|${userId}|${exp}`, SIG_LEN);
 }
 
 export async function createDownloadToken(
   secret: string,
   p: { blobId: string; nodeId: string; userId: string; exp: number },
+  purpose: TokenPurpose = 'd',
 ): Promise<string> {
   const exp = Math.floor(p.exp / 1000);
-  return `${p.blobId}.${p.nodeId}.${p.userId}.${exp}.${await sign(secret, p.blobId, p.nodeId, p.userId, exp)}`;
+  const sig = await sign(secret, p.blobId, p.nodeId, p.userId, exp, purpose);
+  return `${p.blobId}.${p.nodeId}.${p.userId}.${exp}.${sig}`;
 }
 
 export interface DownloadClaims {
@@ -37,6 +44,7 @@ export async function verifyDownloadToken(
   secret: string,
   token: string,
   now: number,
+  purpose: TokenPurpose = 'd',
 ): Promise<DownloadClaims | null> {
   const parts = token.split('.');
   if (parts.length !== 5) return null;
@@ -45,7 +53,7 @@ export async function verifyDownloadToken(
     return null;
   const exp = Number(expStr);
   if (exp * 1000 < now) return null;
-  const expected = await sign(secret, blobId, nodeId, userId, exp);
+  const expected = await sign(secret, blobId, nodeId, userId, exp, purpose);
   if (!timingSafeEqual(sig, expected)) return null;
   return { blobId, nodeId, userId };
 }
@@ -83,11 +91,49 @@ export async function downloadUrl(
     userId,
     exp: expiresAt,
   });
-  await ctx.env.DB.prepare(
-    `INSERT INTO node_recent (user_id, node_id, accessed_at) VALUES (?1, ?2, ?3)
-     ON CONFLICT (user_id, node_id) DO UPDATE SET accessed_at = excluded.accessed_at`,
-  )
-    .bind(userId, node.id, ctx.now())
-    .run();
+  await touchRecent(ctx, userId, node.id);
   return { url: `/d/${token}/${encodeURIComponent(node.name)}`, expiresAt };
+}
+
+/** "Terbaru": remember opened files, keeping at most 200 rows per user (SPEC §4). */
+export async function touchRecent(ctx: Ctx, userId: string, nodeId: string): Promise<void> {
+  await ctx.env.DB.batch([
+    ctx.env.DB.prepare(
+      `INSERT INTO node_recent (user_id, node_id, accessed_at) VALUES (?1, ?2, ?3)
+       ON CONFLICT (user_id, node_id) DO UPDATE SET accessed_at = excluded.accessed_at`,
+    ).bind(userId, nodeId, ctx.now()),
+    ctx.env.DB.prepare(
+      `DELETE FROM node_recent WHERE user_id = ?1 AND node_id NOT IN
+         (SELECT node_id FROM node_recent WHERE user_id = ?1 ORDER BY accessed_at DESC LIMIT 200)`,
+    ).bind(userId),
+  ]);
+}
+
+/** Short-lived inline preview URL on USERCONTENT_ORIGIN (SPEC §14.4). */
+export async function previewUrl(
+  ctx: Ctx,
+  userId: string,
+  nodeId: string,
+): Promise<{ url: string; kind: PreviewKind | null; expiresAt: number }> {
+  const { node } = await requireNode(ctx, userId, nodeId, 'view');
+  const blob = await ctx.env.DB.prepare('SELECT scan_status, sniffed_mime FROM blobs WHERE id = ?1')
+    .bind(node.blob_id)
+    .first<{ scan_status: string; sniffed_mime: string | null }>();
+  assertDownloadable(node, blob?.scan_status ?? null, userId);
+  const cfg = await ctx.config();
+  const kind = previewKind(
+    blob?.sniffed_mime ?? node.mime,
+    node.name,
+    node.size,
+    cfg.preview_text_max_bytes,
+  );
+  const expiresAt = ctx.now() + cfg.preview_link_ttl_seconds * 1000;
+  const token = await createDownloadToken(
+    ctx.env.PREVIEW_SECRET,
+    { blobId: node.blob_id!, nodeId: node.id, userId, exp: expiresAt },
+    'p',
+  );
+  await touchRecent(ctx, userId, node.id);
+  const origin = new URL(ctx.env.USERCONTENT_ORIGIN).origin;
+  return { url: `${origin}/p/${token}/${encodeURIComponent(node.name)}`, kind, expiresAt };
 }

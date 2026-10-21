@@ -1,0 +1,252 @@
+// Shared item actions for every file view (Drive, Cari, Berbintang, Terbaru): open/preview,
+// download, rename, copy, star, move, trash (with undo), details — plus the dialogs they need.
+import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
+import {
+  Copy,
+  Download,
+  Eye,
+  FolderInput,
+  FolderOpen,
+  Info,
+  Pencil,
+  Share2,
+  Star,
+  StarOff,
+  Trash2,
+} from 'lucide-react';
+import { useCallback, useState, type ReactNode } from 'react';
+import { t } from '../../../shared/strings.id';
+import { ApiError } from '../../lib/api';
+import {
+  canPreview,
+  copyNode,
+  downloadFile,
+  moveNodes,
+  renameNode,
+  restoreNodes,
+  setStar,
+  trashNodes,
+  type NodeDto,
+} from '../../lib/files';
+import { useMe } from '../../lib/session';
+import { PromptDialog } from '../ui/Dialog';
+import type { MenuItem } from '../ui/Menu';
+import { toast } from '../ui/Toast';
+import { Details } from './Details';
+import { MoveDialog } from './MoveDialog';
+import { Preview } from './Preview';
+import { ShareDialog } from './ShareDialog';
+
+export function errorText(e: unknown): string {
+  if (!(e instanceof ApiError)) return t.errors.generic;
+  const map: Record<string, string> = {
+    NAME_CONFLICT: t.errors.nameConflict,
+    INVALID_NAME: t.errors.invalidName,
+    QUOTA_FULL: t.errors.quotaFull,
+    FORBIDDEN: t.errors.forbidden,
+    NOT_FOUND: t.errors.notFound,
+    READ_ONLY: t.errors.readOnly,
+    RATE_LIMITED: t.errors.rateLimited,
+    NETWORK: t.errors.network,
+  };
+  return map[e.code] ?? t.errors.generic;
+}
+
+export function useNodeActions(items: NodeDto[]) {
+  const qc = useQueryClient();
+  const navigate = useNavigate();
+  const me = useMe();
+  const rootId = me.data?.space.personalRootId ?? '';
+  const [renaming, setRenaming] = useState<NodeDto | null>(null);
+  const [moving, setMoving] = useState<string[] | null>(null);
+  const [preview, setPreview] = useState<{ list: NodeDto[]; index: number } | null>(null);
+  const [details, setDetails] = useState<string | null>(null);
+  const [sharing, setSharing] = useState<NodeDto[] | null>(null);
+
+  const refresh = useCallback(async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['children'] }),
+      qc.invalidateQueries({ queryKey: ['starred'] }),
+      qc.invalidateQueries({ queryKey: ['recent'] }),
+      qc.invalidateQueries({ queryKey: ['search'] }),
+      qc.invalidateQueries({ queryKey: ['trash'] }),
+      qc.invalidateQueries({ queryKey: ['me'] }),
+    ]);
+  }, [qc]);
+
+  const open = useCallback(
+    (node: NodeDto) => {
+      if (node.kind === 'folder') {
+        void navigate(
+          node.id === rootId
+            ? { to: '/drive' }
+            : { to: '/drive/$folderId', params: { folderId: node.id } },
+        );
+        return;
+      }
+      if (canPreview(node)) {
+        const list = items.filter((i) => i.kind === 'file' && i.status !== 'rejected');
+        setPreview({
+          list,
+          index: Math.max(
+            0,
+            list.findIndex((i) => i.id === node.id),
+          ),
+        });
+        return;
+      }
+      void downloadFile(node.id).catch((e) => toast(errorText(e), { tone: 'error' }));
+    },
+    [items, navigate, rootId],
+  );
+
+  const trash = useCallback(
+    async (ids: string[]) => {
+      qc.setQueriesData<{ pages: Array<{ items: NodeDto[] }> }>(
+        { queryKey: ['children'] },
+        (old) =>
+          old
+            ? {
+                ...old,
+                pages: old.pages.map((p) => ({
+                  ...p,
+                  items: p.items.filter((i) => !ids.includes(i.id)),
+                })),
+              }
+            : old,
+      );
+      try {
+        await trashNodes(ids);
+        toast(t.files.movedToTrash, {
+          action: { label: t.common.undo, run: () => void restoreNodes(ids).then(refresh) },
+        });
+      } catch (e) {
+        toast(errorText(e), { tone: 'error' });
+      }
+      void refresh();
+    },
+    [qc, refresh],
+  );
+
+  const move = useCallback(
+    async (ids: string[], targetId: string) => {
+      try {
+        await moveNodes(ids, targetId);
+        toast(t.files.moved);
+      } catch (e) {
+        toast(errorText(e), { tone: 'error' });
+      }
+      void refresh();
+    },
+    [refresh],
+  );
+
+  const copy = useCallback(
+    async (ids: string[], targetId?: string) => {
+      let n = 0;
+      for (const id of ids) {
+        try {
+          await copyNode(id, targetId);
+          n++;
+        } catch (e) {
+          toast(errorText(e), { tone: 'error' });
+          break;
+        }
+      }
+      if (n) toast(t.files.copied);
+      void refresh();
+    },
+    [refresh],
+  );
+
+  const menuFor = (ids: string[]): MenuItem[] => {
+    const nodes = items.filter((i) => ids.includes(i.id));
+    const single = nodes.length === 1 ? nodes[0]! : null;
+    const files = nodes.filter((n) => n.kind === 'file');
+    const list: MenuItem[] = [];
+    if (single?.kind === 'folder')
+      list.push({ label: t.files.open, icon: FolderOpen, onSelect: () => open(single) });
+    if (single?.kind === 'file' && canPreview(single))
+      list.push({ label: t.files.preview, icon: Eye, onSelect: () => open(single) });
+    if (single?.kind === 'file')
+      list.push({
+        label: t.common.download,
+        icon: Download,
+        disabled: single.status === 'rejected',
+        onSelect: () =>
+          void downloadFile(single.id).catch((e) => toast(errorText(e), { tone: 'error' })),
+      });
+    if (nodes.length && nodes.every((n) => n.status === 'ready'))
+      list.push({ label: t.common.share, icon: Share2, onSelect: () => setSharing(nodes) });
+    if (single)
+      list.push({ label: t.common.rename, icon: Pencil, onSelect: () => setRenaming(single) });
+    if (files.length === nodes.length && files.every((f) => f.status === 'ready'))
+      list.push({ label: t.files.makeCopy, icon: Copy, onSelect: () => void copy(ids) });
+    list.push({ label: t.files.moveTo, icon: FolderInput, onSelect: () => setMoving(ids) });
+    if (single)
+      list.push({
+        label: single.starred ? t.files.unstar : t.files.star,
+        icon: single.starred ? StarOff : Star,
+        onSelect: () => void setStar(single.id, !single.starred).then(refresh),
+      });
+    if (single)
+      list.push({ label: t.common.details, icon: Info, onSelect: () => setDetails(single.id) });
+    list.push({
+      label: t.files.moveToTrash,
+      icon: Trash2,
+      danger: true,
+      onSelect: () => void trash(ids),
+    });
+    return list;
+  };
+
+  const ui: ReactNode = (
+    <>
+      <PromptDialog
+        open={Boolean(renaming)}
+        title={t.files.renameTitle}
+        initial={renaming?.name ?? ''}
+        selectBase={renaming?.kind === 'file'}
+        confirmLabel={t.common.save}
+        onCancel={() => setRenaming(null)}
+        onSubmit={async (name) => {
+          const node = renaming!;
+          setRenaming(null);
+          if (name === node.name) return;
+          try {
+            await renameNode(node.id, name);
+            toast(t.files.renamed);
+          } catch (e) {
+            toast(errorText(e), { tone: 'error' });
+          }
+          void refresh();
+        }}
+      />
+      {moving && rootId && (
+        <MoveDialog
+          rootId={rootId}
+          excludeIds={moving}
+          onCancel={() => setMoving(null)}
+          onMove={(target) => {
+            const ids = moving;
+            setMoving(null);
+            void move(ids, target);
+          }}
+        />
+      )}
+      {preview && (
+        <Preview
+          items={preview.list}
+          index={preview.index}
+          onIndex={(index) => setPreview({ ...preview, index })}
+          onClose={() => setPreview(null)}
+        />
+      )}
+      {details && <Details id={details} onClose={() => setDetails(null)} />}
+      {sharing && <ShareDialog nodes={sharing} onClose={() => setSharing(null)} />}
+    </>
+  );
+
+  return { open, trash, move, copy, menuFor, ui, setDetails, setRenaming, refresh };
+}
