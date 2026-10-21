@@ -6,6 +6,7 @@ import {
   Home,
   LogOut,
   Search,
+  ShieldCheck,
   Settings,
   Share2,
   Star,
@@ -101,6 +102,12 @@ export function AppShell() {
           </Link>
         </div>
         <div className="mt-auto flex flex-col gap-1">
+          {(data.user.role === 'admin' || data.user.role === 'moderator') && (
+            <Link to="/admin" className={navLink}>
+              <ShieldCheck className="h-4 w-4" />
+              {t.admin.title}
+            </Link>
+          )}
           <Link to="/pengaturan" className={navLink}>
             <Settings className="h-4 w-4" />
             {t.nav.settings}

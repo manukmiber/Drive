@@ -154,6 +154,7 @@ CREATE TABLE storage_pools (
   limit_bytes     INTEGER NOT NULL DEFAULT 0,
   used_bytes      INTEGER NOT NULL DEFAULT 0 CHECK (used_bytes >= 0),
   reserved_bytes  INTEGER NOT NULL DEFAULT 0 CHECK (reserved_bytes >= 0),
+  bonus_bytes     INTEGER NOT NULL DEFAULT 0 CHECK (bonus_bytes >= 0),   -- admin adjustment (audited)
   updated_at      INTEGER NOT NULL
 );
 CREATE UNIQUE INDEX storage_pools_owner_uq ON storage_pools (owner_type, owner_id);
@@ -303,7 +304,7 @@ CREATE TABLE blobs (
   sniffed_mime  TEXT,
   uploader_id   TEXT NOT NULL REFERENCES users (id),
   refcount      INTEGER NOT NULL DEFAULT 1 CHECK (refcount >= 0),
-  scan_status   TEXT NOT NULL DEFAULT 'pending', -- pending | clean | infected | skipped | error
+  scan_status   TEXT NOT NULL DEFAULT 'pending', -- pending | clean | infected | skipped | error | quarantined
   scan_detail   TEXT,
   scan_attempts INTEGER NOT NULL DEFAULT 0,
   scanned_at    INTEGER,

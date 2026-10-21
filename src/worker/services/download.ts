@@ -10,7 +10,8 @@ import { requireNode } from './access';
 const SIG_LEN = 32;
 
 /** `d` = download (/d/…), `p` = inline preview on USERCONTENT_ORIGIN (/p/…). */
-export type TokenPurpose = 'd' | 'p';
+// `a` = abuse review by staff (audited, 5 min; may show quarantined files).
+export type TokenPurpose = 'd' | 'p' | 'a';
 
 async function sign(
   secret: string,
@@ -67,6 +68,8 @@ export function assertDownloadable(
   if (node.kind !== 'file' || !node.blob_id) throw new AppError('BAD_REQUEST', 'not a file');
   if (node.status === 'rejected' || scanStatus === 'infected')
     throw new AppError('FORBIDDEN', 'file was rejected');
+  if (scanStatus === 'quarantined')
+    throw new AppError('FORBIDDEN', 'file is under review', { reason: 'QUARANTINED' });
   if (node.status === 'uploading') throw new AppError('UPLOAD_STATE', 'upload not finished');
   // While pending, only the uploader may access the file.
   if (node.status === 'scanning' && node.created_by !== userId)

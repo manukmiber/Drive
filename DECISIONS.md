@@ -210,3 +210,16 @@ multi-GB di consumer `scan` muat.
 **Prasyarat akun:** Workers Paid (Containers dan pengiriman email OTP ke alamat bebas butuh paket ini),
 zona `zeiko.biz.id` di akun yang sama (custom domain app + `uc.`), Email Service dengan domain pengirim
 terverifikasi.
+
+## ADR-028 — Admin & moderasi: batas akses dan detail tindakan
+- **Tidak ada akses isi file dari menu Pengguna.** Isi file hanya bisa dibuka dari laporan, lewat token
+  pratinjau `a` (5 menit, khusus staf aktif) yang tiap pemakaiannya tercatat `report.content_view`.
+- **Karantina** = `blobs.scan_status = 'quarantined'`: download, share, pratinjau, dan ZIP diblokir untuk
+  semua orang termasuk pemilik, tapi kuota tetap terhitung. Staf masih bisa meninjau lewat token `a`.
+- **Moderator**: laporan, pemindai, bekukan pengguna. **Admin**: plus saldo, bonus kuota, peran, config,
+  katalog, audit. Keduanya wajib passkey/TOTP (ADR-019).
+- **Bonus kuota** (`storage_pools.bonus_bytes`) ditambahkan di atas paket dan add-on, dan ikut dihitung
+  ulang setiap ada perubahan paket.
+- **CSRF hanya untuk request yang membawa sesi.** Form anonim (Lapor) cukup dilindungi cek `Origin`;
+  request bersesi tetap wajib token double-submit.
+- **Pengguna dibekukan** → semua sesi dihapus, link share-nya mati (`shareState` cek status pembuat).

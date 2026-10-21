@@ -80,8 +80,11 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
  */
 export const csrfCheck: MiddlewareHandler<AppBindings> = async (c, next) => {
   const path = c.req.path;
+  // CSRF only matters when the request carries a session (an ambient credential). Anonymous
+  // mutations (abuse reports) are still covered by the Origin check.
   if (
     MUTATING.has(c.req.method) &&
+    c.get('user') &&
     !path.startsWith('/api/auth/') &&
     !path.startsWith('/api/webhooks/')
   ) {

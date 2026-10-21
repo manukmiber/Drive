@@ -284,6 +284,10 @@ export async function shareState(ctx: Ctx, s: ShareRow | null): Promise<DeadReas
   if (s.disabled_reason) return 'disabled';
   if (s.expires_at !== null && s.expires_at <= ctx.now()) return 'expired';
   if (s.max_downloads !== null && s.download_count >= s.max_downloads) return 'limit';
+  const creator = await ctx.env.DB.prepare('SELECT status FROM users WHERE id = ?1')
+    .bind(s.created_by)
+    .first<{ status: string }>();
+  if (creator?.status !== 'active') return 'disabled';
   // Owner in read-only/suspended phase → links off (SPEC §6.1, §12.5).
   const pool = await ctx.env.DB.prepare(
     `SELECT n.pool_id FROM share_items i JOIN nodes n ON n.id = i.node_id WHERE i.share_id = ?1 LIMIT 1`,

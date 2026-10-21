@@ -87,9 +87,9 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [ ] Dashboard pengiklan
 
 ## Fase 11 — Admin & moderasi
-- [ ] Dashboard biaya vs pendapatan
-- [ ] Pengguna, config editor, audit log
-- [ ] Laporan & takedown + SLA
+- [x] Dashboard biaya vs pendapatan (storage + kompres + fee gateway; komponen lain dari tagihan Cloudflare)
+- [x] Pengguna (bekukan, saldo, bonus kuota, peran — wajib alasan), config editor, katalog, audit log
+- [x] Laporan & takedown + SLA (CSAM otomatis: link mati, karantina + legal hold, pengunggah dibekukan)
 
 ## Fase 12 — Hardening & rilis
 - [ ] E2E, k6, audit keamanan, Lighthouse

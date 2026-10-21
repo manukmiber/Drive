@@ -39,7 +39,8 @@ export async function collectEntries(
        UNION ALL
        SELECT n.id, t.depth + 1, t.root FROM nodes n JOIN t ON n.parent_id = t.id
        WHERE n.trashed_at IS NULL AND t.depth < 64)
-     SELECT n.id, n.parent_id, n.kind, n.name, n.size, n.updated_at, n.client_modified_at, n.status,
+     SELECT n.id, n.parent_id, n.kind, n.name, n.size, n.updated_at, n.client_modified_at,
+            CASE WHEN b.scan_status IN ('infected', 'quarantined') THEN 'rejected' ELSE n.status END AS status,
             b.r2_key, b.crc32, t.depth, t.root
      FROM t JOIN nodes n ON n.id = t.id LEFT JOIN blobs b ON b.id = n.blob_id
      ORDER BY t.root, t.depth, n.name_key`,

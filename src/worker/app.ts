@@ -22,6 +22,7 @@ import { me } from './routes/me';
 import { nodes } from './routes/nodes';
 import { preview } from './routes/preview';
 import { publicAuth } from './routes/public-auth';
+import { reports } from './routes/reports';
 import { archiveDownload } from './routes/archive-download';
 import { integrations } from './routes/integrations';
 import { sharePublic } from './routes/share-public';
@@ -67,6 +68,7 @@ export function createApp() {
   api.route('/', health);
   api.route('/public', catalog);
   api.route('/public', publicAuth);
+  api.route('/public', reports);
   api.route('/me', me);
   api.route('/admin', admin);
   api.route('/uploads', uploads);

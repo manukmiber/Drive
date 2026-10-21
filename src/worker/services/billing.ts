@@ -132,7 +132,7 @@ function poolLimitStmt(ctx: Ctx, poolId: string): Stmt {
          WHERE sa.subscription_id = s.id AND (sa.ends_at IS NULL OR sa.ends_at > ?2)), 0)
        FROM subscriptions s JOIN plans p ON p.code = s.plan_code
        WHERE s.pool_id = storage_pools.id AND s.status IN ('active', 'grace', 'readonly', 'suspended')
-       ORDER BY s.created_at DESC LIMIT 1), 0), updated_at = ?2
+       ORDER BY s.created_at DESC LIMIT 1), 0) + bonus_bytes, updated_at = ?2
      WHERE id = ?1`,
   ).bind(poolId, ctx.now());
 }

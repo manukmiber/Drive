@@ -26,17 +26,30 @@ export const preview = new Hono<AppBindings>()
   })
   .on(['GET', 'HEAD'], '/:token/:filename', async (c) => {
     const ctx = c.get('ctx');
-    const claims = await verifyDownloadToken(
-      ctx.env.PREVIEW_SECRET,
-      c.req.param('token'),
-      ctx.now(),
-      'p',
-    );
+    const token = c.req.param('token');
+    const user = await verifyDownloadToken(ctx.env.PREVIEW_SECRET, token, ctx.now(), 'p');
+    const review = user
+      ? null
+      : await verifyDownloadToken(ctx.env.PREVIEW_SECRET, token, ctx.now(), 'a');
+    const claims = user ?? review;
     if (!claims) return c.text('Link pratinjau kedaluwarsa.', 410);
     const node = await loadNode(ctx, claims.nodeId);
     if (!node || node.blob_id !== claims.blobId) return c.text('Not found', 404);
-    if (!(await nodeAccess(ctx, claims.userId, node)).view) return c.text('Not found', 404);
-    if (await poolLocked(ctx, node.pool_id)) return c.text('Forbidden', 403);
+    if (review) {
+      // Abuse review: the token was minted for a staff member and the view is in the audit log.
+      const staff = await ctx.env.DB.prepare(`SELECT role, status FROM users WHERE id = ?1`)
+        .bind(claims.userId)
+        .first<{ role: string; status: string }>();
+      if (
+        !staff ||
+        staff.status !== 'active' ||
+        (staff.role !== 'admin' && staff.role !== 'moderator')
+      )
+        return c.text('Forbidden', 403);
+    } else {
+      if (!(await nodeAccess(ctx, claims.userId, node)).view) return c.text('Not found', 404);
+      if (await poolLocked(ctx, node.pool_id)) return c.text('Forbidden', 403);
+    }
     const blob = await ctx.env.DB.prepare(
       'SELECT r2_key, size, scan_status, sniffed_mime FROM blobs WHERE id = ?1',
     )
@@ -44,7 +57,8 @@ export const preview = new Hono<AppBindings>()
       .first<{ r2_key: string; size: number; scan_status: string; sniffed_mime: string | null }>();
     if (!blob) return c.text('Not found', 404);
     try {
-      assertDownloadable(node, blob.scan_status, claims.userId);
+      if (!review || blob.scan_status === 'infected')
+        assertDownloadable(node, blob.scan_status, claims.userId);
     } catch (e) {
       if (isAppError(e)) return c.text('Forbidden', 403);
       throw e;

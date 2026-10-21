@@ -10,6 +10,8 @@ import { Drive } from './pages/Drive';
 import { Trash } from './pages/Trash';
 import { Recent, Search, Shared, Starred } from './pages/Lists';
 import { Billing, InvoicePage } from './pages/Billing';
+import { Admin } from './pages/Admin';
+import { Report } from './pages/Report';
 import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
 import { Placeholder } from './pages/Placeholder';
@@ -25,6 +27,17 @@ const page = (path: string, title: string, note = 'Segera hadir.') =>
     path,
     component: () => <Placeholder title={title} note={note} />,
   });
+
+const reportRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/lapor',
+  validateSearch: (s: Record<string, unknown>): { share?: string } =>
+    typeof s.share === 'string' ? { share: s.share.slice(0, 200) } : {},
+  component: function ReportPage() {
+    const { share } = reportRoute.useSearch();
+    return <Report share={share} />;
+  },
+});
 
 const searchRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -47,6 +60,7 @@ function DriveFolder() {
 const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: Landing }),
   createRoute({ getParentRoute: () => rootRoute, path: '/masuk', component: SignIn }),
+  reportRoute,
   appRoute.addChildren([
     createRoute({
       getParentRoute: () => appRoute,
@@ -74,6 +88,7 @@ const routeTree = rootRoute.addChildren([
       },
     }),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),
+    createRoute({ getParentRoute: () => appRoute, path: '/admin', component: Admin }),
   ]),
 ]);
 

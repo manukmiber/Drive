@@ -181,6 +181,7 @@ export const storagePools = sqliteTable('storage_pools', {
   limitBytes: integer('limit_bytes').notNull().default(0),
   usedBytes: integer('used_bytes').notNull().default(0),
   reservedBytes: integer('reserved_bytes').notNull().default(0),
+  bonusBytes: integer('bonus_bytes').notNull().default(0),
   updatedAt: ms('updated_at').notNull(),
 });
 
