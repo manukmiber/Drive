@@ -1,4 +1,12 @@
 // Regenerate with: node scripts/gen-wrangler.mjs > wrangler.jsonc
+// Remote resource IDs and per-env overrides live in deploy/{staging,production}.json (written by
+// scripts/cf-setup.mjs; IDs only, no secrets).
+import { existsSync, readFileSync } from 'node:fs';
+
+function deployFile(env) {
+  const f = new URL(`../deploy/${env}.json`, import.meta.url);
+  return existsSync(f) ? JSON.parse(readFileSync(f, 'utf8')) : {};
+}
 const Q = ['scan', 'archive', 'compress', 'notify', 'cleanup'];
 // Containers (SPEC §2). Each gets a Durable Object binding with the same class.
 const CONTAINERS = [
@@ -20,6 +28,11 @@ const RL = [
   ['RL_REPORT', 5],
 ];
 function bindings(env, nsBase, ids) {
+  // Containers need Docker at deploy time; `containers: false` deploys without them and falls back
+  // to the built-in hashing scanner (ADR-027).
+  // ZK_CONTAINERS=1|0 overrides (CI with Docker forces them on).
+  const force = process.env.ZK_CONTAINERS;
+  const containers = env !== 'dev' && (force ? force === '1' : ids.containers !== false);
   return {
     vars: {
       APP_ENV: env,
@@ -28,7 +41,7 @@ function bindings(env, nsBase, ids) {
       EMAIL_FROM: 'no-reply@zeiko.biz.id',
       ADAPTER_EMAIL: env === 'dev' ? 'mock' : 'cloudflare',
       ADAPTER_PAYMENT: 'mock',
-      ADAPTER_SCANNER: env === 'dev' ? 'mock' : 'container',
+      ADAPTER_SCANNER: containers ? 'container' : 'mock',
       ADAPTER_CSAM: 'mock',
     },
     d1_databases: [
@@ -63,7 +76,7 @@ function bindings(env, nsBase, ids) {
     images: { binding: 'IMAGES' },
     media: { binding: 'MEDIA' },
     send_email: [{ name: 'EMAIL', allowed_sender_addresses: ['no-reply@zeiko.biz.id'] }],
-    ...(env === 'dev'
+    ...(!containers
       ? {}
       : {
           containers: CONTAINERS.map(({ binding: _b, ...c }) => c),
@@ -73,6 +86,19 @@ function bindings(env, nsBase, ids) {
         }),
   };
 }
+function envBlock(env, nsBase, defaults) {
+  const d = { ...defaults, ...deployFile(env) };
+  const app = d.appOrigin;
+  const uc = d.usercontentOrigin;
+  return {
+    routes: [
+      { pattern: new URL(app).hostname, custom_domain: true },
+      { pattern: new URL(uc).hostname, custom_domain: true },
+    ],
+    ...bindings(env, nsBase, { app, uc, d1: d.d1Id, kv: d.kvId, containers: d.containers }),
+  };
+}
+
 const config = {
   $schema: './node_modules/wrangler/config-schema.json',
   name: 'zeiko',
@@ -96,31 +122,21 @@ const config = {
     kv: 'local-dev',
   }),
   env: {
-    staging: {
-      routes: [
-        { pattern: 'staging.zeiko.biz.id', custom_domain: true },
-        { pattern: 'uc-staging.zeiko.biz.id', custom_domain: true },
-      ],
-      ...bindings('staging', 1000, {
-        app: 'https://staging.zeiko.biz.id',
-        uc: 'https://uc-staging.zeiko.biz.id',
-        d1: 'REPLACE_WITH_STAGING_D1_ID',
-        kv: 'REPLACE_WITH_STAGING_KV_ID',
-      }),
-    },
-    production: {
-      routes: [
-        { pattern: 'zeiko.biz.id', custom_domain: true },
-        { pattern: 'uc.zeiko.biz.id', custom_domain: true },
-      ],
-      ...bindings('production', 2000, {
-        app: 'https://zeiko.biz.id',
-        uc: 'https://uc.zeiko.biz.id',
-        d1: 'REPLACE_WITH_PRODUCTION_D1_ID',
-        kv: 'REPLACE_WITH_PRODUCTION_KV_ID',
-      }),
-    },
+    staging: envBlock('staging', 1000, {
+      appOrigin: 'https://staging.zeiko.biz.id',
+      usercontentOrigin: 'https://uc-staging.zeiko.biz.id',
+      d1Id: 'REPLACE_WITH_STAGING_D1_ID',
+      kvId: 'REPLACE_WITH_STAGING_KV_ID',
+    }),
+    production: envBlock('production', 2000, {
+      appOrigin: 'https://zeiko.biz.id',
+      usercontentOrigin: 'https://uc.zeiko.biz.id',
+      d1Id: 'REPLACE_WITH_PRODUCTION_D1_ID',
+      kvId: 'REPLACE_WITH_PRODUCTION_KV_ID',
+    }),
   },
+  // Hashing multi-GB files in the scan consumer needs more than the 30 s default CPU budget.
+  limits: { cpu_ms: 300000 },
 };
 const header = `// Zeiko Cloud Storage — Wrangler config.
 // Top level = local dev reference only (dev runs on Node shims, ADR-001; never deployed).
@@ -129,6 +145,6 @@ const header = `// Zeiko Cloud Storage — Wrangler config.
 //   SHARE_LINK_SECRET_PREV (rotation only), PREVIEW_SECRET, CONTACTS_ENC_KEY, IP_HASH_SECRET,
 //   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
 //   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY.
-// REPLACE_WITH_* ids are filled when the owner approves creating the remote resources.
+// REPLACE_WITH_* ids are filled by scripts/cf-setup.mjs (deploy/{env}.json).
 `;
 process.stdout.write(header + JSON.stringify(config, null, 2) + '\n');

@@ -195,3 +195,18 @@ sementara di IndexedDB lalu di-upload ke Drive Saya. Tanpa SW, `POST /share-targ
   server (Browser Rendering) bisa ditambah nanti tanpa mengubah data.
 - **Halaman bayar mock** `/dev/pay/{ref}` hanya ada bila `APP_ENV != production` dan adapter `mock`; di
   production, top-up dengan adapter mock ditolak (`PAYMENT_UNAVAILABLE`).
+
+## ADR-027 — Setup & deploy Cloudflare lewat satu skrip, bisa tanpa Docker
+**Konteks:** Pemilik akan login ke Cloudflare lalu meminta saya mengurus deploy. Mesin kerja (HP/PRoot)
+tidak punya Docker, padahal wrangler butuh Docker untuk mem-build image Container `scanner`.
+**Keputusan:** `scripts/cf-setup.mjs <env>` membuat D1/KV/R2/Queues secara idempoten, menulis ID ke
+`deploy/<env>.json` (tanpa secret), meregenerasi `wrangler.jsonc`, menerapkan migrasi, deploy, lalu mengisi
+secret yang belum ada dengan nilai acak (`wrangler secret bulk`, file sementara 0600, tidak pernah dicetak).
+Kalau Docker tidak ada dan image scanner belum pernah di-push, env itu otomatis memakai scanner bawaan
+(hash SHA-256/CRC32 + EICAR + blocklist + sniff MIME, tanpa ClamAV), supaya file tidak tertahan
+"Sedang dipindai". ClamAV aktif setelah CI (punya Docker) mendeploy image, lalu
+`cf-setup.mjs <env> --containers-ready`. `limits.cpu_ms` dinaikkan ke 300 000 agar hashing file
+multi-GB di consumer `scan` muat.
+**Prasyarat akun:** Workers Paid (Containers dan pengiriman email OTP ke alamat bebas butuh paket ini),
+zona `zeiko.biz.id` di akun yang sama (custom domain app + `uc.`), Email Service dengan domain pengirim
+terverifikasi.

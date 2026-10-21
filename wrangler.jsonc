@@ -5,7 +5,7 @@
 //   SHARE_LINK_SECRET_PREV (rotation only), PREVIEW_SECRET, CONTACTS_ENC_KEY, IP_HASH_SECRET,
 //   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
 //   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY.
-// REPLACE_WITH_* ids are filled when the owner approves creating the remote resources.
+// REPLACE_WITH_* ids are filled by scripts/cf-setup.mjs (deploy/{env}.json).
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "zeiko",
@@ -603,5 +603,8 @@
         ]
       }
     }
+  },
+  "limits": {
+    "cpu_ms": 300000
   }
 }

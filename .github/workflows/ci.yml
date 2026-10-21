@@ -46,5 +46,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # Docker is available here, so the scanner image (ClamAV) is built and rolled out too.
+      - run: ZK_CONTAINERS=1 node scripts/gen-wrangler.mjs > wrangler.jsonc
       - run: npx wrangler d1 migrations apply DB --env staging --remote
       - run: npx wrangler deploy --env staging
