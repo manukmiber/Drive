@@ -22,6 +22,7 @@ export interface Env {
   ADAPTER_CSAM: 'mock';
   TURNSTILE_SITE_KEY?: string;
   ADMIN_ALERT_TELEGRAM_CHAT_ID?: string;
+  SCANNER_INSTANCES?: string;
 
   // ── secrets (wrangler secret / .dev.vars) ──
   BETTER_AUTH_SECRET: string;
@@ -59,6 +60,8 @@ export interface Env {
   IMAGES: ImagesBinding;
   MEDIA: MediaBinding;
   EMAIL: SendEmail;
+  /** Containers (absent in local dev; adapters fall back to mocks). */
+  SCANNER?: DurableObjectNamespace;
 
   /** Test/dev only: injected fake clock. Never set in staging/production. */
   CLOCK?: Clock;

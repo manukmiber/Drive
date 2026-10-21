@@ -152,7 +152,6 @@ export function Drive({ folderId }: { folderId?: string }) {
     return () => setCurrentFolder(null);
   }, [folder]);
 
-
   useEffect(() => {
     const el = sentinel.current;
     if (!el) return;

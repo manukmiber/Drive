@@ -69,3 +69,91 @@ export class MockScanner implements Scanner {
     };
   }
 }
+
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+/**
+ * Container scanner: the Worker streams the R2 object into Container `scanner` once; the container
+ * hashes it and (≤ maxScanBytes) pipes it through clamd. Instances are picked at random to spread
+ * load across `instances` Durable Objects.
+ */
+export class ContainerScanner implements Scanner {
+  readonly name = 'container';
+  constructor(
+    private bucket: R2Bucket,
+    private ns: DurableObjectNamespace,
+    private instances = 3,
+  ) {}
+
+  async scan(input: ScanInput): Promise<ScanResult> {
+    const obj = await this.bucket.get(input.key);
+    if (!obj)
+      return {
+        status: 'error',
+        sha256: null,
+        crc32: null,
+        sniffedMime: null,
+        detail: 'object missing',
+      };
+    const doScan = input.size <= input.maxScanBytes;
+    const stub = this.ns.get(
+      this.ns.idFromName(`scanner-${Math.floor(Math.random() * this.instances)}`),
+    );
+    let res: Response;
+    try {
+      res = await stub.fetch(`http://scanner/scan?scan=${doScan ? 1 : 0}`, {
+        method: 'POST',
+        body: obj.body,
+        headers: { 'content-length': String(input.size) },
+      });
+    } catch (e) {
+      return {
+        status: 'error',
+        sha256: null,
+        crc32: null,
+        sniffedMime: null,
+        detail: `container: ${String(e)}`,
+      };
+    }
+    if (!res.ok)
+      return {
+        status: 'error',
+        sha256: null,
+        crc32: null,
+        sniffedMime: null,
+        detail: `container HTTP ${res.status}`,
+      };
+    const r = (await res.json()) as {
+      sha256: string;
+      crc32: number;
+      size: number;
+      head: string;
+      scanned: boolean;
+      infected: boolean;
+      virus?: string;
+      error?: string;
+    };
+    if (r.size !== input.size) {
+      return {
+        status: 'error',
+        sha256: null,
+        crc32: null,
+        sniffedMime: null,
+        detail: `size mismatch ${r.size}`,
+      };
+    }
+    const base = {
+      sha256: r.sha256,
+      crc32: r.crc32 >>> 0,
+      sniffedMime: sniffMime(b64ToBytes(r.head)),
+    };
+    if (r.error && doScan) return { status: 'error', ...base, detail: r.error };
+    if (r.infected) return { status: 'infected', ...base, detail: r.virus ?? 'malware' };
+    return { status: doScan ? 'clean' : 'skipped', ...base, detail: doScan ? null : 'too large' };
+  }
+}

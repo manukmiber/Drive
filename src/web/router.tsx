@@ -33,7 +33,11 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: Landing }),
   createRoute({ getParentRoute: () => rootRoute, path: '/masuk', component: SignIn }),
   appRoute.addChildren([
-    createRoute({ getParentRoute: () => appRoute, path: '/drive', component: () => <Drive key="root" /> }),
+    createRoute({
+      getParentRoute: () => appRoute,
+      path: '/drive',
+      component: () => <Drive key="root" />,
+    }),
     createRoute({
       getParentRoute: () => appRoute,
       path: '/drive/$folderId',

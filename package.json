@@ -24,10 +24,12 @@
     "db:migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
     "db:migrate:production": "wrangler d1 migrations apply DB --env production --remote",
     "deploy:dry": "npm run build && wrangler deploy --dry-run --outdir .wrangler/dry-run --env staging",
-    "deploy:staging": "npm run build && wrangler deploy --env staging"
+    "deploy:staging": "npm run build && wrangler deploy --env staging",
+    "deploy:dry:nodocker": "npm run build && wrangler deploy --dry-run --outdir .wrangler/dry-run --env staging --containers-rollout=none"
   },
   "dependencies": {
     "@better-auth/passkey": "^1.7.12",
+    "@cloudflare/containers": "^0.3.7",
     "@hono/zod-validator": "^0.9.1",
     "@tanstack/react-query": "^5.104.5",
     "@tanstack/react-router": "^1.170.45",

@@ -40,7 +40,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - Satu warning lint `react-hooks/exhaustive-deps` di `Drive.tsx` (dependensi tipe saja).
 
 ## Fase 3 — Pipeline scan
-- [~] Queue `scan` + adapter Scanner (mock **selesai**; Container `scanner`/ClamAV belum)
+- [x] Queue `scan` + adapter Scanner (mock + Container `scanner` Go/ClamAV — image belum di-build, butuh Docker di CI)
 - [x] SHA-256 + CRC32 tersimpan, blocklist hash
 - [x] Infected → hapus, kuota kembali, notifikasi (baris `notifications`; kirim email/Telegram di Fase 5)
 

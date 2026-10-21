@@ -1,7 +1,7 @@
 import type { Env } from '../env';
 import { CloudflareEmailSender, MockEmailSender, type EmailSender } from './email';
 import { MockPaymentProvider, type PaymentProvider } from './payment';
-import { MockScanner, type Scanner } from './scanner';
+import { ContainerScanner, MockScanner, type Scanner } from './scanner';
 import { MockCsamDetector, type CsamDetector } from './csam';
 import type { Clock } from './clock';
 
@@ -21,8 +21,10 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
   const payment = new MockPaymentProvider(env.PAYMENT_WEBHOOK_SECRET, env.APP_ORIGIN, () =>
     clock.now(),
   );
-  // The container scanner lands in Fase 3; until then every env uses the mock chain.
-  const scanner: Scanner = new MockScanner(env.BUCKET);
+  const scanner: Scanner =
+    env.ADAPTER_SCANNER === 'container' && env.SCANNER
+      ? new ContainerScanner(env.BUCKET, env.SCANNER, Number(env.SCANNER_INSTANCES ?? 3))
+      : new MockScanner(env.BUCKET);
   const csam = new MockCsamDetector();
   return { email, payment, scanner, csam };
 }

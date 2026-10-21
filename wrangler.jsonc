@@ -9,7 +9,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "zeiko",
-  "main": "src/worker/index.ts",
+  "main": "src/worker/entry.ts",
   "compatibility_date": "2026-10-01",
   "compatibility_flags": [
     "nodejs_compat"
@@ -31,6 +31,14 @@
       "0 19 * * *"
     ]
   },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "ScannerContainer"
+      ]
+    }
+  ],
   "vars": {
     "APP_ENV": "dev",
     "APP_ORIGIN": "http://localhost:5173",
@@ -219,7 +227,7 @@
         "EMAIL_FROM": "no-reply@zeiko.biz.id",
         "ADAPTER_EMAIL": "cloudflare",
         "ADAPTER_PAYMENT": "mock",
-        "ADAPTER_SCANNER": "mock",
+        "ADAPTER_SCANNER": "container",
         "ADAPTER_CSAM": "mock"
       },
       "d1_databases": [
@@ -380,7 +388,23 @@
             "no-reply@zeiko.biz.id"
           ]
         }
-      ]
+      ],
+      "containers": [
+        {
+          "class_name": "ScannerContainer",
+          "image": "./containers/scanner/Dockerfile",
+          "instance_type": "standard-1",
+          "max_instances": 10
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SCANNER",
+            "class_name": "ScannerContainer"
+          }
+        ]
+      }
     },
     "production": {
       "routes": [
@@ -400,7 +424,7 @@
         "EMAIL_FROM": "no-reply@zeiko.biz.id",
         "ADAPTER_EMAIL": "cloudflare",
         "ADAPTER_PAYMENT": "mock",
-        "ADAPTER_SCANNER": "mock",
+        "ADAPTER_SCANNER": "container",
         "ADAPTER_CSAM": "mock"
       },
       "d1_databases": [
@@ -561,7 +585,23 @@
             "no-reply@zeiko.biz.id"
           ]
         }
-      ]
+      ],
+      "containers": [
+        {
+          "class_name": "ScannerContainer",
+          "image": "./containers/scanner/Dockerfile",
+          "instance_type": "standard-1",
+          "max_instances": 10
+        }
+      ],
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SCANNER",
+            "class_name": "ScannerContainer"
+          }
+        ]
+      }
     }
   }
 }
