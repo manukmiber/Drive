@@ -171,7 +171,7 @@ export function Drive({ folderId }: { folderId?: string }) {
                 <span className="truncate font-medium">{c.name}</span>
               ) : i === 0 ? (
                 <Link
-                  to="/drive"
+                  to={c.id === me.data?.space.familyRootId ? '/keluarga' : '/drive'}
                   className="truncate rounded px-1 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]"
                 >
                   {c.name}

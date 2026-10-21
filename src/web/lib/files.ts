@@ -69,8 +69,8 @@ export const deleteForever = (ids: string[]) =>
   sendJson<{ count: number }>('POST', '/api/nodes/delete', { ids });
 export const copyNode = (id: string, targetId?: string) =>
   sendJson<{ node: NodeDto }>('POST', `/api/nodes/${id}/copy`, targetId ? { targetId } : {});
-export const moveNodes = (ids: string[], targetId: string) =>
-  sendJson<{ nodes: NodeDto[] }>('POST', '/api/nodes/move', { ids, targetId });
+export const moveNodes = (ids: string[], targetId: string, confirmSpaceChange = false) =>
+  sendJson<{ nodes: NodeDto[] }>('POST', '/api/nodes/move', { ids, targetId, confirmSpaceChange });
 export const listTrash = () => api<{ items: NodeDto[]; retentionDays: number }>('/api/trash');
 export const emptyTrash = () => sendJson<{ count: number }>('POST', '/api/trash/empty');
 

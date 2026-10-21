@@ -229,3 +229,25 @@ In-app selalu aktif. Email untuk `invoice`, `renewal_failed`, dan `dunning` tida
 itu pemberitahuan tagihan/penghapusan data yang harus sampai. Jenis lain bisa dimatikan per kanal (email,
 Telegram). Notifikasi kuota dikirim sekali per ambang (80/95/100 %) per batas kuota, jadi naik paket
 membuka ambang baru.
+
+## ADR-030 — Paket keluarga: detail implementasi
+- **Pool bersama**: membuat keluarga atau bergabung memindahkan semua node, blob, dan `used_bytes` milik
+  pengguna dari pool pribadi ke pool keluarga dalam satu `db.batch`. Ditolak selama masih ada
+  upload/scan berjalan (supaya reservasi tidak tertinggal di pool lama).
+- **Izin `add`**: semua anggota boleh menaruh item baru (upload, folder baru, pindah/salin ke dalam)
+  di folder keluarga mana pun. `edit`/`remove` item tetap hanya untuk pembuat + pemilik keluarga
+  (atau anggota lain bila `family_can_edit`).
+- **Keluarga → Pribadi** hanya untuk subtree yang seluruhnya dibuat oleh pemindah, sehingga item orang lain
+  tidak bisa "diambil". Share milik anggota lain atas item itu dicabut. **Pribadi → Keluarga** wajib
+  `confirmSpaceChange`.
+- **Keluar**: blob yang dipakai bersama file pribadi dan salinan di Drive Keluarga diduplikasi di R2,
+  jadi tidak ada blob lintas pool (aturan §2). Pengguna tanpa paket mendapat langganan berstatus
+  `readonly` (plan termurah, tanpa perpanjangan), lalu siklus §12.5 berjalan seperti biasa.
+- **Batas per anggota** bersifat lunak: dicek dengan `SUM(size)` saat upload dimulai, hanya kalau
+  `cap_bytes` diisi. Kolom counter `family_members.used/reserved_bytes` tidak dipakai.
+- **Bubarkan keluarga** (tambahan): hanya bila tinggal pemilik. Drive Keluarga jadi folder biasa di
+  Drive Saya, dan sisa masa paket dikonversi ke Saldo. Ini jalan keluar bagi pemilik yang ingin kembali ke
+  paket pribadi.
+- **Jeda pindah keluarga** dihitung dari audit `family.join`/`family.leave` terakhir.
+- Paket `family` tetap **nonaktif** di seed sampai pemilik menetapkan harga (§16 #3), diaktifkan dari
+  Admin → Katalog.

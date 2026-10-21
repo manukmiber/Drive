@@ -368,6 +368,59 @@ export const t = {
       ad_status: 'Status iklan',
     } as Record<string, string>,
   },
+  family: {
+    title: 'Keluarga',
+    drive: 'Drive Keluarga',
+    members: 'Anggota',
+    noFamilyTitle: 'Berbagi ruang penyimpanan dengan keluarga',
+    noFamilyBody: (n: number) =>
+      `Satu paket untuk sampai ${n} orang. Tiap anggota tetap punya Drive Saya yang privat, plus Drive Keluarga untuk berbagi.`,
+    unavailable: 'Paket keluarga belum tersedia. Kamu tetap bisa diundang oleh pemilik keluarga.',
+    buy: (price: string) => `Mulai paket keluarga · ${price}/bulan`,
+    invite: 'Undang anggota',
+    inviteLink: 'Link undangan (sekali pakai, 7 hari)',
+    inviteEmail: 'Kirim lewat email',
+    inviteSent: 'Undangan terkirim',
+    pendingInvites: 'Undangan aktif',
+    revoke: 'Batalkan',
+    owner: 'Pemilik',
+    member: 'Anggota',
+    used: (u: string) => `Memakai ${u}`,
+    cap: 'Batas (GB, kosong = tanpa batas)',
+    remove: 'Keluarkan',
+    removeConfirm: (name: string) =>
+      `Keluarkan ${name}? File pribadinya ikut pindah ke akunnya sendiri, dan item yang ia buat di Drive Keluarga tetap di sini.`,
+    leave: 'Keluar dari keluarga',
+    leaveConfirm:
+      'File pribadimu ikut pindah ke akunmu sendiri (tanpa paket = mode baca saja). Item yang kamu buat di Drive Keluarga tetap di keluarga. Lanjutkan?',
+    dissolve: 'Bubarkan keluarga',
+    dissolveConfirm:
+      'Drive Keluarga jadi folder biasa di Drive Saya, dan sisa masa paket dikembalikan ke Saldo.',
+    privacy: 'Kamu hanya melihat total pemakaian tiap anggota, bukan isi Drive Saya mereka.',
+    join: {
+      title: (family: string) => `Gabung ke ${family}`,
+      by: (owner: string) => `Diundang oleh ${owner}`,
+      plan: (plan: string, size: string) => `Paket ${plan} · ${size} bersama`,
+      accept: 'Terima undangan',
+      signIn: 'Masuk untuk menerima',
+      convert: (credit: string) =>
+        `Paket pribadimu masih aktif. Sisa masanya dikonversi jadi Saldo ${credit} saat bergabung.`,
+      fitsNo:
+        'File di Drive Saya kamu lebih besar dari sisa ruang keluarga. Kosongkan sebagian dulu.',
+      cooldown: (d: string) => `Kamu baru pindah keluarga. Bisa bergabung lagi mulai ${d}.`,
+      already: 'Kamu sudah berada di sebuah keluarga.',
+      invalid: {
+        revoked: 'Undangan ini sudah dibatalkan.',
+        used: 'Undangan ini sudah dipakai.',
+        expired: 'Undangan ini sudah kedaluwarsa.',
+      } as Record<string, string>,
+      done: 'Selamat datang di keluarga!',
+    },
+    spaceConfirmFamily: 'Item ini akan terlihat oleh semua anggota keluarga. Pindahkan?',
+    spaceConfirmPrivate:
+      'Item ini akan jadi privat dan tidak terlihat lagi oleh anggota keluarga. Pindahkan?',
+    move: 'Pindahkan',
+  },
   account: {
     title: 'Data & akun',
     exportJson: 'Unduh data saya (JSON)',

@@ -9,11 +9,13 @@ import { Dialog } from '../ui/Dialog';
 
 export function MoveDialog({
   rootId,
+  familyRootId,
   excludeIds,
   onCancel,
   onMove,
 }: {
   rootId: string;
+  familyRootId?: string | null;
   excludeIds: string[];
   onCancel: () => void;
   onMove: (targetId: string) => void;
@@ -41,6 +43,23 @@ export function MoveDialog({
         </>
       }
     >
+      {familyRootId && (
+        <div className="mb-3 flex gap-2">
+          {[
+            [rootId, t.nav.myDrive],
+            [familyRootId, t.nav.familyDrive],
+          ].map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setFolderId(id!)}
+              className={`rounded-full border px-3 py-1 text-xs ${path[0]?.id === id ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-[var(--border)]'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       <nav className="mb-2 flex flex-wrap items-center gap-1 text-xs text-[var(--fg-muted)]">
         {path.map((c, i) => (
           <span key={c.id} className="flex items-center gap-1">

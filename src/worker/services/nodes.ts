@@ -253,7 +253,7 @@ async function requireWritableFolder(
   userId: string,
   folderId: string,
 ): Promise<NodeRecord> {
-  const { node } = await requireNode(ctx, userId, folderId, 'edit');
+  const { node } = await requireNode(ctx, userId, folderId, 'add');
   if (node.kind !== 'folder') throw new AppError('BAD_REQUEST', 'target is not a folder');
   if (node.trashed_at !== null) throw new AppError('CONFLICT', 'target folder is in the trash');
   return node;
@@ -353,6 +353,7 @@ export async function moveNodes(
   userId: string,
   ids: string[],
   targetId: string,
+  opts: { confirmSpaceChange?: boolean } = {},
 ): Promise<NodeDto[]> {
   const target = await requireWritableFolder(ctx, userId, targetId);
   const moved: NodeDto[] = [];
@@ -365,16 +366,18 @@ export async function moveNodes(
       moved.push(await getNodeDto(ctx, userId, node.id));
       continue;
     }
-    // Pribadi ⇄ Keluarga moves change visibility and pools; they get their own flow (Fase 8).
-    if (
-      node.space !== target.space ||
-      node.pool_id !== target.pool_id ||
-      node.family_id !== target.family_id
-    ) {
-      throw new AppError(
-        'BAD_REQUEST',
-        'use the space move action to move between Pribadi and Keluarga',
-      );
+    if (node.pool_id !== target.pool_id) {
+      throw new AppError('BAD_REQUEST', 'cannot move across storage pools');
+    }
+    // Pribadi ⇄ Keluarga changes who can see the item: explicit confirmation (SPEC §9.1).
+    if (node.space !== target.space || node.family_id !== target.family_id) {
+      if (!opts.confirmSpaceChange) {
+        throw new AppError('CONFLICT', 'moving changes who can see this item', {
+          reason: 'SPACE_CHANGE',
+          to: target.space,
+        });
+      }
+      await changeSpace(ctx, userId, node, target);
     }
     if (node.kind === 'folder' && (await isDescendantOrSelf(ctx, node.id, target.id))) {
       throw new AppError('BAD_REQUEST', 'cannot move a folder into itself');
@@ -390,6 +393,44 @@ export async function moveNodes(
   }
   await markManifestDirty(ctx, userId);
   return moved;
+}
+
+/** Re-labels a subtree as family or personal (same pool, so no bytes or quota move). */
+async function changeSpace(
+  ctx: Ctx,
+  userId: string,
+  node: NodeRecord,
+  target: NodeRecord,
+): Promise<void> {
+  const DB = ctx.env.DB;
+  if (target.space === 'family') {
+    await DB.prepare(
+      `${subtree(1)} UPDATE nodes SET space = 'family', family_id = ?2 WHERE id IN (SELECT id FROM sub)`,
+    )
+      .bind(node.id, target.family_id)
+      .run();
+    return;
+  }
+  // Family → private: only for subtrees made entirely by the mover, so nobody's items disappear.
+  const foreign = await DB.prepare(
+    `${subtree(1)} SELECT COUNT(*) AS n FROM nodes WHERE id IN (SELECT id FROM sub) AND created_by != ?2`,
+  )
+    .bind(node.id, userId)
+    .first<{ n: number }>();
+  if ((foreign?.n ?? 0) > 0) {
+    throw new AppError('FORBIDDEN', 'the folder contains items made by other members', {
+      reason: 'FOREIGN_ITEMS',
+    });
+  }
+  await DB.batch([
+    DB.prepare(
+      `${subtree(1)} UPDATE shares SET revoked_at = ?3 WHERE created_by != ?2 AND revoked_at IS NULL
+         AND id IN (SELECT share_id FROM share_items WHERE node_id IN (SELECT id FROM sub))`,
+    ).bind(node.id, userId, ctx.now()),
+    DB.prepare(
+      `${subtree(1)} UPDATE nodes SET space = 'personal', family_id = NULL, owner_id = ?2 WHERE id IN (SELECT id FROM sub)`,
+    ).bind(node.id, userId),
+  ]);
 }
 
 /** "Buat salinan": new node, same blob (refcount+1), quota counted per node (SPEC §4). */

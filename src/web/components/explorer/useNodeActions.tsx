@@ -30,7 +30,8 @@ import {
   type NodeDto,
 } from '../../lib/files';
 import { useMe } from '../../lib/session';
-import { PromptDialog } from '../ui/Dialog';
+import { Button } from '../Button';
+import { Dialog, PromptDialog } from '../ui/Dialog';
 import type { MenuItem } from '../ui/Menu';
 import { toast } from '../ui/Toast';
 import { Details } from './Details';
@@ -129,12 +130,25 @@ export function useNodeActions(items: NodeDto[]) {
     [qc, refresh],
   );
 
+  const [spaceConfirm, setSpaceConfirm] = useState<{
+    ids: string[];
+    targetId: string;
+    to: string;
+  } | null>(null);
   const move = useCallback(
-    async (ids: string[], targetId: string) => {
+    async (ids: string[], targetId: string, confirmed = false) => {
       try {
-        await moveNodes(ids, targetId);
+        await moveNodes(ids, targetId, confirmed);
         toast(t.files.moved);
       } catch (e) {
+        const reason =
+          e instanceof ApiError
+            ? (e.data as { reason?: string; to?: string } | undefined)
+            : undefined;
+        if (reason?.reason === 'SPACE_CHANGE') {
+          setSpaceConfirm({ ids, targetId, to: reason.to ?? 'family' });
+          return;
+        }
         toast(errorText(e), { tone: 'error' });
       }
       void refresh();
@@ -223,9 +237,37 @@ export function useNodeActions(items: NodeDto[]) {
           void refresh();
         }}
       />
+      <Dialog
+        open={Boolean(spaceConfirm)}
+        title={t.family.move}
+        onClose={() => setSpaceConfirm(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setSpaceConfirm(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              onClick={() => {
+                const c = spaceConfirm!;
+                setSpaceConfirm(null);
+                void move(c.ids, c.targetId, true);
+              }}
+            >
+              {t.family.move}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm">
+          {spaceConfirm?.to === 'family'
+            ? t.family.spaceConfirmFamily
+            : t.family.spaceConfirmPrivate}
+        </p>
+      </Dialog>
       {moving && rootId && (
         <MoveDialog
           rootId={rootId}
+          familyRootId={me.data?.space.familyRootId ?? null}
           excludeIds={moving}
           onCancel={() => setMoving(null)}
           onMove={(target) => {

@@ -13,21 +13,15 @@ import { Billing, InvoicePage } from './pages/Billing';
 import { Admin } from './pages/Admin';
 import { Report } from './pages/Report';
 import { Legal } from './pages/Legal';
+import { FamilyPage, JoinFamily } from './pages/Family';
 import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
-import { Placeholder } from './pages/Placeholder';
 import { Settings } from './pages/Settings';
 import { SignIn } from './pages/SignIn';
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: AppShell });
 
-const page = (path: string, title: string, note = 'Segera hadir.') =>
-  createRoute({
-    getParentRoute: () => appRoute,
-    path,
-    component: () => <Placeholder title={title} note={note} />,
-  });
 
 const reportRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -64,6 +58,14 @@ const routeTree = rootRoute.addChildren([
   reportRoute,
   createRoute({
     getParentRoute: () => rootRoute,
+    path: '/keluarga/gabung/$token',
+    component: function Join() {
+      const { token } = useParams({ from: '/keluarga/gabung/$token' });
+      return <JoinFamily token={token} />;
+    },
+  }),
+  createRoute({
+    getParentRoute: () => rootRoute,
     path: '/kebijakan/$slug',
     component: function LegalPage() {
       const { slug } = useParams({ from: '/kebijakan/$slug' });
@@ -81,7 +83,7 @@ const routeTree = rootRoute.addChildren([
       path: '/drive/$folderId',
       component: DriveFolder,
     }),
-    page('/keluarga', 'Drive Keluarga'),
+    createRoute({ getParentRoute: () => appRoute, path: '/keluarga', component: FamilyPage }),
     createRoute({ getParentRoute: () => appRoute, path: '/dibagikan', component: Shared }),
     createRoute({ getParentRoute: () => appRoute, path: '/terbaru', component: Recent }),
     createRoute({ getParentRoute: () => appRoute, path: '/berbintang', component: Starred }),

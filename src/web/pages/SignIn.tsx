@@ -28,7 +28,10 @@ export function SignIn() {
 
   async function done() {
     await qc.invalidateQueries({ queryKey: meQueryKey });
-    await navigate({ to: '/drive' });
+    // Only same-app paths are accepted as a return target (no open redirect).
+    const next = new URLSearchParams(location.search).get('next');
+    if (next && /^\/(?!\/)[\w\-/]*$/.test(next)) await navigate({ to: next as '/' });
+    else await navigate({ to: '/drive' });
   }
 
   async function sendCode(e: FormEvent) {

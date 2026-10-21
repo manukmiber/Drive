@@ -71,9 +71,9 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Siklus tunggakan + dry-run hapus
 
 ## Fase 8 — Paket keluarga
-- [ ] Pool bersama + ruang Keluarga
-- [ ] Izin + matriks test
-- [ ] Undangan, keluar/dikeluarkan
+- [x] Pool bersama + ruang Keluarga
+- [x] Izin + matriks test
+- [x] Undangan, keluar/dikeluarkan
 
 ## Fase 9 — Kompres media
 - [ ] Kredit + ledger

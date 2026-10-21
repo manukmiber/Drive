@@ -32,6 +32,7 @@ import { archives } from './routes/archives';
 import { billing } from './routes/billing';
 import { payments } from './routes/payments';
 import { notifications } from './routes/notifications';
+import { family } from './routes/family';
 import type { AppBindings } from './types';
 
 export function createApp() {
@@ -77,6 +78,7 @@ export function createApp() {
   api.route('/archives', archives);
   api.route('/billing', billing);
   api.route('/notifications', notifications);
+  api.route('/family', family);
   api.route('/', nodes);
   api.all('*', (c) => c.json(errorBody('NOT_FOUND', 'no such endpoint'), 404));
   app.route('/api', api);

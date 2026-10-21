@@ -23,6 +23,7 @@ import {
   uniqueName,
   type NodeDto,
 } from './nodes';
+import { assertMemberCap } from './family';
 import { quotaFullError, releaseQuotaStmt, reserveQuota } from './quota';
 import { getActiveSubscription } from './storage';
 
@@ -87,7 +88,7 @@ async function prepare(ctx: Ctx, userId: string, input: InitInput) {
   const name = sanitizeName(input.name);
   if (!Number.isSafeInteger(input.size) || input.size < 0)
     throw new AppError('VALIDATION', 'invalid size');
-  const { node: parent } = await requireNode(ctx, userId, input.parentId, 'edit');
+  const { node: parent } = await requireNode(ctx, userId, input.parentId, 'add');
   if (parent.kind !== 'folder') throw new AppError('BAD_REQUEST', 'parent is not a folder');
   if (parent.trashed_at !== null) throw new AppError('CONFLICT', 'parent folder is in the trash');
 
@@ -199,6 +200,7 @@ export async function initUpload(ctx: Ctx, userId: string, input: InitInput): Pr
   const { name, parent, onConflict } = await prepare(ctx, userId, input);
   const partSize = partSizeFor(input.size);
   const totalParts = totalPartsFor(input.size, partSize);
+  await assertMemberCap(ctx, parent.pool_id, userId, input.size);
   if (!(await reserveQuota(ctx, parent.pool_id, input.size))) {
     throw await quotaFullError(ctx, parent.pool_id, input.size);
   }
@@ -476,6 +478,7 @@ export async function simpleUpload(
     });
   }
   const { name, parent, onConflict } = await prepare(ctx, userId, input);
+  await assertMemberCap(ctx, parent.pool_id, userId, input.size);
   if (!(await reserveQuota(ctx, parent.pool_id, input.size))) {
     throw await quotaFullError(ctx, parent.pool_id, input.size);
   }

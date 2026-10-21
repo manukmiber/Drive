@@ -36,7 +36,7 @@ interface AddonRow {
   active: number;
 }
 
-async function plan(ctx: Ctx, code: string): Promise<PlanRow> {
+export async function plan(ctx: Ctx, code: string): Promise<PlanRow> {
   const p = await ctx.env.DB.prepare('SELECT * FROM plans WHERE code = ?1')
     .bind(code)
     .first<PlanRow>();
@@ -53,7 +53,7 @@ export async function walletBalance(ctx: Ctx, userId: string): Promise<number> {
 }
 
 /** Statements that move `delta` (negative = debit) and append the ledger row. */
-function walletStmts(
+export function walletStmts(
   ctx: Ctx,
   userId: string,
   delta: number,
@@ -76,7 +76,7 @@ function walletStmts(
   ];
 }
 
-async function runMoneyBatch(ctx: Ctx, stmts: Stmt[], need: number): Promise<void> {
+export async function runMoneyBatch(ctx: Ctx, stmts: Stmt[], need: number): Promise<void> {
   try {
     await ctx.env.DB.batch(stmts);
   } catch (e) {
@@ -93,7 +93,7 @@ export interface InvoiceLine {
   amountIdr: number;
 }
 
-async function invoiceStmts(
+export async function invoiceStmts(
   ctx: Ctx,
   userId: string,
   lines: InvoiceLine[],
@@ -124,7 +124,7 @@ async function invoiceStmts(
 }
 
 /** Recomputes a pool's quota from its live subscription (plan + add-ons). */
-function poolLimitStmt(ctx: Ctx, poolId: string): Stmt {
+export function poolLimitStmt(ctx: Ctx, poolId: string): Stmt {
   return ctx.env.DB.prepare(
     `UPDATE storage_pools SET limit_bytes = COALESCE((
        SELECT p.storage_bytes + COALESCE((SELECT SUM(a.storage_bytes * sa.qty) FROM subscription_addons sa
@@ -137,7 +137,7 @@ function poolLimitStmt(ctx: Ctx, poolId: string): Stmt {
   ).bind(poolId, ctx.now());
 }
 
-async function afterInvoice(
+export async function afterInvoice(
   ctx: Ctx,
   userId: string,
   invoiceId: string,
@@ -188,6 +188,13 @@ async function ownPool(ctx: Ctx, userId: string): Promise<string> {
   )
     .bind(space.poolId)
     .first<{ owner_type: string; owner_id: string }>();
+  if (pool?.owner_type === 'family') {
+    // The family owner pays for (and adds space to) the shared pool; members can't.
+    const fam = await ctx.env.DB.prepare('SELECT owner_id FROM families WHERE id = ?1')
+      .bind(pool.owner_id)
+      .first<{ owner_id: string }>();
+    if (fam?.owner_id === userId) return space.poolId;
+  }
   if (pool?.owner_type !== 'user' || pool.owner_id !== userId) {
     // Family members use the family pool; only the family owner pays (Fase 8).
     throw new AppError('FORBIDDEN', 'storage is managed by your family plan', {
@@ -197,12 +204,12 @@ async function ownPool(ctx: Ctx, userId: string): Promise<string> {
   return space.poolId;
 }
 
-function wibAnchorDay(ms: number): number {
+export function wibAnchorDay(ms: number): number {
   return new Date(ms + 7 * 3600_000).getUTCDate();
 }
 
 /** Remaining fraction of the current period, for pro-rata charges (rounded up to whole rupiah). */
-function proRata(priceIdr: number, sub: SubRow, now: number): number {
+export function proRata(priceIdr: number, sub: SubRow, now: number): number {
   const total = sub.period_end - sub.period_start;
   const left = Math.max(0, sub.period_end - now);
   return total > 0 ? Math.ceil((priceIdr * left) / total) : priceIdr;
@@ -215,9 +222,30 @@ export type PlanChange =
 /** Buys or changes the personal plan, paid from Saldo (SPEC §12.4). */
 export async function choosePlan(ctx: Ctx, userId: string, planCode: string): Promise<PlanChange> {
   const p = await plan(ctx, planCode);
-  if (p.kind !== 'personal')
-    throw new AppError('BAD_REQUEST', 'family plans are bought from Keluarga');
+  if (p.kind !== 'personal') {
+    // Family plans: the family pool (creating the family on first purchase) — services/family.ts.
+    const { chooseFamilyPlan } = await import('./family');
+    return chooseFamilyPlan(ctx, userId, p);
+  }
+  const inFamily = await ctx.env.DB.prepare('SELECT role FROM family_members WHERE user_id = ?1')
+    .bind(userId)
+    .first<{ role: string }>();
+  if (inFamily) {
+    throw new AppError('CONFLICT', 'storage is managed by your family plan', {
+      reason: inFamily.role === 'owner' ? 'FAMILY_OWNER' : 'FAMILY_MEMBER',
+    });
+  }
   const poolId = await ownPool(ctx, userId);
+  return changePlanForPool(ctx, userId, poolId, p);
+}
+
+/** Subscribe / reactivate / upgrade / schedule a downgrade on an existing pool. */
+export async function changePlanForPool(
+  ctx: Ctx,
+  userId: string,
+  poolId: string,
+  p: PlanRow,
+): Promise<PlanChange> {
   const sub = await currentSubscription(ctx, poolId);
   const now = ctx.now();
   const DB = ctx.env.DB;
@@ -414,7 +442,7 @@ export async function buyCompressPack(
 }
 
 /** Monthly compress quota of a plan: granted per period, expires at period end (SPEC §11). */
-async function grantPlanCredits(
+export async function grantPlanCredits(
   ctx: Ctx,
   userId: string,
   p: Pick<PlanRow, 'compress_quota'>,
@@ -817,7 +845,14 @@ export async function runDunning(ctx: Ctx): Promise<DunningReport> {
             : days >= d.readonly_after_days
               ? 'readonly'
               : 'grace';
-      await notify(ctx, sub.payer_user_id, 'dunning', { stage, deleteAt, days });
+      // Family pools: every member is told, not just the payer (SPEC §9.3).
+      const { results: members } = await DB.prepare(
+        `SELECT m.user_id FROM family_members m JOIN families f ON f.id = m.family_id WHERE f.pool_id = ?1`,
+      )
+        .bind(sub.pool_id)
+        .all<{ user_id: string }>();
+      const recipients = new Set([sub.payer_user_id, ...members.map((m) => m.user_id)]);
+      for (const u of recipients) await notify(ctx, u, 'dunning', { stage, deleteAt, days });
       report.notified++;
     }
   }

@@ -131,10 +131,18 @@ export const nodes = new Hono<AppBindings>()
       return c.json({ node });
     },
   )
-  .post('/nodes/move', validate('json', ids.extend({ targetId: id })), async (c) => {
-    const b = c.req.valid('json');
-    return c.json({ nodes: await moveNodes(c.get('ctx'), c.get('user')!.id, b.ids, b.targetId) });
-  })
+  .post(
+    '/nodes/move',
+    validate('json', ids.extend({ targetId: id, confirmSpaceChange: z.boolean().optional() })),
+    async (c) => {
+      const b = c.req.valid('json');
+      return c.json({
+        nodes: await moveNodes(c.get('ctx'), c.get('user')!.id, b.ids, b.targetId, {
+          confirmSpaceChange: b.confirmSpaceChange ?? false,
+        }),
+      });
+    },
+  )
   .post('/nodes/:id/copy', validate('json', z.object({ targetId: id.optional() })), async (c) => {
     const node = await copyFile(
       c.get('ctx'),
