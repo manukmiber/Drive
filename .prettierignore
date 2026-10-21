@@ -1,0 +1,8 @@
+node_modules
+dist
+.dev
+.wrangler
+coverage
+migrations/meta
+docs/SPEC.md
+package-lock.json

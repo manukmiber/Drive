@@ -1,0 +1,567 @@
+// Zeiko Cloud Storage — Wrangler config.
+// Top level = local dev reference only (dev runs on Node shims, ADR-001; never deployed).
+// Bindings are not inherited by environments, so staging/production repeat them.
+// Secrets (wrangler secret put …): BETTER_AUTH_SECRET, DOWNLOAD_SECRET, SHARE_LINK_SECRET,
+//   SHARE_LINK_SECRET_PREV (rotation only), PREVIEW_SECRET, CONTACTS_ENC_KEY, IP_HASH_SECRET,
+//   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
+//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY.
+// REPLACE_WITH_* ids are filled when the owner approves creating the remote resources.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "zeiko",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "./dist/web",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "triggers": {
+    "crons": [
+      "5 17 * * *",
+      "0 * * * *",
+      "0 19 * * *"
+    ]
+  },
+  "vars": {
+    "APP_ENV": "dev",
+    "APP_ORIGIN": "http://localhost:5173",
+    "USERCONTENT_ORIGIN": "http://uc.localhost:8790",
+    "EMAIL_FROM": "no-reply@zeiko.biz.id",
+    "ADAPTER_EMAIL": "mock",
+    "ADAPTER_PAYMENT": "mock",
+    "ADAPTER_SCANNER": "mock",
+    "ADAPTER_CSAM": "mock"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "zeiko-dev",
+      "database_id": "local-dev",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "zeiko-dev"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CONFIG_KV",
+      "id": "local-dev"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "SCAN_QUEUE",
+        "queue": "zeiko-scan-dev"
+      },
+      {
+        "binding": "ARCHIVE_QUEUE",
+        "queue": "zeiko-archive-dev"
+      },
+      {
+        "binding": "COMPRESS_QUEUE",
+        "queue": "zeiko-compress-dev"
+      },
+      {
+        "binding": "NOTIFY_QUEUE",
+        "queue": "zeiko-notify-dev"
+      },
+      {
+        "binding": "CLEANUP_QUEUE",
+        "queue": "zeiko-cleanup-dev"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "zeiko-scan-dev",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "zeiko-dlq-dev"
+      },
+      {
+        "queue": "zeiko-archive-dev",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "zeiko-dlq-dev"
+      },
+      {
+        "queue": "zeiko-compress-dev",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "zeiko-dlq-dev"
+      },
+      {
+        "queue": "zeiko-notify-dev",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "zeiko-dlq-dev"
+      },
+      {
+        "queue": "zeiko-cleanup-dev",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "zeiko-dlq-dev"
+      }
+    ]
+  },
+  "analytics_engine_datasets": [
+    {
+      "binding": "ANALYTICS",
+      "dataset": "zeiko_events_dev"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "RL_AUTH",
+      "namespace_id": "901",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_UPLOAD",
+      "namespace_id": "902",
+      "simple": {
+        "limit": 120,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_SHARE_CREATE",
+      "namespace_id": "903",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_SHARE_SEND",
+      "namespace_id": "904",
+      "simple": {
+        "limit": 10,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_DOWNLOAD",
+      "namespace_id": "905",
+      "simple": {
+        "limit": 600,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_AD_BOOK",
+      "namespace_id": "906",
+      "simple": {
+        "limit": 20,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_REPORT",
+      "namespace_id": "907",
+      "simple": {
+        "limit": 5,
+        "period": 60
+      }
+    }
+  ],
+  "images": {
+    "binding": "IMAGES"
+  },
+  "media": {
+    "binding": "MEDIA"
+  },
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": [
+        "no-reply@zeiko.biz.id"
+      ]
+    }
+  ],
+  "env": {
+    "staging": {
+      "routes": [
+        {
+          "pattern": "staging.zeiko.biz.id",
+          "custom_domain": true
+        },
+        {
+          "pattern": "uc-staging.zeiko.biz.id",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_ENV": "staging",
+        "APP_ORIGIN": "https://staging.zeiko.biz.id",
+        "USERCONTENT_ORIGIN": "https://uc-staging.zeiko.biz.id",
+        "EMAIL_FROM": "no-reply@zeiko.biz.id",
+        "ADAPTER_EMAIL": "cloudflare",
+        "ADAPTER_PAYMENT": "mock",
+        "ADAPTER_SCANNER": "mock",
+        "ADAPTER_CSAM": "mock"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "zeiko-staging",
+          "database_id": "REPLACE_WITH_STAGING_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "BUCKET",
+          "bucket_name": "zeiko-staging"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "CONFIG_KV",
+          "id": "REPLACE_WITH_STAGING_KV_ID"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "SCAN_QUEUE",
+            "queue": "zeiko-scan-staging"
+          },
+          {
+            "binding": "ARCHIVE_QUEUE",
+            "queue": "zeiko-archive-staging"
+          },
+          {
+            "binding": "COMPRESS_QUEUE",
+            "queue": "zeiko-compress-staging"
+          },
+          {
+            "binding": "NOTIFY_QUEUE",
+            "queue": "zeiko-notify-staging"
+          },
+          {
+            "binding": "CLEANUP_QUEUE",
+            "queue": "zeiko-cleanup-staging"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "zeiko-scan-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-staging"
+          },
+          {
+            "queue": "zeiko-archive-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-staging"
+          },
+          {
+            "queue": "zeiko-compress-staging",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-staging"
+          },
+          {
+            "queue": "zeiko-notify-staging",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-staging"
+          },
+          {
+            "queue": "zeiko-cleanup-staging",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-staging"
+          }
+        ]
+      },
+      "analytics_engine_datasets": [
+        {
+          "binding": "ANALYTICS",
+          "dataset": "zeiko_events_staging"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "RL_AUTH",
+          "namespace_id": "1001",
+          "simple": {
+            "limit": 10,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_UPLOAD",
+          "namespace_id": "1002",
+          "simple": {
+            "limit": 120,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_SHARE_CREATE",
+          "namespace_id": "1003",
+          "simple": {
+            "limit": 30,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_SHARE_SEND",
+          "namespace_id": "1004",
+          "simple": {
+            "limit": 10,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_DOWNLOAD",
+          "namespace_id": "1005",
+          "simple": {
+            "limit": 600,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_AD_BOOK",
+          "namespace_id": "1006",
+          "simple": {
+            "limit": 20,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_REPORT",
+          "namespace_id": "1007",
+          "simple": {
+            "limit": 5,
+            "period": 60
+          }
+        }
+      ],
+      "images": {
+        "binding": "IMAGES"
+      },
+      "media": {
+        "binding": "MEDIA"
+      },
+      "send_email": [
+        {
+          "name": "EMAIL",
+          "allowed_sender_addresses": [
+            "no-reply@zeiko.biz.id"
+          ]
+        }
+      ]
+    },
+    "production": {
+      "routes": [
+        {
+          "pattern": "zeiko.biz.id",
+          "custom_domain": true
+        },
+        {
+          "pattern": "uc.zeiko.biz.id",
+          "custom_domain": true
+        }
+      ],
+      "vars": {
+        "APP_ENV": "production",
+        "APP_ORIGIN": "https://zeiko.biz.id",
+        "USERCONTENT_ORIGIN": "https://uc.zeiko.biz.id",
+        "EMAIL_FROM": "no-reply@zeiko.biz.id",
+        "ADAPTER_EMAIL": "cloudflare",
+        "ADAPTER_PAYMENT": "mock",
+        "ADAPTER_SCANNER": "mock",
+        "ADAPTER_CSAM": "mock"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "zeiko-production",
+          "database_id": "REPLACE_WITH_PRODUCTION_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "BUCKET",
+          "bucket_name": "zeiko-production"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "CONFIG_KV",
+          "id": "REPLACE_WITH_PRODUCTION_KV_ID"
+        }
+      ],
+      "queues": {
+        "producers": [
+          {
+            "binding": "SCAN_QUEUE",
+            "queue": "zeiko-scan-production"
+          },
+          {
+            "binding": "ARCHIVE_QUEUE",
+            "queue": "zeiko-archive-production"
+          },
+          {
+            "binding": "COMPRESS_QUEUE",
+            "queue": "zeiko-compress-production"
+          },
+          {
+            "binding": "NOTIFY_QUEUE",
+            "queue": "zeiko-notify-production"
+          },
+          {
+            "binding": "CLEANUP_QUEUE",
+            "queue": "zeiko-cleanup-production"
+          }
+        ],
+        "consumers": [
+          {
+            "queue": "zeiko-scan-production",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-production"
+          },
+          {
+            "queue": "zeiko-archive-production",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-production"
+          },
+          {
+            "queue": "zeiko-compress-production",
+            "max_batch_size": 1,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-production"
+          },
+          {
+            "queue": "zeiko-notify-production",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-production"
+          },
+          {
+            "queue": "zeiko-cleanup-production",
+            "max_batch_size": 10,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "zeiko-dlq-production"
+          }
+        ]
+      },
+      "analytics_engine_datasets": [
+        {
+          "binding": "ANALYTICS",
+          "dataset": "zeiko_events_production"
+        }
+      ],
+      "ratelimits": [
+        {
+          "name": "RL_AUTH",
+          "namespace_id": "2001",
+          "simple": {
+            "limit": 10,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_UPLOAD",
+          "namespace_id": "2002",
+          "simple": {
+            "limit": 120,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_SHARE_CREATE",
+          "namespace_id": "2003",
+          "simple": {
+            "limit": 30,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_SHARE_SEND",
+          "namespace_id": "2004",
+          "simple": {
+            "limit": 10,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_DOWNLOAD",
+          "namespace_id": "2005",
+          "simple": {
+            "limit": 600,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_AD_BOOK",
+          "namespace_id": "2006",
+          "simple": {
+            "limit": 20,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_REPORT",
+          "namespace_id": "2007",
+          "simple": {
+            "limit": 5,
+            "period": 60
+          }
+        }
+      ],
+      "images": {
+        "binding": "IMAGES"
+      },
+      "media": {
+        "binding": "MEDIA"
+      },
+      "send_email": [
+        {
+          "name": "EMAIL",
+          "allowed_sender_addresses": [
+            "no-reply@zeiko.biz.id"
+          ]
+        }
+      ]
+    }
+  }
+}

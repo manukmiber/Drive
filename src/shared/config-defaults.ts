@@ -1,0 +1,206 @@
+// Registry of every business number (SPEC §0.2: nothing hard-coded). Each top-level key is one
+// row in `app_config` (value_json). Missing/invalid rows fall back to these defaults.
+// Lampiran B values are the cost assumptions from the pricing spreadsheet.
+import { z } from 'zod';
+import { GIB, MIB } from './constants';
+
+const int = () => z.number().int();
+const nonNeg = () => z.number().int().nonnegative();
+
+export const configSchema = z.object({
+  // ── Lampiran B: cost assumptions ──
+  usd_idr_rate: z.number().positive().default(18_000),
+  r2_storage_usd_per_gb_month: z.number().nonnegative().default(0.015),
+  image_transform_usd_per_1000: z.number().nonnegative().default(0.5),
+  video_transform_usd_per_1000: z.number().nonnegative().default(0.5),
+  free_transforms_per_month: nonNeg().default(5_000),
+  usage_scenarios_pct: z.array(z.number().nonnegative()).default([20, 50, 100]),
+  // Other component tariffs (USD), filled from docs for the admin cost dashboard (SPEC §13.1).
+  component_tariffs_usd: z
+    .object({
+      r2_class_a_per_million: z.number().nonnegative(),
+      r2_class_b_per_million: z.number().nonnegative(),
+      workers_requests_per_million: z.number().nonnegative(),
+      workers_cpu_ms_per_million: z.number().nonnegative(),
+      d1_rows_read_per_million: z.number().nonnegative(),
+      d1_rows_written_per_million: z.number().nonnegative(),
+      container_vcpu_second: z.number().nonnegative(),
+      container_gib_second: z.number().nonnegative(),
+    })
+    .default({
+      r2_class_a_per_million: 4.5,
+      r2_class_b_per_million: 0.36,
+      workers_requests_per_million: 0.3,
+      workers_cpu_ms_per_million: 0.02,
+      d1_rows_read_per_million: 0.001,
+      d1_rows_written_per_million: 1,
+      container_vcpu_second: 0.00002,
+      container_gib_second: 0.0000025,
+    }),
+
+  // ── Upload / storage ──
+  upload_part_concurrency: int().min(1).max(16).default(4),
+  upload_max_parallel_files: int().min(1).max(10).default(3),
+  upload_expiry_hours: int().min(1).max(160).default(144),
+  trash_counts_toward_quota: z.boolean().default(true),
+  trash_retention_days: int().min(1).default(30),
+  manifest_rebuild_min_interval_minutes: int().min(1).default(60),
+  quota_reconcile_alert_bytes: nonNeg().default(0),
+
+  // ── Download ──
+  download_link_ttl_seconds: int()
+    .min(60)
+    .default(6 * 3600),
+  download_edge_cache: z.boolean().default(false),
+  download_edge_cache_max_bytes: nonNeg().default(256 * MIB),
+  preview_link_ttl_seconds: int()
+    .min(30)
+    .default(15 * 60),
+  preview_text_max_bytes: nonNeg().default(1 * MIB),
+
+  // ── Share ──
+  share_default_expiry_days: int().min(0).default(30),
+  share_expiry_choices_hours: z.array(nonNeg()).default([1, 24, 168, 720, 0]),
+  share_password_cookie_minutes: int().min(1).default(10),
+  share_download_dedupe_minutes: int().min(1).default(10),
+  share_email_max_recipients: int().min(1).default(5),
+  share_email_daily_limit: int().min(0).default(20),
+  share_message_max_chars: int().min(1).default(500),
+
+  // ── Archive ──
+  zip_deflate_stream_max_bytes: nonNeg().default(2 * GIB),
+  zstd_levels: z
+    .object({ fast: int(), normal: int(), max: int() })
+    .default({ fast: 1, normal: 3, max: 12 }),
+  archive_link_ttl_hours: int().min(1).default(24),
+  archive_max_running_jobs_per_user: int().min(1).default(1),
+
+  // ── Scan ──
+  scan_max_bytes: nonNeg().default(512 * MIB),
+  scan_max_attempts: int().min(1).default(3),
+
+  // ── Billing ──
+  min_topup_idr: nonNeg().default(10_000),
+  payment_methods: z
+    .array(
+      z.object({
+        code: z.string(),
+        label: z.string(),
+        min_idr: nonNeg(),
+        fee_flat_idr: nonNeg(),
+        fee_pct: z.number().nonnegative(),
+        active: z.boolean(),
+      }),
+    )
+    .default([
+      { code: 'qris', label: 'QRIS', min_idr: 10_000, fee_flat_idr: 0, fee_pct: 0.7, active: true },
+      {
+        code: 'va',
+        label: 'Virtual Account',
+        min_idr: 50_000,
+        fee_flat_idr: 4_000,
+        fee_pct: 0,
+        active: true,
+      },
+    ]),
+  tax_rate_pct: z.number().nonnegative().default(0),
+  billing_reminder_days_before: z.array(nonNeg()).default([3, 1]),
+  dunning: z
+    .object({
+      readonly_after_days: nonNeg(),
+      suspend_after_days: nonNeg(),
+      delete_after_days: nonNeg(),
+      notify_days_after: z.array(nonNeg()),
+    })
+    .default({
+      readonly_after_days: 3,
+      suspend_after_days: 30,
+      delete_after_days: 37,
+      notify_days_after: [0, 3, 14, 25, 29, 36],
+    }),
+  upgrade_ratio_hint_pct: int().min(1).max(100).default(90),
+
+  // ── Family ──
+  family_join_convert_prorata: z.boolean().default(true),
+  family_switch_cooldown_months: nonNeg().default(12),
+  family_leave_readonly_days: nonNeg().default(30),
+  family_invite_ttl_days: int().min(1).default(7),
+
+  // ── Compress ──
+  compress_pack_ttl_days: int().min(1).default(90),
+  long_video_credits_per_minute: int().min(1).default(1),
+  images_binding_max_input_bytes: nonNeg().default(20_000_000),
+  media_binding_max_input_bytes: nonNeg().default(99_000_000),
+  media_binding_max_seconds: int().min(1).default(60),
+  standalone_compress_max_bytes: nonNeg().default(2 * GIB),
+
+  // ── Ads ──
+  ad_inventory_days_ahead: int().min(1).default(14),
+  ad_slots_by_tier: z
+    .object({
+      tier1: nonNeg(),
+      tier2: nonNeg(),
+      tier3: nonNeg(),
+      province: nonNeg(),
+      national: nonNeg(),
+    })
+    .default({ tier1: 8, tier2: 4, tier3: 4, province: 6, national: 3 }),
+  ad_hold_minutes: int().min(1).default(15),
+  ad_student_discount_pct: int().min(0).max(100).default(50),
+  ad_candidates_cache_seconds: int().min(1).default(60),
+  ad_frequency_cap_per_session: int().min(1).default(3),
+  ad_moderation_sla_hours: int().min(1).default(24),
+  ad_refund_on_suspend: z.object({ severe: z.boolean(), other: z.boolean() }).default({
+    severe: false,
+    other: true,
+  }),
+  ad_image_max_bytes: nonNeg().default(200 * 1024),
+
+  // ── Moderation / privacy ──
+  takedown_sla_hours: z.object({ urgent: int().min(1), normal: int().min(1) }).default({
+    urgent: 4,
+    normal: 24,
+  }),
+  log_retention_days: int().min(1).default(90),
+  account_delete_wait_days: int().min(0).default(7),
+
+  // ── Feature flags ──
+  features: z
+    .object({
+      whatsapp_cloud_api: z.boolean(),
+      telegram_bot: z.boolean(),
+      email_share: z.boolean(),
+      csam_scan: z.boolean(),
+      virustotal_hash_lookup: z.boolean(),
+      ads: z.boolean(),
+    })
+    .default({
+      whatsapp_cloud_api: false,
+      telegram_bot: true,
+      email_share: true,
+      csam_scan: false,
+      virustotal_hash_lookup: false,
+      ads: true,
+    }),
+});
+
+export type AppConfig = z.infer<typeof configSchema>;
+export type ConfigKey = keyof AppConfig;
+
+export const CONFIG_DEFAULTS: AppConfig = configSchema.parse({});
+
+/** Keys exposed to unauthenticated clients (no cost data, no internals). */
+export const PUBLIC_CONFIG_KEYS = [
+  'upload_part_concurrency',
+  'upload_max_parallel_files',
+  'share_default_expiry_days',
+  'share_expiry_choices_hours',
+  'share_message_max_chars',
+  'share_email_max_recipients',
+  'zstd_levels',
+  'zip_deflate_stream_max_bytes',
+  'min_topup_idr',
+  'upgrade_ratio_hint_pct',
+  'ad_frequency_cap_per_session',
+  'features',
+] as const satisfies readonly ConfigKey[];

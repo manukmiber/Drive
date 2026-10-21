@@ -1,0 +1,63 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-800: #3730a3;
+}
+
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #f6f7fb;
+  --fg: #111827;
+  --fg-muted: #4b5563;
+  --border: #e5e7eb;
+  --card: #ffffff;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --bg: #0f1117;
+    --bg-subtle: #161925;
+    --fg: #e5e7eb;
+    --fg-muted: #9ca3af;
+    --border: #262a36;
+    --card: #161925;
+    color-scheme: dark;
+  }
+}
+
+:root.dark {
+  --bg: #0f1117;
+  --bg-subtle: #161925;
+  --fg: #e5e7eb;
+  --fg-muted: #9ca3af;
+  --border: #262a36;
+  --card: #161925;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand-500);
+  outline-offset: 2px;
+}
