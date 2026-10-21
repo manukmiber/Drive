@@ -1,5 +1,13 @@
-import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router';
+import {
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  useParams,
+} from '@tanstack/react-router';
 import { AppShell } from './components/AppShell';
+import { Drive } from './pages/Drive';
+import { Trash } from './pages/Trash';
 import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
 import { Placeholder } from './pages/Placeholder';
@@ -16,16 +24,26 @@ const page = (path: string, title: string, note = 'Segera hadir.') =>
     component: () => <Placeholder title={title} note={note} />,
   });
 
+function DriveFolder() {
+  const { folderId } = useParams({ from: '/app/drive/$folderId' });
+  return <Drive key={folderId} folderId={folderId} />;
+}
+
 const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/', component: Landing }),
   createRoute({ getParentRoute: () => rootRoute, path: '/masuk', component: SignIn }),
   appRoute.addChildren([
-    page('/drive', 'Drive Saya', 'File explorer hadir di Fase 2.'),
+    createRoute({ getParentRoute: () => appRoute, path: '/drive', component: () => <Drive key="root" /> }),
+    createRoute({
+      getParentRoute: () => appRoute,
+      path: '/drive/$folderId',
+      component: DriveFolder,
+    }),
     page('/keluarga', 'Drive Keluarga'),
     page('/dibagikan', 'Dibagikan'),
     page('/terbaru', 'Terbaru'),
     page('/berbintang', 'Berbintang'),
-    page('/sampah', 'Sampah'),
+    createRoute({ getParentRoute: () => appRoute, path: '/sampah', component: Trash }),
     page('/paket', 'Paket & tagihan'),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),
   ]),

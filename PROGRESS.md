@@ -26,17 +26,23 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Halaman Masuk, Profil, Pengaturan
 
 ## Fase 2 — Upload & download inti
-- [ ] Reservasi kuota atomik + test konkurensi
-- [ ] API multipart (init/part/status/complete/abort) + simple upload
-- [ ] Cron bersihkan upload kedaluwarsa
-- [ ] Download bertanda tangan (HEAD, Range, ETag, If-Range, Content-Disposition)
-- [ ] Explorer dasar: folder, CRUD, grid/list, Sampah
-- [ ] Panel upload klien (paralel, retry, resume IndexedDB, thumbnail)
+- [x] Reservasi kuota atomik + test konkurensi
+- [x] API multipart (init/part/status/complete/abort) + simple upload
+- [x] Cron bersihkan upload kedaluwarsa
+- [x] Download bertanda tangan (HEAD, Range, ETag, If-Range, Content-Disposition)
+- [x] Explorer dasar: folder, CRUD, grid/list, Sampah
+- [x] Panel upload klien (paralel, retry, resume IndexedDB, thumbnail) — **belum diuji di browser sungguhan**
+
+### Sisa Fase 2 / catatan untuk sesi berikutnya
+- Uji manual di Chrome desktop + Android: upload 5 GB, jeda/lanjut, refresh, putus jaringan, IDM/aria2c 8 koneksi (DoD §5.4).
+- Thumbnail saat ini disajikan dari APP_ORIGIN (WebP tervalidasi + nosniff); pindahkan ke USERCONTENT_ORIGIN bertanda tangan di Fase 4.
+- Cache edge (Cache API) untuk download belum dibuat (config default OFF, ADR-007).
+- Satu warning lint `react-hooks/exhaustive-deps` di `Drive.tsx` (dependensi tipe saja).
 
 ## Fase 3 — Pipeline scan
-- [ ] Queue `scan` + adapter Scanner (mock + container)
-- [ ] SHA-256 + CRC32 tersimpan, blocklist hash
-- [ ] Infected → hapus, kuota kembali, notifikasi
+- [~] Queue `scan` + adapter Scanner (mock **selesai**; Container `scanner`/ClamAV belum)
+- [x] SHA-256 + CRC32 tersimpan, blocklist hash
+- [x] Infected → hapus, kuota kembali, notifikasi (baris `notifications`; kirim email/Telegram di Fase 5)
 
 ## Fase 4 — Explorer lengkap
 - [ ] Pencarian FTS5

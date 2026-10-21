@@ -17,7 +17,10 @@ import { t } from '../../shared/strings.id';
 import { authClient } from '../lib/auth-client';
 import { meQueryKey, useMe } from '../lib/session';
 import { Logo } from './Logo';
+import { NewMenu } from './NewMenu';
 import { StorageMeter } from './StorageMeter';
+import { UploadPanel } from './UploadPanel';
+import { Toaster } from './ui/Toast';
 
 interface NavItem {
   to: string;
@@ -78,6 +81,7 @@ export function AppShell() {
         <Link to="/drive" className="px-2">
           <Logo />
         </Link>
+        <NewMenu variant="sidebar" />
         <nav className="flex flex-col gap-1" aria-label="Navigasi utama">
           {nav.map((n) => (
             <Link key={n.to} to={n.to} className={navLink}>
@@ -133,6 +137,9 @@ export function AppShell() {
         </main>
       </div>
 
+      <NewMenu variant="fab" />
+      <UploadPanel />
+      <Toaster />
       <nav
         className="fixed inset-x-0 bottom-0 grid grid-cols-4 border-t border-[var(--border)] bg-[var(--card)] pb-[env(safe-area-inset-bottom)] md:hidden"
         aria-label="Navigasi bawah"
