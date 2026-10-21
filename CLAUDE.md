@@ -22,6 +22,10 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
 | Deploy staging | `npm run deploy:staging` (butuh izin pemilik untuk pertama kali) |
 | Migrasi remote | `npm run db:migrate:staging` |
 
+Buka app lewat **http://localhost:5173** (bukan IP LAN): cookie `__Host-` butuh origin aman, dan
+browser hanya menganggap `localhost` aman tanpa HTTPS. Akun demo: `demo@zeiko.local` (Plus),
+`admin@zeiko.local` (admin, Max), `baru@zeiko.local` (tanpa paket); kode OTP muncul di log API.
+
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.
 

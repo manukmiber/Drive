@@ -119,3 +119,10 @@ Docs Cloudflare dicek 2026-10-21 lewat MCP dokumentasi Cloudflare.
   $0,36/juta, Workers $0,30/juta request, CPU $0,02/juta ms, D1 baca $0,001/juta baris, tulis $1/juta
   baris, Containers per vCPU-detik/GiB-detik). Nilai D1 terverifikasi di docs 2026-10-21; sisanya
   wajib dicek ulang di docs sebelum dashboard Fase 11 dipakai untuk keputusan bisnis.
+
+## ADR-019 — 2FA staf di level akun (sementara)
+- **Konteks:** Plugin `twoFactor` Better Auth hanya mencegat sign-in kredensial (email/username/phone),
+  bukan email OTP atau passkey. Akun Zeiko tanpa password.
+- **Keputusan:** Route admin mensyaratkan role staf **dan** akun punya TOTP aktif atau minimal satu
+  passkey (`requireStaff`). TOTP dikelola tanpa password (`allowPasswordless`). Step-up per sesi
+  (verifikasi TOTP/passkey ulang sebelum aksi sensitif) dibangun di Fase 11 bersama panel admin.

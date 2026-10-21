@@ -36,3 +36,31 @@ export interface Catalog {
     features: Record<string, boolean>;
   } & Record<string, unknown>;
 }
+
+export interface Me {
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: 'user' | 'moderator' | 'admin';
+    twoFactorEnabled: boolean;
+    image: string | null;
+    adCityCode: string | null;
+  };
+  hasPasskey: boolean;
+  space: {
+    poolId: string;
+    personalRootId: string;
+    familyId: string | null;
+    familyRootId: string | null;
+  };
+  storage: { limitBytes: number; usedBytes: number; reservedBytes: number };
+  subscription: { planCode: string; planName: string; status: string; periodEnd: number } | null;
+  csrfToken: string;
+}
+
+export interface PublicAuth {
+  google: boolean;
+  turnstileSiteKey: string | null;
+  devMailbox: boolean;
+}

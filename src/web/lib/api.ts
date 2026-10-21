@@ -10,8 +10,20 @@ export class ApiError extends Error {
   }
 }
 
+const CSRF_COOKIE = '__Host-zk.csrf';
+
+function csrfToken(): string | null {
+  const m = new RegExp(`(?:^|; )${CSRF_COOKIE.replace('.', '\\.')}=([^;]+)`).exec(document.cookie);
+  return m ? decodeURIComponent(m[1]!) : null;
+}
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (method !== 'GET' && method !== 'HEAD') {
+    const token = csrfToken();
+    if (token) headers.set('x-csrf-token', token);
+  }
   if (init.body && typeof init.body === 'string' && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
@@ -34,3 +46,9 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const postJson = <T>(path: string, data: unknown) =>
   api<T>(path, { method: 'POST', body: JSON.stringify(data) });
+
+export const sendJson = <T>(
+  method: 'PATCH' | 'PUT' | 'DELETE' | 'POST',
+  path: string,
+  data?: unknown,
+) => api<T>(path, { method, ...(data === undefined ? {} : { body: JSON.stringify(data) }) });

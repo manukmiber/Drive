@@ -17,13 +17,13 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] CI GitHub Actions
 
 ## Fase 1 — Auth & akun
-- [ ] Better Auth: email OTP / magic link
-- [ ] Google OAuth
-- [ ] Passkey
-- [ ] TOTP + admin wajib 2FA
-- [ ] Cookie `__Host-`, cek Origin + CSRF
-- [ ] Storage pool pribadi saat daftar
-- [ ] Halaman Masuk, Profil, Pengaturan
+- [x] Better Auth: email OTP (magic link tidak dipakai; OTP cukup)
+- [x] Google OAuth (aktif otomatis kalau `GOOGLE_CLIENT_ID/SECRET` diisi — belum dites dengan kredensial asli)
+- [x] Passkey (daftar/hapus di Pengaturan, masuk dengan passkey — perlu dites manual di browser)
+- [x] TOTP + admin wajib 2FA (level akun, ADR-019)
+- [x] Cookie `__Host-`, cek Origin + CSRF
+- [x] Storage pool pribadi saat daftar
+- [x] Halaman Masuk, Profil, Pengaturan
 
 ## Fase 2 — Upload & download inti
 - [ ] Reservasi kuota atomik + test konkurensi
