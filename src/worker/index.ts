@@ -1,4 +1,6 @@
 import { createApp } from './app';
+import './cron/tasks';
+import './queues/handlers';
 import { runScheduled } from './cron';
 import type { Env } from './env';
 import { handleQueue } from './queues';

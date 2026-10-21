@@ -403,6 +403,7 @@ CREATE TABLE uploads (
   total_parts     INTEGER NOT NULL,
   reserved_bytes  INTEGER NOT NULL CHECK (reserved_bytes >= 0),
   member_user_id  TEXT,                         -- family member whose cap was reserved
+  on_conflict     TEXT NOT NULL DEFAULT 'rename', -- rename | replace (name clash at complete)
   status          TEXT NOT NULL,                -- active | completed | aborted | expired
   expires_at      INTEGER NOT NULL,
   created_at      INTEGER NOT NULL,

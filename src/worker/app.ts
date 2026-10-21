@@ -16,9 +16,12 @@ import { errorBody, onError } from './middleware/errors';
 import { admin } from './routes/admin';
 import { catalog } from './routes/catalog';
 import { dev } from './routes/dev';
+import { download } from './routes/download';
 import { health } from './routes/health';
 import { me } from './routes/me';
+import { nodes } from './routes/nodes';
 import { publicAuth } from './routes/public-auth';
+import { uploads } from './routes/uploads';
 import type { AppBindings } from './types';
 
 export function createApp() {
@@ -54,9 +57,12 @@ export function createApp() {
   api.route('/public', publicAuth);
   api.route('/me', me);
   api.route('/admin', admin);
+  api.route('/uploads', uploads);
+  api.route('/', nodes);
   api.all('*', (c) => c.json(errorBody('NOT_FOUND', 'no such endpoint'), 404));
   app.route('/api', api);
 
+  app.route('/d', download);
   app.route('/__dev', dev);
 
   // Everything else is the SPA / static assets (run_worker_first, see wrangler.jsonc).

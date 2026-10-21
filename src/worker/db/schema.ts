@@ -383,6 +383,9 @@ export const uploads = sqliteTable('uploads', {
   totalParts: integer('total_parts').notNull(),
   reservedBytes: integer('reserved_bytes').notNull(),
   memberUserId: text('member_user_id'),
+  onConflict: text('on_conflict', { enum: ['rename', 'replace'] })
+    .notNull()
+    .default('rename'),
   status: text('status', { enum: UPLOAD_STATUSES }).notNull(),
   expiresAt: ms('expires_at').notNull(),
   createdAt: ms('created_at').notNull(),

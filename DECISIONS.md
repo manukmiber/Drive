@@ -126,3 +126,21 @@ Docs Cloudflare dicek 2026-10-21 lewat MCP dokumentasi Cloudflare.
 - **Keputusan:** Route admin mensyaratkan role staf **dan** akun punya TOTP aktif atau minimal satu
   passkey (`requireStaff`). TOTP dikelola tanpa password (`allowPasswordless`). Step-up per sesi
   (verifikasi TOTP/passkey ulang sebelum aksi sensitif) dibangun di Fase 11 bersama panel admin.
+
+## ADR-020 — Akuntansi kuota per status node
+- **Keputusan:** Byte sebuah file ada di `reserved_bytes` selama node `uploading`/`scanning`, pindah ke
+  `used_bytes` saat scan `clean`/`skipped` (node `ready`), dan dilepas saat `rejected`. Semua perubahan
+  pool dilakukan dengan UPDATE yang mensyaratkan status node di statement yang sama (dalam `db.batch`),
+  sehingga scan yang selesai bersamaan dengan penghapusan tidak menghitung dua kali.
+- File di Sampah selalu dihitung ke kuota (§16 #13); opsi config untuk tidak menghitung Sampah
+  **tidak** disediakan karena butuh rekonsiliasi dua arah di setiap operasi.
+- Batas D1 100 parameter per query → operasi massal bekerja per *trash root* dengan recursive CTE,
+  bukan daftar ID panjang.
+
+## ADR-021 — Nama file baru dipesan saat upload selesai
+- **Konteks:** Upload besar bisa berjalan berjam-jam; mengunci nama sejak init membuat upload lain
+  dengan nama sama gagal.
+- **Keputusan:** Node `uploading` memakai `name_key` sementara (`\u0001up:{id}`) sehingga tidak ikut
+  index keunikan. Saat `complete`, nama final dipasang: konflik → `replace` (file lama ke Sampah, kalau
+  boleh) atau nama otomatis "nama (1).ext". Init tetap mengecek konflik agar UI bisa menampilkan dialog
+  "Ganti / Simpan keduanya / Lewati".

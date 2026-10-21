@@ -42,7 +42,6 @@ export const configSchema = z.object({
   upload_part_concurrency: int().min(1).max(16).default(4),
   upload_max_parallel_files: int().min(1).max(10).default(3),
   upload_expiry_hours: int().min(1).max(160).default(144),
-  trash_counts_toward_quota: z.boolean().default(true),
   trash_retention_days: int().min(1).default(30),
   manifest_rebuild_min_interval_minutes: int().min(1).default(60),
   quota_reconcile_alert_bytes: nonNeg().default(0),
