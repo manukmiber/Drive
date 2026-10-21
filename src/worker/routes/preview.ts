@@ -6,7 +6,7 @@ import { previewContentType, previewKind } from '../../shared/preview';
 import { isAppError } from '../lib/errors';
 import { serveObject } from '../lib/serve';
 import { isUserContentHost } from '../middleware/base';
-import { loadNode, nodeAccess } from '../services/access';
+import { loadNode, nodeAccess, poolLocked } from '../services/access';
 import { assertDownloadable, verifyDownloadToken } from '../services/download';
 import type { AppBindings } from '../types';
 
@@ -36,6 +36,7 @@ export const preview = new Hono<AppBindings>()
     const node = await loadNode(ctx, claims.nodeId);
     if (!node || node.blob_id !== claims.blobId) return c.text('Not found', 404);
     if (!(await nodeAccess(ctx, claims.userId, node)).view) return c.text('Not found', 404);
+    if (await poolLocked(ctx, node.pool_id)) return c.text('Forbidden', 403);
     const blob = await ctx.env.DB.prepare(
       'SELECT r2_key, size, scan_status, sniffed_mime FROM blobs WHERE id = ?1',
     )

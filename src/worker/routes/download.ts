@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { track } from '../lib/analytics';
 import { serveObject } from '../lib/serve';
 import { clientIp, enforceRateLimit } from '../middleware/ratelimit';
-import { loadNode, nodeAccess } from '../services/access';
+import { loadNode, nodeAccess, poolLocked } from '../services/access';
 import { assertDownloadable, verifyDownloadToken } from '../services/download';
 import { isAppError } from '../lib/errors';
 import type { AppBindings } from '../types';
@@ -38,6 +38,8 @@ export const download = new Hono<AppBindings>().on(
 
     const node = await loadNode(ctx, claims.nodeId);
     if (!node || node.blob_id !== claims.blobId) return gone(404, 'File tidak ditemukan.');
+    if (await poolLocked(ctx, node.pool_id))
+      return gone(403, 'Akses file dikunci sampai pembayaran paket masuk.');
     const access = await nodeAccess(ctx, claims.userId, node);
     if (!access.view) return gone(404, 'File tidak ditemukan.');
     const blob = await ctx.env.DB.prepare(

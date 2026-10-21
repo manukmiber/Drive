@@ -175,3 +175,23 @@ dan navigasi panah tetap bekerja di semua item. Kalau pengukuran di HP kelas baw
 `/sw.js` hanya meng-cache shell (`/drive`) dan `/assets/*` (hash, immutable); `/api`, `/d`, `/z`, `/p`
 tidak pernah di-cache. File yang dibagikan dari aplikasi lain ke Zeiko (Android "Bagikan ke…") disimpan
 sementara di IndexedDB lalu di-upload ke Drive Saya. Tanpa SW, `POST /share-target` dialihkan ke `/drive`.
+
+## ADR-026 — Detail billing yang tidak diatur spec
+- **Hapus H+37 default `dry_run`** (`dunning_delete_mode`). Job hanya menulis audit + alert admin berisi
+  jumlah file/byte; pemilik mengganti ke `live` dari admin setelah yakin. Mode live menghapus bertahap
+  lewat queue `cleanup` (`purge_pool`), dan blob dengan legal hold tetap ada.
+- **Biaya gateway ditanggung Zeiko** (`payment_fee_paid_by: zeiko`), dicatat di `payments.fee_idr` untuk
+  dashboard biaya. Alasannya: spec menjadikan QRIS + minimal top-up sebagai cara menekan biaya, bukan
+  membebankannya ke pengguna. Bisa diubah ke `user`.
+- **"Bayar langsung" = top-up lalu beli otomatis dari Saldo** setelah webhook `paid`. Hanya ada satu jalur
+  uang (ledger), dan kalau pembelian gagal uangnya tetap aman di Saldo.
+- **Add-on dibeli di tengah periode dikenai pro-rata** sisa hari (sama dengan aturan upgrade), lalu ikut
+  perpanjangan penuh.
+- **Berhenti berlangganan** = tidak diperpanjang; di akhir periode akun masuk siklus tunggakan yang sama
+  (sesuai §9.3 "tanpa paket → read-only … lalu siklus 12.5").
+- **Downgrade di atas kuota**: tidak ada status khusus; reservasi kuota otomatis menolak upload sampai
+  pemakaian di bawah batas (efeknya sama dengan "read-only untuk upload").
+- **PDF invoice** = halaman invoice + `window.print()` (simpan sebagai PDF di browser). Render PDF di
+  server (Browser Rendering) bisa ditambah nanti tanpa mengubah data.
+- **Halaman bayar mock** `/dev/pay/{ref}` hanya ada bila `APP_ENV != production` dan adapter `mock`; di
+  production, top-up dengan adapter mock ditolak (`PAYMENT_UNAVAILABLE`).

@@ -118,6 +118,11 @@ export const configSchema = z.object({
       notify_days_after: [0, 3, 14, 25, 29, 36],
     }),
   upgrade_ratio_hint_pct: int().min(1).max(100).default(90),
+  /** H+delete: 'dry_run' only logs what would be deleted; switch to 'live' from admin (ADR-026). */
+  dunning_delete_mode: z.enum(['dry_run', 'live']).default('dry_run'),
+  /** Who bears gateway fees on top-ups. Default: Zeiko (fee recorded for the cost dashboard). */
+  payment_fee_paid_by: z.enum(['zeiko', 'user']).default('zeiko'),
+  pending_payment_ttl_minutes: int().min(5).default(60),
 
   // ── Family ──
   family_join_convert_prorata: z.boolean().default(true),

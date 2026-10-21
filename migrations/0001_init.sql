@@ -205,6 +205,8 @@ CREATE TABLE wallet_ledger (
   created_at     INTEGER NOT NULL
 );
 CREATE INDEX wallet_ledger_user_idx ON wallet_ledger (user_id, created_at);
+-- A paid payment credits the wallet exactly once (webhook replays are no-ops).
+CREATE UNIQUE INDEX wallet_ledger_topup_uq ON wallet_ledger (ref) WHERE reason = 'topup';
 
 CREATE TABLE payments (
   id            TEXT PRIMARY KEY,

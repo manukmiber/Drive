@@ -64,11 +64,11 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [ ] Job async + Container `archiver`
 
 ## Fase 7 — Billing
-- [ ] Saldo + ledger
-- [ ] PaymentProvider mock + webhook idempoten
-- [ ] Langganan, upgrade/downgrade, add-on
-- [ ] Invoice
-- [ ] Siklus tunggakan + dry-run hapus
+- [x] Saldo + ledger
+- [x] PaymentProvider mock + webhook idempoten
+- [x] Langganan, upgrade/downgrade, add-on
+- [x] Invoice (nomor ZK-YYYYMM-000001, halaman cetak/PDF browser, email via notify)
+- [x] Siklus tunggakan + dry-run hapus
 
 ## Fase 8 — Paket keluarga
 - [ ] Pool bersama + ruang Keluarga

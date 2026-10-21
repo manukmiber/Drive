@@ -28,6 +28,8 @@ import { sharePublic } from './routes/share-public';
 import { shares } from './routes/shares';
 import { uploads } from './routes/uploads';
 import { archives } from './routes/archives';
+import { billing } from './routes/billing';
+import { payments } from './routes/payments';
 import type { AppBindings } from './types';
 
 export function createApp() {
@@ -37,6 +39,7 @@ export function createApp() {
 
   // Webhooks authenticate with their own secret (no Origin/CSRF), so they sit before /api.
   app.route('/', integrations);
+  app.route('/', payments);
 
   const api = new Hono<AppBindings>();
   api.use('*', apiHeaders, originCheck);
@@ -69,6 +72,7 @@ export function createApp() {
   api.route('/uploads', uploads);
   api.route('/shares', shares);
   api.route('/archives', archives);
+  api.route('/billing', billing);
   api.route('/', nodes);
   api.all('*', (c) => c.json(errorBody('NOT_FOUND', 'no such endpoint'), 404));
   app.route('/api', api);

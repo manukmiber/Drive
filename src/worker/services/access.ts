@@ -90,6 +90,27 @@ export async function requireNode(
   if (!node) throw new AppError('NOT_FOUND', 'node not found');
   const access = await nodeAccess(ctx, userId, node);
   if (!access.view) throw new AppError('NOT_FOUND', 'node not found');
+  if (await poolLocked(ctx, node.pool_id))
+    throw new AppError('ACCOUNT_SUSPENDED', 'file access is locked until payment');
   if (!access[need]) throw new AppError('FORBIDDEN', 'not allowed');
   return { node, access };
+}
+
+const lockCache = new WeakMap<Ctx, Map<string, Promise<boolean>>>();
+
+/** Suspended pools (H+30 unpaid) lock all file access (SPEC §12.5). Memoised per request. */
+export function poolLocked(ctx: Ctx, poolId: string): Promise<boolean> {
+  let m = lockCache.get(ctx);
+  if (!m) lockCache.set(ctx, (m = new Map()));
+  let p = m.get(poolId);
+  if (!p) {
+    p = ctx.env.DB.prepare(
+      'SELECT status FROM subscriptions WHERE pool_id = ?1 ORDER BY created_at DESC LIMIT 1',
+    )
+      .bind(poolId)
+      .first<{ status: string }>()
+      .then((r) => r?.status === 'suspended');
+    m.set(poolId, p);
+  }
+  return p;
 }

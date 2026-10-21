@@ -3,6 +3,8 @@ import { deleteOrphanBlob, processScan } from '../services/scan';
 import { registerQueueHandler } from '.';
 import { log } from '../lib/log';
 import { deliverShareEmail, deliverShareTelegram } from '../services/share-send';
+import { purgePool } from '../services/billing';
+import { deliverNotification } from '../services/notify';
 
 registerQueueHandler('scan', async (ctx, body) => {
   if (body.type !== 'scan') return;
@@ -11,9 +13,11 @@ registerQueueHandler('scan', async (ctx, body) => {
 
 registerQueueHandler('cleanup', async (ctx, body) => {
   if (body.type === 'delete_blob') await deleteOrphanBlob(ctx, body.blobId);
+  if (body.type === 'purge_pool' && !body.dryRun) await purgePool(ctx, body.poolId);
 });
 
 registerQueueHandler('notify', async (ctx, body) => {
+  if (body.type === 'notification') return deliverNotification(ctx, body.notificationId);
   if (body.type === 'share_email') return deliverShareEmail(ctx, body.sendId, body.to);
   if (body.type === 'share_telegram') return deliverShareTelegram(ctx, body.sendId, body.chatId);
   if (body.type === 'admin_alert') {

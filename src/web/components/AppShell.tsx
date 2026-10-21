@@ -21,6 +21,7 @@ import { NewMenu } from './NewMenu';
 import { StorageMeter } from './StorageMeter';
 import { UploadPanel } from './UploadPanel';
 import { Toaster } from './ui/Toast';
+import { BillingBanner } from '../pages/Billing';
 
 interface NavItem {
   to: string;
@@ -144,6 +145,7 @@ export function AppShell() {
             {(data.user.name || data.user.email).slice(0, 1).toUpperCase()}
           </Link>
         </header>
+        <BillingBanner />
         <main className="min-h-0 flex-1 overflow-auto pb-16 md:pb-0">
           <Outlet />
         </main>

@@ -9,6 +9,7 @@ import { AppShell } from './components/AppShell';
 import { Drive } from './pages/Drive';
 import { Trash } from './pages/Trash';
 import { Recent, Search, Shared, Starred } from './pages/Lists';
+import { Billing, InvoicePage } from './pages/Billing';
 import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
 import { Placeholder } from './pages/Placeholder';
@@ -63,7 +64,15 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => appRoute, path: '/berbintang', component: Starred }),
     searchRoute,
     createRoute({ getParentRoute: () => appRoute, path: '/sampah', component: Trash }),
-    page('/paket', 'Paket & tagihan'),
+    createRoute({ getParentRoute: () => appRoute, path: '/paket', component: Billing }),
+    createRoute({
+      getParentRoute: () => appRoute,
+      path: '/paket/invoice/$id',
+      component: function Inv() {
+        const { id } = useParams({ from: '/app/paket/invoice/$id' });
+        return <InvoicePage id={id} />;
+      },
+    }),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),
   ]),
 ]);

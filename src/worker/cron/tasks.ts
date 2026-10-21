@@ -1,6 +1,12 @@
 // Registers cron tasks (SPEC §13.4). Imported once by the Worker entry point.
 import { CRON, HOUR_MS } from '../../shared/constants';
 import { log } from '../lib/log';
+import {
+  expireStalePayments,
+  renewDueSubscriptions,
+  runDunning,
+  sendRenewalReminders,
+} from '../services/billing';
 import { purgeExpiredTrash } from '../services/nodes';
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
@@ -44,4 +50,36 @@ registerCronTask(CRON.nightly, {
       });
     }
   },
+});
+
+// ── Billing (SPEC §12.4–12.5) ──
+registerCronTask(CRON.hourly, {
+  name: 'renew_subscriptions',
+  async run(ctx) {
+    const r = await renewDueSubscriptions(ctx);
+    if (r.renewed || r.failed) log.info('renewals', r);
+  },
+});
+
+registerCronTask(CRON.hourly, {
+  name: 'expire_payments',
+  run: async (ctx) => void (await expireStalePayments(ctx)),
+});
+
+registerCronTask(CRON.nightly, {
+  name: 'dunning',
+  async run(ctx) {
+    const r = await runDunning(ctx);
+    if (r.dryRun.length) {
+      await ctx.env.NOTIFY_QUEUE.send({
+        type: 'admin_alert',
+        text: `Dry-run hapus akun menunggak: ${r.dryRun.length} pool (${r.dryRun.reduce((s, x) => s + x.files, 0)} file). Ubah dunning_delete_mode ke "live" untuk benar-benar menghapus.`,
+      });
+    }
+  },
+});
+
+registerCronTask(CRON.nightly, {
+  name: 'renewal_reminders',
+  run: async (ctx) => void (await sendRenewalReminders(ctx)),
 });

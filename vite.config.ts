@@ -22,6 +22,7 @@ export default defineConfig({
       '/api': API,
       '/d/': API,
       '/z/': API,
+      '/dev/pay/': API,
       '/berhenti/': API,
       '/share-target': API,
       '/ad/': API,

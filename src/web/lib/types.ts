@@ -64,3 +64,62 @@ export interface PublicAuth {
   turnstileSiteKey: string | null;
   devMailbox: boolean;
 }
+
+export interface BillingSummary {
+  balanceIdr: number;
+  managedByFamily: boolean;
+  storage: { limitBytes: number; usedBytes: number; reservedBytes: number };
+  subscription: {
+    id: string;
+    planCode: string;
+    nextPlanCode: string | null;
+    status: 'active' | 'grace' | 'readonly' | 'suspended';
+    periodStart: number;
+    periodEnd: number;
+    cancelAtPeriodEnd: boolean;
+    readonlyAt: number;
+    suspendAt: number;
+    deleteAt: number;
+  } | null;
+  addons: Array<{
+    id: string;
+    code: string;
+    name: string;
+    priceIdr: number;
+    storageBytes: number;
+    qty: number;
+    cancelAtPeriodEnd: number;
+  }>;
+  pendingPayments: Array<{
+    id: string;
+    amountIdr: number;
+    method: string;
+    status: string;
+    createdAt: number;
+  }>;
+  compressCredits: number;
+  paymentMethods: Array<{ code: string; label: string; minIdr: number }>;
+  minTopupIdr: number;
+}
+
+export interface Topup {
+  paymentId: string;
+  amountIdr: number;
+  feeIdr: number;
+  checkoutUrl: string | null;
+  qrString: string | null;
+  expiresAt: number;
+}
+
+export interface Invoice {
+  id: string;
+  number: string;
+  lines: Array<{ label: string; amountIdr: number }>;
+  subtotalIdr: number;
+  taxIdr: number;
+  taxRatePct: number;
+  totalIdr: number;
+  status: string;
+  issuedAt: number;
+  customer: { name: string; email: string };
+}
