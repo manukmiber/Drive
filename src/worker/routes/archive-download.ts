@@ -2,6 +2,7 @@
 import { Hono } from 'hono';
 import { sha256Hex } from '../lib/crypto';
 import { contentDisposition, parseRange } from '../lib/http';
+import { serveObject } from '../lib/serve';
 import { planZip, withKnownLength, zipDeflateStream, zipStream } from '../lib/zip';
 import { loadArchive, verifyArchiveToken } from '../services/archives';
 import type { AppBindings } from '../types';
@@ -14,8 +15,21 @@ export const archiveDownload = new Hono<AppBindings>().on(
     const id = await verifyArchiveToken(ctx, c.req.param('token'));
     if (!id) return c.text('Link unduhan sudah kedaluwarsa.', 410);
     const job = await loadArchive(ctx, id);
-    if (!job || !job.content.fileCount) return c.text('Not found', 404);
+    if (!job) return c.text('Not found', 404);
     const filename = decodeURIComponent(c.req.param('filename'));
+    if (job.kind === 'stored') {
+      // Built by an async job: a plain immutable R2 object (Range/resume via serveObject).
+      const r = await serveObject(c.env.BUCKET, c.req.raw, {
+        key: job.key,
+        size: job.size,
+        etag: `"a${id}"`,
+        filename,
+        contentType: job.format === 'tar_zst' ? 'application/zstd' : 'application/zip',
+        disposition: 'attachment',
+      });
+      return r.response;
+    }
+    if (!job.content.fileCount) return c.text('Not found', 404);
     const headers = new Headers({
       'Content-Type': 'application/zip',
       'Content-Disposition': contentDisposition(filename),

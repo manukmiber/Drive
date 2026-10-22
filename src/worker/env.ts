@@ -22,6 +22,8 @@ export interface Env {
   ADAPTER_CSAM: 'mock';
   /** `mock-nocontainer` = mock without Container `media` (tests the "too large" path). */
   ADAPTER_MEDIA?: 'mock' | 'mock-nocontainer' | 'cloudflare';
+  /** `none` = no Container `archiver`: TAR.ZST and large deflate ZIPs are unavailable. */
+  ADAPTER_ARCHIVER?: 'mock' | 'container' | 'none';
   TURNSTILE_SITE_KEY?: string;
   ADMIN_ALERT_TELEGRAM_CHAT_ID?: string;
   SCANNER_INSTANCES?: string;
@@ -66,6 +68,7 @@ export interface Env {
   /** Containers (absent in local dev; adapters fall back to mocks). */
   SCANNER?: DurableObjectNamespace;
   MEDIA_CONTAINER?: DurableObjectNamespace;
+  ARCHIVER?: DurableObjectNamespace;
 
   /** Test/dev only: injected fake clock. Never set in staging/production. */
   CLOCK?: Clock;

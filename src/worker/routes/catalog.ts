@@ -27,5 +27,9 @@ export const catalog = new Hono<AppBindings>().get('/catalog', async (c) => {
   ]);
   const publicConfig = Object.fromEntries(PUBLIC_CONFIG_KEYS.map((k) => [k, cfg[k]]));
   c.header('Cache-Control', 'public, max-age=60');
-  return c.json({ plans, addons, compressPacks: packs, config: publicConfig });
+  const capabilities = {
+    // TAR.ZST and big deflate ZIPs need Container `archiver` (ADR-033).
+    asyncArchives: c.get('ctx').adapters.archiver.name !== 'none',
+  };
+  return c.json({ plans, addons, compressPacks: packs, config: publicConfig, capabilities });
 });

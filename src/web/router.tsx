@@ -19,6 +19,7 @@ import { NotFound } from './pages/NotFound';
 import { Settings } from './pages/Settings';
 import { Compress } from './pages/Compress';
 import { Advertiser } from './pages/Advertiser';
+import { Downloads } from './pages/Downloads';
 import { SignIn } from './pages/SignIn';
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
@@ -103,6 +104,7 @@ const routeTree = rootRoute.addChildren([
     }),
     createRoute({ getParentRoute: () => appRoute, path: '/kompres', component: Compress }),
     createRoute({ getParentRoute: () => appRoute, path: '/iklan', component: Advertiser }),
+    createRoute({ getParentRoute: () => appRoute, path: '/unduhan', component: Downloads }),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),
     createRoute({ getParentRoute: () => appRoute, path: '/admin', component: Admin }),
   ]),

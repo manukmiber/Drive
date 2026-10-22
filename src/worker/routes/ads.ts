@@ -13,6 +13,7 @@ import { AppError } from '../lib/errors';
 import { contentLength } from '../lib/http';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
+import { rateLimit } from '../middleware/ratelimit';
 import {
   adsAllowedForUser,
   advertiserDashboard,
@@ -189,6 +190,7 @@ export const advertiser = new Hono<AppBindings>()
   )
   .post(
     '/bookings',
+    rateLimit('RL_AD_BOOK', 'ad-book'),
     validate(
       'json',
       z.object({

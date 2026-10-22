@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, Outlet, useNavigate } from '@tanstack/react-router';
 import {
+  Archive,
   Clock,
   HardDrive,
   Home,
@@ -27,6 +28,7 @@ import { Toaster } from './ui/Toast';
 import { BillingBanner } from '../pages/Billing';
 import { Bell } from './Bell';
 import { AdCard } from './AdCard';
+import { ArchivePanel } from './ArchivePanel';
 
 interface NavItem {
   to: string;
@@ -41,6 +43,7 @@ const NAV: NavItem[] = [
   { to: '/terbaru', label: t.nav.recent, icon: Clock },
   { to: '/berbintang', label: t.nav.starred, icon: Star },
   { to: '/kompres', label: t.nav.compress, icon: Minimize2 },
+  { to: '/unduhan', label: t.nav.downloads, icon: Archive },
   { to: '/iklan', label: t.nav.ads, icon: Megaphone },
   { to: '/sampah', label: t.nav.trash, icon: Trash2 },
 ];
@@ -168,6 +171,7 @@ export function AppShell() {
 
       <NewMenu variant="fab" />
       <UploadPanel />
+      <ArchivePanel />
       <Toaster />
       <nav
         className="fixed inset-x-0 bottom-0 grid grid-cols-4 border-t border-[var(--border)] bg-[var(--card)] pb-[env(safe-area-inset-bottom)] md:hidden"

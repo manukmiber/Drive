@@ -73,6 +73,9 @@ export const configSchema = z.object({
     .default({ fast: 1, normal: 3, max: 12 }),
   archive_link_ttl_hours: int().min(1).default(24),
   archive_max_running_jobs_per_user: int().min(1).default(1),
+  /** Async jobs (TAR.ZST, big deflate ZIP): input cap, bounded by the archiver's local disk. */
+  archive_async_max_bytes: nonNeg().default(8 * GIB),
+  archive_max_items: int().min(1).default(100_000),
 
   // ── Scan ──
   scan_max_bytes: nonNeg().default(512 * MIB),

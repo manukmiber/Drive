@@ -6,6 +6,7 @@ import { deliverShareEmail, deliverShareTelegram } from '../services/share-send'
 import { purgePool } from '../services/billing';
 import { deliverNotification } from '../services/notify';
 import { processCompressJob } from '../services/compress';
+import { processArchiveJob } from '../services/archives';
 
 registerQueueHandler('scan', async (ctx, body) => {
   if (body.type !== 'scan') return;
@@ -31,4 +32,9 @@ registerQueueHandler('notify', async (ctx, body) => {
 registerQueueHandler('compress', async (ctx, body) => {
   if (body.type !== 'compress') return;
   await processCompressJob(ctx, body.jobId);
+});
+
+registerQueueHandler('archive', async (ctx, body) => {
+  if (body.type !== 'archive') return;
+  await processArchiveJob(ctx, body.jobId);
 });

@@ -21,11 +21,12 @@ import {
 import { formatBytes, formatDate } from '../../../shared/format';
 import { t } from '../../../shared/strings.id';
 import { cn } from '../../lib/cn';
-import { downloadZip, type NodeDto } from '../../lib/files';
+import { type NodeDto } from '../../lib/files';
+import { ArchiveDialog } from './ArchiveDialog';
 import { FileIcon } from '../FileIcon';
 import { Menu } from '../ui/Menu';
 import { toast } from '../ui/Toast';
-import { errorText, useNodeActions } from './useNodeActions';
+import { useNodeActions } from './useNodeActions';
 
 export type View = 'list' | 'grid';
 
@@ -113,10 +114,8 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
     }
   }
 
-  const zip = (ids: string[]) => {
-    toast(t.files.preparingZip);
-    void downloadZip(ids).catch((e) => toast(errorText(e), { tone: 'error' }));
-  };
+  const [archiving, setArchiving] = useState<string[] | null>(null);
+  const zip = (ids: string[]) => setArchiving(ids);
 
   const menuItems = (ids: string[]) => {
     const list = actions.menuFor(ids);
@@ -376,6 +375,7 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
         <Menu x={menu.x} y={menu.y} items={menuItems(menu.ids)} onClose={() => setMenu(null)} />
       )}
       {actions.ui}
+      {archiving && <ArchiveDialog ids={archiving} onClose={() => setArchiving(null)} />}
     </div>
   );
 }

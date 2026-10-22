@@ -12,6 +12,7 @@ import { deletionReminders, processAccountDeletions } from '../services/account'
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
 import { purgeStandalone } from '../services/compress';
+import { expireArchives } from '../services/archives';
 import { releaseExpiredHolds, runAdsDaily } from '../services/ads';
 import { registerCronTask } from '.';
 
@@ -23,6 +24,11 @@ registerCronTask(CRON.hourly, {
 registerCronTask(CRON.hourly, {
   name: 'purge_standalone_compress',
   run: async (ctx) => void (await purgeStandalone(ctx)),
+});
+
+registerCronTask(CRON.hourly, {
+  name: 'expire_archives',
+  run: async (ctx) => void (await expireArchives(ctx)),
 });
 
 registerCronTask(CRON.hourly, {

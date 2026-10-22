@@ -311,3 +311,25 @@ membuka ambang baru.
   `ad_image_max_bytes`). Server memeriksa ulang header RIFF/WEBP (VP8/VP8L/VP8X), ukuran, dan rasio 1:1.
   Gambar publik hanya untuk materi `approved`, disajikan dengan `CSP: sandbox` + `nosniff`.
 - **Diskon mahasiswa**: OTP 6 digit ke email `.ac.id` (hash di KV 10 menit, maks 5 percobaan).
+
+## ADR-033 — Arsip async tanpa kredensial S3 di container
+- Spesifikasi §7.2 menyarankan container `archiver` membaca/menulis R2 lewat S3 API dengan token R2. Kami pilih
+  jalur yang **tidak butuh kredensial S3 sama sekali**: Worker (consumer Queue `archive`) menyusun stream TAR
+  dari binding R2 (`lib/tar.ts`: ustar + PAX untuk nama panjang/UTF-8 dan ukuran ≥ 8 GiB), mengirimnya ke
+  container, lalu container mengompres ke disk lokal (`zstd -T0`, atau tar→ZIP deflate dengan Go stdlib)
+  dan mengembalikan hasilnya dengan `Content-Length` + `X-SHA256`. Worker menulis hasil ke
+  `tmp/archives/{jobId}.tar.zst|.zip`: satu `put` sampai 4 GiB, di atas itu multipart dengan part seragam 64 MiB
+  yang dibaca langsung dari stream (`lib/r2-put.ts`).
+- Akibatnya ukuran input dibatasi disk container dan batas waktu consumer Queue: `archive_async_max_bytes`
+  (default 8 GiB, instance `standard-2`). `archive_max_items` membatasi jumlah item; tetap maksimal 1 job
+  berjalan per user (`archive_max_running_jobs_per_user`).
+- Progres = porsi tar yang sudah dikirim ke container (ditulis tiap 5 %, maks 95 % sampai hasil tersimpan).
+  Notifikasi `archive_ready` mengarah ke halaman `/unduhan`, yang membuat link `/z/` bertanda tangan baru tiap
+  dibuka (tidak ada token di baris notifikasi). File hasil dilayani lewat `serveObject` (Range/resume).
+- Arsip yang sudah jadi memakai izin user saat job berjalan. Untuk ZIP yang di-stream, izin tetap dicek ulang
+  setiap kali diunduh. Cron per jam menghapus hasil yang lewat `archive_link_ttl_hours`. Lifecycle R2 untuk
+  `tmp/` tetap disarankan sebagai cadangan (DEPLOY.md).
+- Tanpa container (`ADAPTER_ARCHIVER=none`), TAR.ZST dan ZIP deflate di atas batas stream tidak tersedia.
+  Katalog publik mengirim `capabilities.asyncArchives=false` sehingga dialog menonaktifkan opsi itu. ZIP cepat
+  dan ZIP terkompres ≤ 2 GiB tetap jalan. Mock dev: TAR.ZST = tar tanpa kompresi (bisa dibaca tes), ZIP deflate
+  dibuat di Worker.

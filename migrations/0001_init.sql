@@ -506,6 +506,7 @@ CREATE TABLE archive_jobs (
   node_ids_json  TEXT NOT NULL,
   format         TEXT NOT NULL,                 -- zip_store | zip_deflate | tar_zst
   level          INTEGER,
+  name           TEXT,                          -- download filename (async jobs)
   status         TEXT NOT NULL,                 -- queued | running | done | failed | expired
   progress       INTEGER NOT NULL DEFAULT 0,    -- 0..100
   total_bytes    INTEGER NOT NULL DEFAULT 0,

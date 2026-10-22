@@ -481,6 +481,7 @@ export const archiveJobs = sqliteTable('archive_jobs', {
   nodeIdsJson: text('node_ids_json').notNull(),
   format: text('format', { enum: ARCHIVE_FORMATS }).notNull(),
   level: integer('level'),
+  name: text('name'),
   status: text('status', { enum: JOB_STATUSES }).notNull(),
   progress: integer('progress').notNull().default(0),
   totalBytes: integer('total_bytes').notNull().default(0),

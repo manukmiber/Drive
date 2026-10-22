@@ -11,6 +11,13 @@ const Q = ['scan', 'archive', 'compress', 'notify', 'cleanup'];
 // Containers (SPEC §2). Each gets a Durable Object binding with the same class.
 const CONTAINERS = [
   {
+    binding: 'ARCHIVER',
+    class_name: 'ArchiverContainer',
+    image: './containers/archiver/Dockerfile',
+    instance_type: 'standard-2',
+    max_instances: 5,
+  },
+  {
     binding: 'MEDIA_CONTAINER',
     class_name: 'MediaContainer',
     image: './containers/media/Dockerfile',
@@ -51,6 +58,7 @@ function bindings(env, nsBase, ids) {
       ADAPTER_SCANNER: containers ? 'container' : 'mock',
       ADAPTER_CSAM: 'mock',
       ADAPTER_MEDIA: env === 'dev' ? 'mock' : 'cloudflare',
+      ADAPTER_ARCHIVER: env === 'dev' ? 'mock' : containers ? 'container' : 'none',
     },
     d1_databases: [
       {

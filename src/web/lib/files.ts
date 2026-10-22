@@ -159,11 +159,23 @@ export const emailShare = (id: string, recipients: string[], message: string | n
   });
 
 /** Downloads several items as one ZIP via a signed /z/ link. */
-export async function downloadZip(
-  nodeIds: string[],
-  format: 'zip_store' | 'zip_deflate' = 'zip_store',
-): Promise<void> {
-  const { url } = await postJson<{ url: string }>('/api/archives', { nodeIds, format });
+export type ArchiveFormat = 'zip_store' | 'zip_deflate' | 'tar_zst';
+
+export interface ArchiveJob {
+  id: string;
+  name: string | null;
+  format: ArchiveFormat;
+  status: 'queued' | 'running' | 'done' | 'failed' | 'expired';
+  progress: number;
+  totalBytes: number;
+  outBytes: number | null;
+  url: string | null;
+  error: string | null;
+  createdAt: number;
+  expiresAt: number | null;
+}
+
+function clickLink(url: string): void {
   const a = document.createElement('a');
   a.href = url;
   a.rel = 'noopener';
@@ -171,3 +183,27 @@ export async function downloadZip(
   a.click();
   a.remove();
 }
+
+/** Streams right away for ZIP; async formats return `{ async: true }` (watch listArchives). */
+export async function downloadZip(
+  nodeIds: string[],
+  format: ArchiveFormat = 'zip_store',
+  level?: 'fast' | 'normal' | 'max',
+): Promise<{ async: boolean }> {
+  const r = await postJson<{ url: string | null; async: boolean }>('/api/archives', {
+    nodeIds,
+    format,
+    ...(level ? { level } : {}),
+  });
+  if (r.url) clickLink(r.url);
+  return { async: r.async };
+}
+
+export const estimateArchive = (nodeIds: string[]) =>
+  postJson<{ totalBytes: number; fileCount: number; streamDeflateMax: number; asyncMax: number }>(
+    '/api/archives/estimate',
+    { nodeIds },
+  );
+
+export const listArchives = () => api<{ jobs: ArchiveJob[] }>('/api/archives');
+export { clickLink };

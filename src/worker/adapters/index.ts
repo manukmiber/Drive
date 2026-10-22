@@ -6,6 +6,7 @@ import { MockCsamDetector, type CsamDetector } from './csam';
 import type { Clock } from './clock';
 import { BotApiTelegram, MockTelegram, type TelegramClient } from './telegram';
 import { CloudflareMediaProcessor, MockMediaProcessor, type MediaProcessor } from './media';
+import { ContainerArchiver, MockArchiver, NoArchiver, type Archiver } from './archiver';
 
 export interface Adapters {
   email: EmailSender;
@@ -14,6 +15,7 @@ export interface Adapters {
   csam: CsamDetector;
   telegram: TelegramClient;
   media: MediaProcessor;
+  archiver: Archiver;
 }
 
 export function createAdapters(env: Env, clock: Clock): Adapters {
@@ -38,5 +40,11 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
     env.ADAPTER_MEDIA === 'cloudflare'
       ? new CloudflareMediaProcessor(env.IMAGES, env.MEDIA, env.MEDIA_CONTAINER)
       : new MockMediaProcessor(env.ADAPTER_MEDIA !== 'mock-nocontainer');
-  return { email, payment, scanner, csam, telegram, media };
+  const archiver: Archiver =
+    env.ADAPTER_ARCHIVER === 'container' && env.ARCHIVER
+      ? new ContainerArchiver(env.ARCHIVER)
+      : env.ADAPTER_ARCHIVER === 'mock'
+        ? new MockArchiver(env.BUCKET)
+        : new NoArchiver();
+  return { email, payment, scanner, csam, telegram, media, archiver };
 }

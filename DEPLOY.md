@@ -47,6 +47,10 @@ Image ClamAV butuh Docker untuk di-build. Dari HP, skrip otomatis memakai **scan
 `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` dan variable `STAGING_DEPLOY_ENABLED=true`; CI akan
 mem-build dan deploy container. Setelah itu: `node scripts/cf-setup.mjs staging --containers-ready`.
 
+Container `archiver` (zstd, `standard-2`) juga ikut. Tanpa container itu, opsi TAR.ZST dan ZIP terkompres
+> 2 GB disembunyikan otomatis. Disarankan menambah lifecycle R2 sebagai cadangan pembersihan file sementara:
+`npx wrangler r2 bucket lifecycle add zeiko-staging tmp-1d tmp/ --expire-days 1`.
+
 Container `media` (ffmpeg, `standard-2`) ikut ter-build bersama scanner. Selama belum ada, kompres foto
 ≤ 20 MB dan video ≤ 60 detik tetap jalan lewat Images/Media Transformations; file yang lebih besar
 ditolak dengan alasan "terlalu besar" tanpa memotong kredit. Images dan Media Transformations perlu

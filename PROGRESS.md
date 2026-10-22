@@ -61,7 +61,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 ## Fase 6 — Download banyak file
 - [x] ZIP store streaming + Range (folder share + `/z/` multi-pilih, ZIP64)
 - [x] ZIP deflate stream (≤ zip_deflate_stream_max_bytes)
-- [ ] Job async + Container `archiver`
+- [x] Job async + Container `archiver` (TAR.ZST level cepat/normal/maks, ZIP deflate besar, `/unduhan`, panel progres)
 
 ## Fase 7 — Billing
 - [x] Saldo + ledger

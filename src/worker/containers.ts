@@ -13,3 +13,9 @@ export class MediaContainer extends Container {
   override defaultPort = 8080;
   override sleepAfter = '5m';
 }
+
+/** zstd / deflate ZIP for async archive jobs (containers/archiver). */
+export class ArchiverContainer extends Container {
+  override defaultPort = 8080;
+  override sleepAfter = '5m';
+}

@@ -29,6 +29,7 @@ export interface Catalog {
   plans: Plan[];
   addons: Addon[];
   compressPacks: CompressPack[];
+  capabilities?: { asyncArchives: boolean };
   config: {
     upload_part_concurrency: number;
     upload_max_parallel_files: number;

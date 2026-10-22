@@ -118,6 +118,14 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
         ],
         cta: { label: 'Buka Pengaturan', url: `${app}/pengaturan` },
       };
+    case 'archive_ready':
+      return {
+        title: 'Arsip siap diunduh',
+        paragraphs: [
+          `"${String(p.name)}" (${formatBytes(Number(p.bytes))}) sudah jadi. Link unduhannya berlaku 24 jam.`,
+        ],
+        cta: { label: 'Buka Unduhan', url: `${app}/unduhan` },
+      };
     case 'ad_status': {
       const status = String(p.status);
       const titles: Record<string, string> = {
