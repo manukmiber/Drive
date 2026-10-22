@@ -118,6 +118,23 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
         ],
         cta: { label: 'Buka Pengaturan', url: `${app}/pengaturan` },
       };
+    case 'compress_done': {
+      const done = Number(p.done ?? 0);
+      const skipped = Number(p.skipped ?? 0);
+      const failed = Number(p.failed ?? 0);
+      const parts = [`${done} berhasil`];
+      if (skipped) parts.push(`${skipped} dilewati karena hasilnya tidak lebih kecil`);
+      if (failed) parts.push(`${failed} gagal`);
+      return {
+        title: done
+          ? `Kompres selesai, hemat ${formatBytes(Number(p.savedBytes ?? 0))}`
+          : 'Kompres selesai',
+        paragraphs: [
+          `${parts.join(', ')}. Kredit untuk file yang dilewati atau gagal sudah dikembalikan.`,
+        ],
+        cta: { label: 'Lihat hasil', url: `${app}/kompres` },
+      };
+    }
     case 'payment_paid':
       return {
         title: 'Pembayaran berhasil',

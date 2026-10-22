@@ -248,7 +248,7 @@ async function spaceRootId(ctx: Ctx, node: NodeRecord): Promise<string> {
   return row.id;
 }
 
-async function requireWritableFolder(
+export async function requireWritableFolder(
   ctx: Ctx,
   userId: string,
   folderId: string,

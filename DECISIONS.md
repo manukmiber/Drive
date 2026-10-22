@@ -251,3 +251,26 @@ membuka ambang baru.
 - **Jeda pindah keluarga** dihitung dari audit `family.join`/`family.leave` terakhir.
 - Paket `family` tetap **nonaktif** di seed sampai pemilik menetapkan harga (§16 #3), diaktifkan dari
   Admin → Katalog.
+
+## ADR-031 — Kompres media: detail implementasi
+- **Kredit dipotong saat job dibuat**, dikembalikan bila gagal, dilewati (hasil ≥ asli), atau kedaluwarsa.
+  Urutan pakai: grant `plan` dulu, lalu `pack`/`refund` yang paling cepat kedaluwarsa. Tiap pemakaian
+  dicatat `usage` dengan ref `job|grant`, sehingga refund mengembalikan ke grant asalnya (sekali per job).
+  Kalau grant asalnya sudah kedaluwarsa, kreditnya kembali sebagai grant `refund` baru berlaku 7 hari.
+- **Pemilihan mesin**: foto ≤ `images_binding_max_input_bytes` → Images binding; video MP4/MOV dengan
+  durasi (dibaca dari box `mvhd`, tanpa decode) ≤ `media_binding_max_seconds` dan ukuran ≤
+  `media_binding_max_input_bytes` → Media Transformations; sisanya → Container `media` (ffmpeg,
+  `standard-2`). Video yang durasinya tidak terbaca (MKV/WebM) masuk container dan dihitung 1 kredit.
+- **Tanpa container** (belum di-deploy/tanpa Docker) file yang butuh ffmpeg langsung ditolak
+  `TOO_LARGE` tanpa memotong kredit.
+- **Metadata**: hasil selalu tanpa GPS/EXIF. Images binding membuang semua metadata untuk WebP/AVIF
+  (JPEG hanya menyisakan copyright), ffmpeg memakai `-map_metadata -1`. Opsi "pertahankan metadata"
+  tidak disediakan.
+- **Hasil** di Drive berupa blob baru di pool yang sama (tidak ada dedup lintas pool) dengan status scan
+  `clean` / `derived:compress`, karena sumbernya sudah lolos scan dan diproses oleh transcoder kita sendiri.
+  "Ganti asli" menukar blob node secara atomik (dijaga `blob_id` lama), `used_bytes` turun sebesar
+  penghematan, dan blob lama dihapus lewat antrean cleanup bila tak dipakai lagi. Share link tetap jalan.
+  Nama ikut ekstensi format baru.
+- **Standalone** memakai multipart R2 (bagian 50 MiB) di `tmp/compress/{userId}/`, tidak memakai kuota,
+  tidak di-scan (file hanya kembali ke pengunggahnya sendiri), dan dihapus cron per jam setelah 24 jam.
+- **Notifikasi** `compress_done` dikirim sekali per batch setelah semua job selesai (penjaga KV `cn:`).

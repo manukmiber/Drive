@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { AppError } from '../lib/errors';
+import { contentLength } from '../lib/http';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
 import { rateLimit } from '../middleware/ratelimit';
@@ -34,11 +35,6 @@ const simpleQuery = z.object({
   lastModified: z.coerce.number().int().nonnegative().optional(),
   onConflict,
 });
-
-function contentLength(header: string | undefined): number | null {
-  if (header === undefined || !/^\d+$/.test(header)) return null;
-  return Number(header);
-}
 
 export const uploads = new Hono<AppBindings>()
   .use('*', requireUser)

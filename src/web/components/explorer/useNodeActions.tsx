@@ -1,5 +1,5 @@
 // Shared item actions for every file view (Drive, Cari, Berbintang, Terbaru): open/preview,
-// download, rename, copy, star, move, trash (with undo), details — plus the dialogs they need.
+// download, rename, copy, compress, star, move, trash (with undo), details — plus the dialogs they need.
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
@@ -9,6 +9,7 @@ import {
   FolderInput,
   FolderOpen,
   Info,
+  Minimize2,
   Pencil,
   Share2,
   Star,
@@ -29,11 +30,13 @@ import {
   trashNodes,
   type NodeDto,
 } from '../../lib/files';
+import { isCompressible } from '../../lib/compress';
 import { useMe } from '../../lib/session';
 import { Button } from '../Button';
 import { Dialog, PromptDialog } from '../ui/Dialog';
 import type { MenuItem } from '../ui/Menu';
 import { toast } from '../ui/Toast';
+import { CompressDialog } from './CompressDialog';
 import { Details } from './Details';
 import { MoveDialog } from './MoveDialog';
 import { Preview } from './Preview';
@@ -64,6 +67,7 @@ export function useNodeActions(items: NodeDto[]) {
   const [preview, setPreview] = useState<{ list: NodeDto[]; index: number } | null>(null);
   const [details, setDetails] = useState<string | null>(null);
   const [sharing, setSharing] = useState<NodeDto[] | null>(null);
+  const [compressing, setCompressing] = useState<NodeDto[] | null>(null);
 
   const refresh = useCallback(async () => {
     await Promise.all([
@@ -197,6 +201,12 @@ export function useNodeActions(items: NodeDto[]) {
       list.push({ label: t.common.rename, icon: Pencil, onSelect: () => setRenaming(single) });
     if (files.length === nodes.length && files.every((f) => f.status === 'ready'))
       list.push({ label: t.files.makeCopy, icon: Copy, onSelect: () => void copy(ids) });
+    if (files.length && files.length === nodes.length && files.every(isCompressible))
+      list.push({
+        label: t.compress.action,
+        icon: Minimize2,
+        onSelect: () => setCompressing(files),
+      });
     list.push({ label: t.files.moveTo, icon: FolderInput, onSelect: () => setMoving(ids) });
     if (single)
       list.push({
@@ -287,6 +297,7 @@ export function useNodeActions(items: NodeDto[]) {
       )}
       {details && <Details id={details} onClose={() => setDetails(null)} />}
       {sharing && <ShareDialog nodes={sharing} onClose={() => setSharing(null)} />}
+      {compressing && <CompressDialog nodes={compressing} onClose={() => setCompressing(null)} />}
     </>
   );
 

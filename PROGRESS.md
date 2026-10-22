@@ -76,9 +76,9 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Undangan, keluar/dikeluarkan
 
 ## Fase 9 — Kompres media
-- [ ] Kredit + ledger
-- [ ] Images binding / Media binding / Container media
-- [ ] Standalone + batch
+- [x] Kredit + ledger (kuota paket dulu → pack paling cepat kedaluwarsa; refund sekali per job)
+- [x] Images binding / Media binding / Container media (ffmpeg, `containers/media`)
+- [x] Standalone (tmp/compress, 24 jam) + batch (notifikasi per batch), UI menu "Kompres" + `/kompres`
 
 ## Fase 10 — Iklan lokal
 - [ ] Area + alias CF, inventori harian

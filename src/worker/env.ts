@@ -20,6 +20,8 @@ export interface Env {
   ADAPTER_PAYMENT: 'mock';
   ADAPTER_SCANNER: 'mock' | 'container';
   ADAPTER_CSAM: 'mock';
+  /** `mock-nocontainer` = mock without Container `media` (tests the "too large" path). */
+  ADAPTER_MEDIA?: 'mock' | 'mock-nocontainer' | 'cloudflare';
   TURNSTILE_SITE_KEY?: string;
   ADMIN_ALERT_TELEGRAM_CHAT_ID?: string;
   SCANNER_INSTANCES?: string;
@@ -63,6 +65,7 @@ export interface Env {
   EMAIL: SendEmail;
   /** Containers (absent in local dev; adapters fall back to mocks). */
   SCANNER?: DurableObjectNamespace;
+  MEDIA_CONTAINER?: DurableObjectNamespace;
 
   /** Test/dev only: injected fake clock. Never set in staging/production. */
   CLOCK?: Clock;

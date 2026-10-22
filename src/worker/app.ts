@@ -29,6 +29,7 @@ import { sharePublic } from './routes/share-public';
 import { shares } from './routes/shares';
 import { uploads } from './routes/uploads';
 import { archives } from './routes/archives';
+import { compress } from './routes/compress';
 import { billing } from './routes/billing';
 import { payments } from './routes/payments';
 import { notifications } from './routes/notifications';
@@ -76,6 +77,7 @@ export function createApp() {
   api.route('/uploads', uploads);
   api.route('/shares', shares);
   api.route('/archives', archives);
+  api.route('/compress', compress);
   api.route('/billing', billing);
   api.route('/notifications', notifications);
   api.route('/family', family);

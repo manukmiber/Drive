@@ -11,11 +11,17 @@ import { purgeExpiredTrash } from '../services/nodes';
 import { deletionReminders, processAccountDeletions } from '../services/account';
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
+import { purgeStandalone } from '../services/compress';
 import { registerCronTask } from '.';
 
 registerCronTask(CRON.hourly, {
   name: 'expire_uploads',
   run: async (ctx) => void (await expireUploads(ctx)),
+});
+
+registerCronTask(CRON.hourly, {
+  name: 'purge_standalone_compress',
+  run: async (ctx) => void (await purgeStandalone(ctx)),
 });
 
 registerCronTask(CRON.nightly, {

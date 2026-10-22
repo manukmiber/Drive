@@ -17,11 +17,11 @@ import { FamilyPage, JoinFamily } from './pages/Family';
 import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
 import { Settings } from './pages/Settings';
+import { Compress } from './pages/Compress';
 import { SignIn } from './pages/SignIn';
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: AppShell });
-
 
 const reportRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -98,6 +98,7 @@ const routeTree = rootRoute.addChildren([
         return <InvoicePage id={id} />;
       },
     }),
+    createRoute({ getParentRoute: () => appRoute, path: '/kompres', component: Compress }),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),
     createRoute({ getParentRoute: () => appRoute, path: '/admin', component: Admin }),
   ]),

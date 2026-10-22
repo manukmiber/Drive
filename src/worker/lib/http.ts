@@ -62,3 +62,9 @@ export function etagMatches(ifNoneMatch: string | null, etag: string): boolean {
   const strip = (s: string) => s.trim().replace(/^W\//, '');
   return ifNoneMatch.split(',').some((t) => strip(t) === strip(etag));
 }
+
+/** Parses a Content-Length header; null when missing or malformed. */
+export function contentLength(header: string | undefined): number | null {
+  if (header === undefined || !/^\d+$/.test(header)) return null;
+  return Number(header);
+}

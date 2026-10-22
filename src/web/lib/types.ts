@@ -33,6 +33,7 @@ export interface Catalog {
     upload_part_concurrency: number;
     upload_max_parallel_files: number;
     share_default_expiry_days: number;
+    standalone_compress_max_bytes: number;
     features: Record<string, boolean>;
   } & Record<string, unknown>;
 }

@@ -47,6 +47,11 @@ Image ClamAV butuh Docker untuk di-build. Dari HP, skrip otomatis memakai **scan
 `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` dan variable `STAGING_DEPLOY_ENABLED=true`; CI akan
 mem-build dan deploy container. Setelah itu: `node scripts/cf-setup.mjs staging --containers-ready`.
 
+Container `media` (ffmpeg, `standard-2`) ikut ter-build bersama scanner. Selama belum ada, kompres foto
+≤ 20 MB dan video ≤ 60 detik tetap jalan lewat Images/Media Transformations; file yang lebih besar
+ditolak dengan alasan "terlalu besar" tanpa memotong kredit. Images dan Media Transformations perlu
+diaktifkan sekali di dashboard (Images → Transformations, Stream → Media Transformations).
+
 ### Domain lain
 Kalau root `zeiko.biz.id` sudah dipakai: `--app-origin https://drive.zeiko.biz.id --uc-origin https://uc.zeiko.biz.id`.
 

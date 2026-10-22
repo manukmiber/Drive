@@ -203,6 +203,7 @@ export const PUBLIC_CONFIG_KEYS = [
   'share_email_max_recipients',
   'zstd_levels',
   'zip_deflate_stream_max_bytes',
+  'standalone_compress_max_bytes',
   'min_topup_idr',
   'upgrade_ratio_hint_pct',
   'ad_frequency_cap_per_session',

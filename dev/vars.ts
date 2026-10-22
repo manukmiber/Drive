@@ -11,6 +11,7 @@ export const DEV_DEFAULTS: Record<string, string> = {
   ADAPTER_PAYMENT: 'mock',
   ADAPTER_SCANNER: 'mock',
   ADAPTER_CSAM: 'mock',
+  ADAPTER_MEDIA: 'mock',
   // Insecure, dev-only secrets. Real ones come from `wrangler secret put`.
   BETTER_AUTH_SECRET: 'dev-only-better-auth-secret-change-me-0000000000',
   DOWNLOAD_SECRET: 'dev-only-download-secret',

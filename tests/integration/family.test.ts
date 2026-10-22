@@ -50,7 +50,12 @@ async function setupFamily() {
   }
   const me = async (s: Session) =>
     (await (await s.req('GET', '/api/me')).json()) as {
-      space: { familyId: string | null; familyRootId: string; personalRootId: string; poolId: string };
+      space: {
+        familyId: string | null;
+        familyRootId: string;
+        personalRootId: string;
+        poolId: string;
+      };
     };
   return { rt, owner, member, other, invite, me, ownerPrivate };
 }

@@ -5,6 +5,7 @@ import { log } from '../lib/log';
 import { deliverShareEmail, deliverShareTelegram } from '../services/share-send';
 import { purgePool } from '../services/billing';
 import { deliverNotification } from '../services/notify';
+import { processCompressJob } from '../services/compress';
 
 registerQueueHandler('scan', async (ctx, body) => {
   if (body.type !== 'scan') return;
@@ -25,4 +26,9 @@ registerQueueHandler('notify', async (ctx, body) => {
     const chat = ctx.env.ADMIN_ALERT_TELEGRAM_CHAT_ID;
     if (chat) await ctx.adapters.telegram.sendMessage(chat, `⚠️ Zeiko: ${body.text}`);
   }
+});
+
+registerQueueHandler('compress', async (ctx, body) => {
+  if (body.type !== 'compress') return;
+  await processCompressJob(ctx, body.jobId);
 });

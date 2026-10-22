@@ -10,6 +10,7 @@ import {
   Settings,
   Share2,
   Star,
+  Minimize2,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -37,6 +38,7 @@ const NAV: NavItem[] = [
   { to: '/dibagikan', label: t.nav.shared, icon: Share2 },
   { to: '/terbaru', label: t.nav.recent, icon: Clock },
   { to: '/berbintang', label: t.nav.starred, icon: Star },
+  { to: '/kompres', label: t.nav.compress, icon: Minimize2 },
   { to: '/sampah', label: t.nav.trash, icon: Trash2 },
 ];
 
