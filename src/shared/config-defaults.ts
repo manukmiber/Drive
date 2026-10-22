@@ -207,5 +207,9 @@ export const PUBLIC_CONFIG_KEYS = [
   'min_topup_idr',
   'upgrade_ratio_hint_pct',
   'ad_frequency_cap_per_session',
+  'ad_student_discount_pct',
+  'ad_image_max_bytes',
+  'ad_hold_minutes',
+  'tax_rate_pct',
   'features',
 ] as const satisfies readonly ConfigKey[];

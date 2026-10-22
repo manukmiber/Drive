@@ -12,6 +12,7 @@ import { deletionReminders, processAccountDeletions } from '../services/account'
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
 import { purgeStandalone } from '../services/compress';
+import { releaseExpiredHolds, runAdsDaily } from '../services/ads';
 import { registerCronTask } from '.';
 
 registerCronTask(CRON.hourly, {
@@ -22,6 +23,17 @@ registerCronTask(CRON.hourly, {
 registerCronTask(CRON.hourly, {
   name: 'purge_standalone_compress',
   run: async (ctx) => void (await purgeStandalone(ctx)),
+});
+
+registerCronTask(CRON.hourly, {
+  name: 'ad_release_holds',
+  run: async (ctx) => void (await releaseExpiredHolds(ctx)),
+});
+
+// 00:05 WIB: open inventory for H+N, start today's bookings, close yesterday's (SPEC §10.4).
+registerCronTask(CRON.dailyAds, {
+  name: 'ads_daily',
+  run: async (ctx) => void (await runAdsDaily(ctx)),
 });
 
 registerCronTask(CRON.nightly, {

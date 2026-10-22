@@ -81,10 +81,10 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Standalone (tmp/compress, 24 jam) + batch (notifikasi per batch), UI menu "Kompres" + `/kompres`
 
 ## Fase 10 — Iklan lokal
-- [ ] Area + alias CF, inventori harian
-- [ ] Booking + hold + pembayaran
-- [ ] Moderasi, penayangan, impresi/klik
-- [ ] Dashboard pengiklan
+- [x] Area + alias CF (38 provinsi + 75 kota/kab, `0003_seed_ad_areas.sql`), inventori harian (cron 00:05 WIB)
+- [x] Booking + hold 15 menit (anti-overbook lewat CHECK dalam satu transaksi) + bayar Saldo/QRIS
+- [x] Moderasi (filter otomatis + admin), penayangan berjenjang kota → provinsi → nasional, impresi/klik
+- [x] Dashboard pengiklan `/iklan`, kartu iklan sidebar/HP, slot halaman share, lokasi iklan di Pengaturan
 
 ## Fase 11 — Admin & moderasi
 - [x] Dashboard biaya vs pendapatan (storage + kompres + fee gateway; komponen lain dari tagihan Cloudflare)

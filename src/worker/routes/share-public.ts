@@ -8,6 +8,7 @@ import { track } from '../lib/analytics';
 import { hashIp, hmacBase62, sha256Hex, timingSafeEqual } from '../lib/crypto';
 import { contentDisposition, parseRange } from '../lib/http';
 import { isPreviewBot, page } from '../lib/pages';
+import { shareAdHtml } from './ads';
 import { serveObject } from '../lib/serve';
 import { planZip, withKnownLength, zipStream } from '../lib/zip';
 import { clientIp, enforceRateLimit } from '../middleware/ratelimit';
@@ -33,12 +34,13 @@ const DEAD_TEXT: Record<DeadReason, string> = {
   disabled: 'Link ini sedang tidak aktif.',
 };
 
-function dead(reason: DeadReason, r64?: string): Response {
+function dead(reason: DeadReason, r64?: string, ad = ''): Response {
   return page(
     DEAD_TEXT[reason],
     `<h1>${escapeHtml(DEAD_TEXT[reason])}</h1><p>Minta link baru ke orang yang membagikan file ini.</p>`,
     {
       status: reason === 'not_found' ? 404 : 410,
+      ad,
       ...(r64 ? { reportUrl: `/lapor?share=${r64}` } : {}),
     },
   );
@@ -57,13 +59,13 @@ async function hasPassCookie(c: Context<AppBindings>, r64: string): Promise<bool
   return timingSafeEqual(v, await passCookieValue(c.env.DOWNLOAD_SECRET, r64, exp));
 }
 
-function passwordPage(error: boolean, r64: string): Response {
+function passwordPage(error: boolean, r64: string, ad = ''): Response {
   return page(
     t.share.passwordTitle,
     `<h1>${t.share.passwordTitle}</h1><p>Masukkan password dari orang yang membagikan link ini.</p>
 <form method="post"><input type="password" name="password" required autofocus autocomplete="current-password" aria-label="${t.share.passwordLabel}">
 ${error ? `<p class="err">${t.share.passwordWrong}</p>` : ''}<button type="submit">${t.share.downloadNow}</button></form>`,
-    { status: error ? 401 : 200, reportUrl: `/lapor?share=${r64}` },
+    { status: error ? 401 : 200, reportUrl: `/lapor?share=${r64}`, ad },
   );
 }
 
@@ -97,8 +99,9 @@ export const sharePublic = new Hono<AppBindings>().on(
     if (state === 'limit' && s) {
       // Resuming a download that was already counted is still allowed.
       const fp = await hashIp(c.env.IP_HASH_SECRET, `${ip}|${ua ?? ''}`, wibDate(ctx.now()));
-      if (!(await c.env.CONFIG_KV.get(`sd:${s.id.slice(0, 24)}:${fp}`))) return dead('limit', r64);
-    } else if (state) return dead(state, r64);
+      if (!(await c.env.CONFIG_KV.get(`sd:${s.id.slice(0, 24)}:${fp}`)))
+        return dead('limit', r64, await shareAdHtml(c, s.created_by));
+    } else if (state) return dead(state, r64, await shareAdHtml(c, s?.created_by ?? null));
     const share = s!;
 
     if (isPreviewBot(ua)) return ogPage(c, share, c.req.url);
@@ -109,7 +112,7 @@ export const sharePublic = new Hono<AppBindings>().on(
         const ok =
           typeof form.password === 'string' &&
           (await verifyPassword(share.password_hash, form.password));
-        if (!ok) return passwordPage(true, r64);
+        if (!ok) return passwordPage(true, r64, await shareAdHtml(c, share.created_by));
         const cfg = await ctx.config();
         const exp = Math.floor(ctx.now() / 1000) + cfg.share_password_cookie_minutes * 60;
         setCookie(c, 'zk_sp', await passCookieValue(c.env.DOWNLOAD_SECRET, r64, exp), {
@@ -121,7 +124,8 @@ export const sharePublic = new Hono<AppBindings>().on(
         });
         return c.redirect(new URL(c.req.url).pathname, 303);
       }
-      if (!(await hasPassCookie(c, r64))) return passwordPage(false, r64);
+      if (!(await hasPassCookie(c, r64)))
+        return passwordPage(false, r64, await shareAdHtml(c, share.created_by));
     } else if (c.req.method === 'POST') {
       return c.redirect(new URL(c.req.url).pathname, 303);
     }

@@ -118,6 +118,30 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
         ],
         cta: { label: 'Buka Pengaturan', url: `${app}/pengaturan` },
       };
+    case 'ad_status': {
+      const status = String(p.status);
+      const titles: Record<string, string> = {
+        approved: `Iklan "${String(p.title)}" disetujui`,
+        rejected: `Iklan "${String(p.title)}" belum bisa tayang`,
+        suspended: `Iklan "${String(p.title)}" dihentikan`,
+      };
+      const paragraphs =
+        status === 'approved'
+          ? ['Materi iklanmu lolos moderasi. Sekarang kamu bisa pilih daerah dan tanggal tayang.']
+          : [
+              `Alasan: ${String(p.reason || 'melanggar Kebijakan Iklan')}.`,
+              Number(p.refundedIdr) > 0
+                ? `Sisa hari tayang dikembalikan ke Saldo sebesar ${formatRupiah(Number(p.refundedIdr))}.`
+                : status === 'rejected'
+                  ? 'Perbaiki materinya lalu kirim ulang untuk dimoderasi.'
+                  : 'Sisa hari tayang tidak dikembalikan karena pelanggaran berat.',
+            ];
+      return {
+        title: titles[status] ?? 'Status iklan berubah',
+        paragraphs,
+        cta: { label: 'Buka dashboard iklan', url: `${app}/iklan` },
+      };
+    }
     case 'compress_done': {
       const done = Number(p.done ?? 0);
       const skipped = Number(p.skipped ?? 0);

@@ -6,6 +6,7 @@ import { t } from '../../shared/strings.id';
 import { Button } from '../components/Button';
 import { TotpSetup } from '../components/TotpSetup';
 import { api, ApiError, sendJson } from '../lib/api';
+import { searchAreas } from '../lib/ads';
 import { downloadZip } from '../lib/files';
 import { authClient } from '../lib/auth-client';
 import { meQueryKey, useMe } from '../lib/session';
@@ -135,6 +136,7 @@ export function Settings() {
       </section>
 
       <NotificationPrefs />
+      <AdLocation />
 
       <AccountData />
 
@@ -155,6 +157,73 @@ export function Settings() {
         </Button>
       </section>
     </div>
+  );
+}
+
+/** "Lokasi untuk iklan lokal" (SPEC §10.3): optional city, stored only with consent, clearable. */
+function AdLocation() {
+  const me = useMe();
+  const qc = useQueryClient();
+  const [q, setQ] = useState('');
+  const current = me.data?.user.adCityCode ?? null;
+  const areas = useQuery({
+    queryKey: ['ad-areas', q],
+    queryFn: () => searchAreas(q),
+    enabled: q.length >= 2,
+  });
+  const currentName = useQuery({
+    queryKey: ['ad-area-name', current],
+    queryFn: async () =>
+      (await searchAreas(current!)).areas.find((a) => a.code === current)?.name ?? current,
+    enabled: Boolean(current),
+  });
+  const save = useMutation({
+    mutationFn: (adCityCode: string | null) => sendJson('PATCH', '/api/me', { adCityCode }),
+    onSuccess: async () => {
+      setQ('');
+      await qc.invalidateQueries({ queryKey: meQueryKey });
+      await qc.invalidateQueries({ queryKey: ['ad'] });
+    },
+  });
+  return (
+    <section className={card} aria-labelledby="iklan-lokasi">
+      <h2 id="iklan-lokasi" className="font-medium">
+        {t.ads.settingsTitle}
+      </h2>
+      <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.ads.settingsBody}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input
+          className={`${input} max-w-xs`}
+          placeholder={current ? (currentName.data ?? current) : t.ads.areaSearch}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          aria-label={t.ads.settingsTitle}
+        />
+        {current && (
+          <Button variant="ghost" onClick={() => save.mutate(null)}>
+            {t.ads.settingsClear}
+          </Button>
+        )}
+      </div>
+      {q.length >= 2 && (
+        <ul className="mt-2 max-h-48 max-w-xs overflow-auto rounded-xl border border-[var(--border)] text-sm">
+          {areas.data?.areas.map((a) => (
+            <li key={a.code}>
+              <button
+                type="button"
+                className="w-full px-3 py-2 text-left hover:bg-[var(--bg-subtle)]"
+                onClick={() => save.mutate(a.code)}
+              >
+                {a.name}
+                {a.province && (
+                  <span className="text-xs text-[var(--fg-muted)]"> · {a.province}</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

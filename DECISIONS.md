@@ -274,3 +274,40 @@ membuka ambang baru.
 - **Standalone** memakai multipart R2 (bagian 50 MiB) di `tmp/compress/{userId}/`, tidak memakai kuota,
   tidak di-scan (file hanya kembali ke pengunggahnya sendiri), dan dihapus cron per jam setelah 24 jam.
 - **Notifikasi** `compress_done` dikirim sekali per batch setelah semua job selesai (penjaga KV `cn:`).
+
+## ADR-032 — Iklan lokal: detail implementasi
+- **Data wilayah**: seed awal 38 provinsi (kode Kepmendagri 2022, termasuk 6 provinsi Papua) dan 75 kota/kabupaten
+  utama dengan alias nama Inggris dari Cloudflare. Sisa kabupaten bisa ditambah lewat migrasi/admin dari dataset
+  publik (github.com/cahyadsn/wilayah). Kota yang tidak dikenal jatuh ke provinsi, lalu nasional. Pencocokan
+  pakai normalisasi (buang "Kota"/"Kabupaten"/"Province"/"Special Region of", diakritik, tanda baca) dan
+  mengutamakan "Kota …" bila nama kota dan kabupaten sama.
+- **Penayangan**: urutan area pilihan user → `cf.city` → `cf.region` → nasional. Pengunjung luar negeri langsung
+  nasional. Kandidat per (versi, tanggal, area, placement) di-cache di KV (TTL ≥ 60 dtk, minimum TTL KV).
+  "Versi" naik saat ada pembayaran untuk hari ini atau takedown, jadi cache lama langsung diabaikan.
+  Kalau tidak ada iklan berbayar, tampil iklan internal "Pasang iklan di Zeiko".
+- **Tanpa ID user**: impresi lewat beacon `POST /ad/i` dengan token HMAC (booking + tanggal WIB), klik lewat
+  `/ad/c/{bookingId}` → 302. Keduanya di luar `/api` (tanpa sesi/CSRF) dan hanya menaikkan counter booking +
+  event Analytics Engine tanpa user. Counter ditulis langsung ke D1 (cukup untuk skala awal, bisa dipindah ke
+  agregasi AE nanti).
+- **Halaman share**: kartu statis dirender di server pada halaman minta password dan link mati. Di sana tidak
+  ada JavaScript (CSP ketat), jadi impresi dihitung saat render dan tidak ada tombol "Sembunyikan" (link
+  "Laporkan iklan" tetap ada). Bot pratinjau tidak melihat iklan. Unduhan langsung tidak pernah melewati
+  halaman iklan. Halaman "Arsip siap" tidak ada karena arsip ZIP diunduh langsung.
+- **`show_ads`**: di explorer mengikuti paket pengguna (paket keluarga mengikuti pool keluarga); di halaman
+  share mengikuti paket pembuat share. Pengguna tanpa paket tetap melihat iklan (default §16 #6).
+- **Anti-overbook**: semua tanggal satu pemesanan masuk satu `db.batch` (buat baris inventori bila belum ada →
+  insert booking `held` → `booked_slots + 1`). CHECK `booked_slots <= total_slots` membatalkan seluruh
+  transaksi bila satu tanggal penuh, dan respons `SOLD_OUT` menyebut tanggal yang penuh. Hold dilepas oleh cron
+  per jam dan sebelum cek ketersediaan.
+- **Pembayaran**: Saldo dipotong dalam satu batch bersama perubahan status booking. Ada penjaga yang sengaja
+  melanggar CHECK saldo bila ada hold yang kedaluwarsa di tengah jalan, jadi uang tidak pernah terpotong untuk
+  slot yang sudah lepas. QRIS/VA = top-up dengan `then: {kind:'ads'}` (pola ADR-026). Kalau pembayaran telat
+  dan hold sudah habis, uangnya tetap masuk Saldo.
+- **Moderasi**: filter otomatis (`src/shared/ad-policy.ts`: kata terlarang dengan pelipatan leetspeak, CTA wajib
+  https, tanpa IP/punycode/port/link pendek, Shopee/Tokopedia harus domain resminya) langsung menolak. Yang lolos
+  masuk antrean admin. Materi yang sedang dipakai booking aktif tidak bisa diubah. Takedown (`suspend`)
+  menghentikan booking `paid`/`live`; sisa hari dikembalikan ke Saldo sesuai `ad_refund_on_suspend`.
+- **Gambar**: dipotong persegi dan dikompres ke WebP di browser (turunkan kualitas/ukuran sampai ≤
+  `ad_image_max_bytes`). Server memeriksa ulang header RIFF/WEBP (VP8/VP8L/VP8X), ukuran, dan rasio 1:1.
+  Gambar publik hanya untuk materi `approved`, disajikan dengan `CSP: sandbox` + `nosniff`.
+- **Diskon mahasiswa**: OTP 6 digit ke email `.ac.id` (hash di KV 10 menit, maks 5 percobaan).

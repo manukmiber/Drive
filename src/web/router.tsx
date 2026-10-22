@@ -18,6 +18,7 @@ import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
 import { Settings } from './pages/Settings';
 import { Compress } from './pages/Compress';
+import { Advertiser } from './pages/Advertiser';
 import { SignIn } from './pages/SignIn';
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
@@ -26,11 +27,13 @@ const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', compo
 const reportRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/lapor',
-  validateSearch: (s: Record<string, unknown>): { share?: string } =>
-    typeof s.share === 'string' ? { share: s.share.slice(0, 200) } : {},
+  validateSearch: (s: Record<string, unknown>): { share?: string; ad?: string } => ({
+    ...(typeof s.share === 'string' ? { share: s.share.slice(0, 200) } : {}),
+    ...(typeof s.ad === 'string' ? { ad: s.ad.slice(0, 40) } : {}),
+  }),
   component: function ReportPage() {
-    const { share } = reportRoute.useSearch();
-    return <Report share={share} />;
+    const { share, ad } = reportRoute.useSearch();
+    return <Report share={share} ad={ad} />;
   },
 });
 
@@ -99,6 +102,7 @@ const routeTree = rootRoute.addChildren([
       },
     }),
     createRoute({ getParentRoute: () => appRoute, path: '/kompres', component: Compress }),
+    createRoute({ getParentRoute: () => appRoute, path: '/iklan', component: Advertiser }),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),
     createRoute({ getParentRoute: () => appRoute, path: '/admin', component: Admin }),
   ]),

@@ -2,7 +2,9 @@ import { count, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { schema } from '../db/client';
+import { AppError } from '../lib/errors';
 import { validate } from '../lib/validate';
+import { areaName } from '../services/ads';
 import { ensureCsrfCookie, requireUser } from '../middleware/auth';
 import { ensurePersonalSpace } from '../services/accounts';
 import { cancelDeletion, exportData, requestDeletion } from '../services/account';
@@ -11,6 +13,8 @@ import type { AppBindings } from '../types';
 
 const profilePatch = z.object({
   name: z.string().trim().min(1).max(80).optional(),
+  /** "Lokasi untuk iklan lokal" (SPEC §10.3): optional, null clears it. */
+  adCityCode: z.string().max(13).nullable().optional(),
 });
 
 export const me = new Hono<AppBindings>()
@@ -58,6 +62,14 @@ export const me = new Hono<AppBindings>()
       await ctx.db
         .update(schema.users)
         .set({ name: body.name, updatedAt: new Date(ctx.now()) })
+        .where(eq(schema.users.id, user.id));
+    }
+    if (body.adCityCode !== undefined) {
+      if (body.adCityCode && !(await areaName(ctx, body.adCityCode)))
+        throw new AppError('VALIDATION', 'unknown area', { field: 'adCityCode' });
+      await ctx.db
+        .update(schema.users)
+        .set({ adCityCode: body.adCityCode, updatedAt: new Date(ctx.now()) })
         .where(eq(schema.users.id, user.id));
     }
     return c.json({ ok: true });

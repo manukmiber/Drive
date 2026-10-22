@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router';
 import { ChevronRight, LayoutGrid, List, UploadCloud } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { t } from '../../shared/strings.id';
+import { AdCard } from '../components/AdCard';
 import { FileView, type View } from '../components/explorer/FileView';
 import { errorText } from '../components/explorer/useNodeActions';
 import { toast } from '../components/ui/Toast';
@@ -229,6 +230,10 @@ export function Drive({ folderId }: { folderId?: string }) {
       <div ref={sentinel} className="h-8" />
       {isFetchingNextPage && (
         <p className="pb-4 text-center text-xs text-[var(--fg-muted)]">{t.common.loading}</p>
+      )}
+      {/* Phones: the one ad sits after the last file (desktop shows it in the sidebar). */}
+      {q.isSuccess && !hasNextPage && (
+        <AdCard placement="explorer_sidebar" className="mx-4 mb-4 md:hidden" />
       )}
 
       {dragging && folder && (

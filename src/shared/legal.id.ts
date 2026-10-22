@@ -66,7 +66,8 @@ export const LEGAL: Record<string, LegalDoc> = {
         h: 'Untuk apa',
         p: [
           'Menjalankan layanan, penagihan, keamanan (pemindaian malware di infrastruktur kami sendiri; isi file tidak dikirim ke layanan pemindai pihak ketiga), dan menangani laporan penyalahgunaan.',
-          'Tidak ada pelacak iklan pihak ketiga. Iklan lokal (jika tampil) hanya memakai kota yang kamu pilih.',
+          'Tidak ada pelacak iklan pihak ketiga dan tidak ada profil perilaku. Iklan lokal memakai kota yang kamu pilih di Pengaturan (atas persetujuanmu, bisa dihapus kapan saja); kalau kosong, kami memakai perkiraan daerah dari alamat IP yang diberikan Cloudflare. Kami tidak pernah meminta izin GPS.',
+          'Hitungan tayangan dan klik iklan tidak menyimpan ID pengguna.',
         ],
       },
       {
@@ -123,9 +124,30 @@ export const LEGAL: Record<string, LegalDoc> = {
         ],
       },
       {
-        h: 'Konten iklan',
+        h: 'Konten yang dilarang',
         p: [
-          'Dilarang: judi, pinjaman ilegal, obat tanpa izin, konten dewasa, politik praktis, dan klaim menyesatkan. Semua iklan dimoderasi sebelum tayang.',
+          'Judi, slot, dan togel; pinjol ilegal atau tidak terdaftar OJK; investasi atau robot trading bodong; skema ponzi/MLM; kripto spekulatif.',
+          'Obat keras/terlarang dan klaim kesehatan menyesatkan; rokok, vape, dan alkohol; konten dewasa; senjata; barang palsu atau bajakan; joki tugas/ujian.',
+          'Politik dan SARA; penipuan dan phishing.',
+        ],
+      },
+      {
+        h: 'Moderasi',
+        p: [
+          'Setiap materi diperiksa otomatis (kata terlarang, link berbahaya, link pendek) lalu disetujui manual oleh tim Zeiko, paling lambat 1×24 jam. Materi yang disetujui bisa dipakai lagi untuk pemesanan berikutnya.',
+          'Iklan yang melanggar saat tayang dihentikan. Untuk pelanggaran berat sisa hari tidak dikembalikan; untuk kasus lain sisa hari dikembalikan ke Saldo Zeiko.',
+        ],
+      },
+      {
+        h: 'Penargetan & data',
+        p: [
+          'Iklan hanya ditargetkan per daerah (kota/kabupaten, provinsi, atau nasional). Tidak ada cookie atau pelacak pihak ketiga, dan pengiklan tidak menerima data pribadi pengguna, hanya jumlah tayangan dan klik per hari.',
+        ],
+      },
+      {
+        h: 'Pemesanan',
+        p: [
+          'Slot dibuka setiap hari untuk 14 hari ke depan dan berlaku siapa cepat dia dapat. Slot ditahan 15 menit saat checkout dan dilepas kalau belum dibayar.',
         ],
       },
     ],

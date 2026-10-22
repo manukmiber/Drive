@@ -3,7 +3,14 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { validate } from '../lib/validate';
+import { AppError } from '../lib/errors';
 import { requireStaff } from '../middleware/auth';
+import {
+  listCreativesForReview,
+  reviewCreative,
+  reviewCreativeImage,
+  suspendCreative,
+} from '../services/ads';
 import {
   adjustBalance,
   auditLog,
@@ -34,6 +41,62 @@ const adminOnly = requireStaff(['admin']);
 export const admin = new Hono<AppBindings>()
   .use('*', requireStaff(['admin', 'moderator']))
   .get('/whoami', (c) => c.json({ user: c.get('user') }))
+  // Ads moderation (SPEC §10.5)
+  .get(
+    '/ads',
+    validate(
+      'query',
+      z.object({
+        status: z.enum(['pending', 'approved', 'rejected', 'suspended']).default('pending'),
+      }),
+    ),
+    async (c) =>
+      c.json({ items: await listCreativesForReview(c.get('ctx'), c.req.valid('query').status) }),
+  )
+  .get('/ads/:id/image', async (c) => {
+    const obj = await reviewCreativeImage(c.get('ctx'), c.req.param('id'));
+    if (!obj) return c.body(null, 404);
+    return new Response(obj.body, {
+      headers: {
+        'content-type': 'image/webp',
+        'cache-control': 'private, no-store',
+        'x-content-type-options': 'nosniff',
+      },
+    });
+  })
+  .post(
+    '/ads/:id/review',
+    validate('json', z.object({ decision: z.enum(['approve', 'reject']), reason })),
+    async (c) => {
+      const b = c.req.valid('json');
+      if (b.decision === 'reject' && !b.reason.trim())
+        throw new AppError('VALIDATION', 'reason required', { field: 'reason' });
+      await reviewCreative(
+        c.get('ctx'),
+        c.get('user')!.id,
+        c.req.param('id'),
+        b.decision,
+        b.reason,
+      );
+      return c.body(null, 204);
+    },
+  )
+  .post(
+    '/ads/:id/suspend',
+    validate('json', z.object({ severe: z.boolean(), reason: reason.min(3) })),
+    async (c) => {
+      const b = c.req.valid('json');
+      return c.json(
+        await suspendCreative(
+          c.get('ctx'),
+          c.get('user')!.id,
+          c.req.param('id'),
+          b.severe,
+          b.reason,
+        ),
+      );
+    },
+  )
   .get(
     '/dashboard',
     validate('query', z.object({ days: z.coerce.number().int().min(1).max(365).default(30) })),

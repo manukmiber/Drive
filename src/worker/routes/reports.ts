@@ -12,7 +12,7 @@ export const reports = new Hono<AppBindings>().post(
   validate(
     'json',
     z.object({
-      targetType: z.enum(['share', 'node']),
+      targetType: z.enum(['share', 'node', 'ad']),
       targetId: z.string().min(10).max(80),
       category: z.enum(REPORT_CATEGORIES),
       details: z.string().max(2000).optional(),

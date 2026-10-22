@@ -10,6 +10,7 @@ import {
   Settings,
   Share2,
   Star,
+  Megaphone,
   Minimize2,
   Trash2,
   Users,
@@ -25,6 +26,7 @@ import { UploadPanel } from './UploadPanel';
 import { Toaster } from './ui/Toast';
 import { BillingBanner } from '../pages/Billing';
 import { Bell } from './Bell';
+import { AdCard } from './AdCard';
 
 interface NavItem {
   to: string;
@@ -39,6 +41,7 @@ const NAV: NavItem[] = [
   { to: '/terbaru', label: t.nav.recent, icon: Clock },
   { to: '/berbintang', label: t.nav.starred, icon: Star },
   { to: '/kompres', label: t.nav.compress, icon: Minimize2 },
+  { to: '/iklan', label: t.nav.ads, icon: Megaphone },
   { to: '/sampah', label: t.nav.trash, icon: Trash2 },
 ];
 
@@ -103,6 +106,7 @@ export function AppShell() {
           >
             {t.storage.addSpace}
           </Link>
+          <AdCard placement="explorer_sidebar" className="mt-4" />
         </div>
         <div className="mt-auto flex flex-col gap-1">
           {(data.user.role === 'admin' || data.user.role === 'moderator') && (

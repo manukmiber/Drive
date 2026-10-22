@@ -105,7 +105,7 @@ async function audit(
 export async function createReport(
   ctx: Ctx,
   input: {
-    targetType: 'share' | 'node';
+    targetType: 'share' | 'node' | 'ad';
     targetId: string;
     category: ReportCategory;
     details?: string | undefined;
@@ -114,14 +114,10 @@ export async function createReport(
   },
 ): Promise<{ id: string; priority: string; slaDueAt: number }> {
   const cfg = await ctx.config();
-  const exists =
-    input.targetType === 'share'
-      ? await ctx.env.DB.prepare('SELECT 1 AS x FROM shares WHERE id = ?1')
-          .bind(input.targetId)
-          .first()
-      : await ctx.env.DB.prepare('SELECT 1 AS x FROM nodes WHERE id = ?1')
-          .bind(input.targetId)
-          .first();
+  const table = { share: 'shares', node: 'nodes', ad: 'ad_creatives' }[input.targetType];
+  const exists = await ctx.env.DB.prepare(`SELECT 1 AS x FROM ${table} WHERE id = ?1`)
+    .bind(input.targetId)
+    .first();
   if (!exists) throw new AppError('NOT_FOUND', 'reported item not found');
   const urgent = URGENT.includes(input.category);
   const now = ctx.now();
@@ -145,7 +141,7 @@ export async function createReport(
       now,
     )
     .run();
-  if (input.category === 'csam') {
+  if (input.category === 'csam' && input.targetType !== 'ad') {
     // Automatic: never wait for a human on CSAM (SPEC §14.3).
     await applyActions(
       ctx,

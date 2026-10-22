@@ -30,6 +30,7 @@ import { shares } from './routes/shares';
 import { uploads } from './routes/uploads';
 import { archives } from './routes/archives';
 import { compress } from './routes/compress';
+import { adPublic, adsApi, advertiser } from './routes/ads';
 import { billing } from './routes/billing';
 import { payments } from './routes/payments';
 import { notifications } from './routes/notifications';
@@ -78,6 +79,8 @@ export function createApp() {
   api.route('/shares', shares);
   api.route('/archives', archives);
   api.route('/compress', compress);
+  api.route('/ads', adsApi);
+  api.route('/advertiser', advertiser);
   api.route('/billing', billing);
   api.route('/notifications', notifications);
   api.route('/family', family);
@@ -88,6 +91,7 @@ export function createApp() {
   app.route('/d', download);
   app.route('/p', preview);
   app.route('/z', archiveDownload);
+  app.route('/ad', adPublic);
   app.route('/', sharePublic);
   app.route('/__dev', dev);
 

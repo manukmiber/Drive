@@ -13,22 +13,22 @@ function shareIdFrom(input: string): string | null {
 
 const field = 'mt-1 w-full rounded-xl border border-[var(--border)] bg-transparent px-3 text-sm';
 
-export function Report({ share }: { share?: string | undefined }) {
+export function Report({ share, ad }: { share?: string | undefined; ad?: string | undefined }) {
   const [link, setLink] = useState(share ?? '');
-  const [category, setCategory] = useState('copyright');
+  const [category, setCategory] = useState(ad ? 'phishing' : 'copyright');
   const [details, setDetails] = useState('');
   const [contact, setContact] = useState('');
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
-    const id = shareIdFrom(link);
+    const id = ad ?? shareIdFrom(link);
     if (!id) return setError(t.report.badLink);
     setState('sending');
     setError(null);
     try {
       await postJson('/api/public/reports', {
-        targetType: 'share',
+        targetType: ad ? 'ad' : 'share',
         targetId: id,
         category,
         details: details || undefined,
@@ -59,15 +59,21 @@ export function Report({ share }: { share?: string | undefined }) {
             }}
           >
             <p className="text-sm text-[var(--fg-muted)]">{t.report.intro}</p>
-            <label className="block text-xs text-[var(--fg-muted)]">
-              {t.report.link}
-              <input
-                className={`${field} h-11`}
-                value={link}
-                onChange={(e) => setLink(e.target.value)}
-                required
-              />
-            </label>
+            {ad ? (
+              <p className="text-xs text-[var(--fg-muted)]">
+                {t.report.adTarget}: <code>{ad}</code>
+              </p>
+            ) : (
+              <label className="block text-xs text-[var(--fg-muted)]">
+                {t.report.link}
+                <input
+                  className={`${field} h-11`}
+                  value={link}
+                  onChange={(e) => setLink(e.target.value)}
+                  required
+                />
+              </label>
+            )}
             <label className="block text-xs text-[var(--fg-muted)]">
               {t.report.category}
               <select

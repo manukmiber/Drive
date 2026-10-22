@@ -11,6 +11,7 @@ import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
 import { log } from '../lib/log';
 import { ensurePersonalSpace } from './accounts';
+import { payBookingsFromWallet } from './ads';
 import { notificationStmt, notify } from './notify';
 
 type Stmt = D1PreparedStatement;
@@ -470,7 +471,8 @@ export interface TopupResult {
 export type DirectPurpose =
   | { kind: 'plan'; code: string }
   | { kind: 'addon'; code: string }
-  | { kind: 'compress'; code: string };
+  | { kind: 'compress'; code: string }
+  | { kind: 'ads'; bookingIds: string[] };
 
 export async function createTopup(
   ctx: Ctx,
@@ -611,6 +613,7 @@ export async function applyPaymentEvent(
     try {
       if (then.kind === 'plan') await choosePlan(ctx, p.user_id, then.code);
       else if (then.kind === 'addon') await buyAddon(ctx, p.user_id, then.code);
+      else if (then.kind === 'ads') await payBookingsFromWallet(ctx, p.user_id, then.bookingIds);
       else await buyCompressPack(ctx, p.user_id, then.code);
     } catch (e) {
       log.warn('direct_purchase_failed', { paymentId: p.id, error: String(e) });
