@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { FakeClock } from '../../src/worker/adapters/clock';
+import { CRON } from '../../src/shared/constants';
 import { APP, jsonReq, makeRuntime } from '../helpers/runtime';
 
 describe('worker skeleton', () => {
@@ -50,5 +52,23 @@ describe('worker skeleton', () => {
     const out = await rt.runCron('0 * * * *');
     expect(out.failed).toEqual([]);
     expect(out.ran).toContain('usage_counters_gc');
+  });
+});
+
+describe('combined cron (Workers Free, ADR-035)', () => {
+  it('runs the hourly tasks every hour and the daily ones in their UTC hour', async () => {
+    const clock = new FakeClock(Date.UTC(2026, 9, 22, 10, 5));
+    const rt = await makeRuntime({ clock });
+    const names = async () => (await rt.runCron(CRON.combined)).ran;
+    const hourly = await names();
+    expect(hourly).toContain('usage_counters_gc');
+    expect(hourly).not.toContain('ads_daily');
+    expect(hourly).not.toContain('purge_old_logs');
+    clock.set(Date.UTC(2026, 9, 22, 17, 5));
+    expect(await names()).toEqual(expect.arrayContaining(['usage_counters_gc', 'ads_daily']));
+    clock.set(Date.UTC(2026, 9, 22, 19, 5));
+    const nightly = await names();
+    expect(nightly).toEqual(expect.arrayContaining(['usage_counters_gc', 'purge_old_logs']));
+    expect(nightly).not.toContain('ads_daily');
   });
 });

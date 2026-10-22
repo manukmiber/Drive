@@ -34,6 +34,11 @@ export const CRON = {
   hourly: '0 * * * *',
   /** 02:00 WIB */
   nightly: '0 19 * * *',
+  /**
+   * Workers Free allows 5 cron triggers per account: one hourly trigger runs the hourly tasks and,
+   * in their UTC hour, the daily ones (ADR-035).
+   */
+  combined: '5 * * * *',
 } as const;
 
 export const TIMEZONE = 'Asia/Jakarta';

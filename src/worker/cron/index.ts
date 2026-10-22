@@ -30,14 +30,26 @@ export function registerCronTask(cron: string, task: CronTask): void {
   (tasks[cron] ??= []).push(task);
 }
 
+const utcHour = (cron: string) => Number(cron.split(' ')[1]);
+
+/** The task lists a trigger stands for: itself, or for CRON.combined whatever is due this hour. */
+function due(cron: string, at: number): string[] {
+  if (cron !== CRON.combined) return [cron];
+  const hour = new Date(at).getUTCHours();
+  return [CRON.hourly, CRON.dailyAds, CRON.nightly].filter(
+    (c) => c === CRON.hourly || utcHour(c) === hour,
+  );
+}
+
 export async function runScheduled(
   cron: string,
   env: Env,
+  scheduledTime?: number,
 ): Promise<{ ran: string[]; failed: string[] }> {
   const ctx = createCtx(env);
   const ran: string[] = [];
   const failed: string[] = [];
-  for (const task of tasks[cron] ?? []) {
+  for (const task of due(cron, scheduledTime ?? ctx.now()).flatMap((c) => tasks[c] ?? [])) {
     try {
       await task.run(ctx);
       ran.push(task.name);

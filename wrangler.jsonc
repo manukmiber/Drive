@@ -4,7 +4,7 @@
 // Secrets (wrangler secret put …): BETTER_AUTH_SECRET, DOWNLOAD_SECRET, SHARE_LINK_SECRET,
 //   SHARE_LINK_SECRET_PREV (rotation only), PREVIEW_SECRET, CONTACTS_ENC_KEY, IP_HASH_SECRET,
 //   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
-//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY.
+//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, MAIL_RELAY_TOKEN (ADAPTER_EMAIL=relay only).
 // REPLACE_WITH_* ids are filled by scripts/cf-setup.mjs (deploy/{env}.json).
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
@@ -35,6 +35,8 @@
     {
       "tag": "v1",
       "new_sqlite_classes": [
+        "ArchiverContainer",
+        "MediaContainer",
         "ScannerContainer"
       ]
     }
@@ -47,7 +49,9 @@
     "ADAPTER_EMAIL": "mock",
     "ADAPTER_PAYMENT": "mock",
     "ADAPTER_SCANNER": "mock",
-    "ADAPTER_CSAM": "mock"
+    "ADAPTER_CSAM": "mock",
+    "ADAPTER_MEDIA": "mock",
+    "ADAPTER_ARCHIVER": "mock"
   },
   "d1_databases": [
     {
@@ -220,21 +224,28 @@
           "custom_domain": true
         }
       ],
+      "triggers": {
+        "crons": [
+          "5 * * * *"
+        ]
+      },
       "vars": {
         "APP_ENV": "staging",
         "APP_ORIGIN": "https://staging.zeiko.biz.id",
         "USERCONTENT_ORIGIN": "https://uc-staging.zeiko.biz.id",
         "EMAIL_FROM": "no-reply@zeiko.biz.id",
-        "ADAPTER_EMAIL": "cloudflare",
+        "ADAPTER_EMAIL": "mock",
         "ADAPTER_PAYMENT": "mock",
-        "ADAPTER_SCANNER": "container",
-        "ADAPTER_CSAM": "mock"
+        "ADAPTER_SCANNER": "mock",
+        "ADAPTER_CSAM": "mock",
+        "ADAPTER_MEDIA": "cloudflare",
+        "ADAPTER_ARCHIVER": "none"
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "zeiko-staging",
-          "database_id": "REPLACE_WITH_STAGING_D1_ID",
+          "database_id": "33413ba0-4a72-42db-8576-58ded9537076",
           "migrations_dir": "migrations"
         }
       ],
@@ -247,7 +258,7 @@
       "kv_namespaces": [
         {
           "binding": "CONFIG_KV",
-          "id": "REPLACE_WITH_STAGING_KV_ID"
+          "id": "9c35b1ed43174565bc1f540a8343baf2"
         }
       ],
       "queues": {
@@ -380,30 +391,6 @@
       },
       "media": {
         "binding": "MEDIA"
-      },
-      "send_email": [
-        {
-          "name": "EMAIL",
-          "allowed_sender_addresses": [
-            "no-reply@zeiko.biz.id"
-          ]
-        }
-      ],
-      "containers": [
-        {
-          "class_name": "ScannerContainer",
-          "image": "./containers/scanner/Dockerfile",
-          "instance_type": "standard-1",
-          "max_instances": 10
-        }
-      ],
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "SCANNER",
-            "class_name": "ScannerContainer"
-          }
-        ]
       }
     },
     "production": {
@@ -417,6 +404,9 @@
           "custom_domain": true
         }
       ],
+      "limits": {
+        "cpu_ms": 300000
+      },
       "vars": {
         "APP_ENV": "production",
         "APP_ORIGIN": "https://zeiko.biz.id",
@@ -425,7 +415,9 @@
         "ADAPTER_EMAIL": "cloudflare",
         "ADAPTER_PAYMENT": "mock",
         "ADAPTER_SCANNER": "container",
-        "ADAPTER_CSAM": "mock"
+        "ADAPTER_CSAM": "mock",
+        "ADAPTER_MEDIA": "cloudflare",
+        "ADAPTER_ARCHIVER": "container"
       },
       "d1_databases": [
         {
@@ -588,6 +580,18 @@
       ],
       "containers": [
         {
+          "class_name": "ArchiverContainer",
+          "image": "./containers/archiver/Dockerfile",
+          "instance_type": "standard-2",
+          "max_instances": 5
+        },
+        {
+          "class_name": "MediaContainer",
+          "image": "./containers/media/Dockerfile",
+          "instance_type": "standard-2",
+          "max_instances": 5
+        },
+        {
           "class_name": "ScannerContainer",
           "image": "./containers/scanner/Dockerfile",
           "instance_type": "standard-1",
@@ -597,14 +601,19 @@
       "durable_objects": {
         "bindings": [
           {
+            "name": "ARCHIVER",
+            "class_name": "ArchiverContainer"
+          },
+          {
+            "name": "MEDIA_CONTAINER",
+            "class_name": "MediaContainer"
+          },
+          {
             "name": "SCANNER",
             "class_name": "ScannerContainer"
           }
         ]
       }
     }
-  },
-  "limits": {
-    "cpu_ms": 300000
   }
 }

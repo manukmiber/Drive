@@ -121,7 +121,10 @@ function envBlock(env, nsBase, defaults) {
       { pattern: new URL(uc).hostname, custom_domain: true },
     ],
     // Workers Free rejects a custom CPU limit (it is fixed at 10 ms there, ADR-035).
-    ...(d.plan === 'free' ? {} : { limits: { cpu_ms: 300000 } }),
+    ...(d.plan === 'free'
+      ? // One trigger instead of three: Free has 5 cron triggers per account (ADR-035).
+        { triggers: { crons: ['5 * * * *'] } }
+      : { limits: { cpu_ms: 300000 } }),
     ...bindings(env, nsBase, {
       app,
       uc,

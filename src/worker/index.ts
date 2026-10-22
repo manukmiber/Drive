@@ -12,6 +12,6 @@ export default {
   fetch: (req, env, ctx) => app.fetch(req, env, ctx),
   queue: (batch, env) => handleQueue(batch, env),
   scheduled: (controller, env, ctx) => {
-    ctx.waitUntil(runScheduled(controller.cron, env));
+    ctx.waitUntil(runScheduled(controller.cron, env, controller.scheduledTime));
   },
 } satisfies ExportedHandler<Env, QueueMessage>;
