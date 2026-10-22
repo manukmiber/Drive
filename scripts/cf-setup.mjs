@@ -62,6 +62,8 @@ function wrangler(argv, { json = false, allowFail = false, input } = {}) {
     console.error(`✗ ${shown}\n${r.stderr || r.stdout}`);
     process.exit(1);
   }
+  // JSON output is stdout only: stderr carries config warnings that would break the parse.
+  if (json) return r.stdout ?? '';
   return (r.stdout ?? '') + (allowFail ? (r.stderr ?? '') : '');
 }
 
@@ -173,11 +175,16 @@ if (!flag('--skip-deploy')) {
 }
 
 // 8. Secrets: create the missing ones with random values (never printed).
-const existing = new Set(
-  (
-    parseJson(wrangler(['secret', 'list', '--env', env], { json: true, allowFail: true })) ?? []
-  ).map((s) => s.name),
-);
+const secretList = DRY
+  ? []
+  : parseJson(wrangler(['secret', 'list', '--env', env], { json: true, allowFail: true }));
+// Never guess: an unreadable list would make every secret look missing and replace them all
+// (a new CONTACTS_ENC_KEY makes stored contacts unreadable).
+if (!Array.isArray(secretList)) {
+  console.error('✗ daftar secret tidak bisa dibaca; berhenti supaya secret lama tidak tertimpa.');
+  process.exit(1);
+}
+const existing = new Set(secretList.map((s) => s.name));
 const missing = GENERATED_SECRETS.filter((s) => !existing.has(s));
 if (missing.length && !DRY) {
   const dir = mkdtempSync(join(tmpdir(), 'zk-secrets-'));

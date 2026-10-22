@@ -69,9 +69,17 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 - Pemesanan iklan belum memakai binding `RL_AD_BOOK`. Sudah dipasang.
 - Beacon impresi dan klik iklan tanpa batas per IP, sehingga statistik pengiklan bisa digelembungkan. Sudah diberi rate limit.
 
-## Sisa yang perlu dicek di staging
+## Hasil cek staging (2026-10-22, Workers Free)
 
-- Header di edge: pastikan Cloudflare tidak menimpa CSP/HSTS, dan "Always Use HTTPS" aktif.
-- CSAM Scanning Tool dan cakupan respons Worker.
-- Lighthouse mobile ≥ 90 diukur ulang di perangkat/CI biasa (di HP pengembangan: 81–88, lihat PROGRESS).
-- Uji beban `tests/load/download.js` (k6) terhadap staging.
+- **CSP** dari Worker sampai utuh ke browser.
+- **HSTS:** setelan HSTS zona `zeiko.biz.id` (`max-age=15552000`, 6 bulan) menimpa header Worker yang 1 tahun.
+  Tidak berbahaya. Kalau ingin 1 tahun, ubah di SSL/TLS → Edge Certificates (keputusan pemilik, karena
+  setelan itu berlaku untuk seluruh zona).
+- **JavaScript Detections** (Bot Fight Mode zona) menyuntikkan `<script>` inline ke setiap HTML, dan CSP
+  `script-src 'self'` memblokirnya. Akibatnya ada error console, Lighthouse Best Practices turun ke 92, dan
+  Cloudflare kehilangan satu sinyal deteksi bot. App tetap berjalan normal. CSP **sengaja tidak** dilonggarkan
+  dengan `'unsafe-inline'`. Pilihan pemilik: biarkan, atau matikan JS Detections/Bot Fight Mode di zona.
+- **Bot pemindai** (l9scan dan sejenisnya) langsung datang begitu domain staging punya sertifikat. Tanpa OTP,
+  mereka tidak bisa masuk: email staging masih mock, sehingga OTP hanya tersimpan di KV.
+- Masih perlu dicek: CSAM Scanning Tool dan cakupan respons Worker, Lighthouse ≥ 90 di CI, serta k6 (setelah
+  Workers Paid, lihat PROGRESS).

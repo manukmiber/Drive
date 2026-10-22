@@ -94,7 +94,16 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 ## Fase 12 — Hardening & rilis
 - [x] E2E Playwright (desktop + Pixel 7: login OTP → upload → share → unduh → sampah; semua halaman tanpa error console)
 - [x] Audit keamanan §14 → `docs/SECURITY.md` + suite IDOR (39 endpoint), runbook di `docs/runbook/`
-- [x] k6 `tests/load/download.js` (jalankan terhadap staging)
-- [~] Lighthouse mobile: landing 81–88 di HP dev (A11y/BP/SEO 100); ukur ulang ≥ 90 di CI/staging
+- [~] k6 `tests/load/download.js`: skrip siap, **belum dijalankan**. Di Workers Free, kuota 100 ribu request/hari
+  dipakai bersama semua Worker di akun, sehingga uji beban bisa mematikan Worker lain milik pemilik. Jalankan
+  setelah pindah ke Workers Paid.
+- [~] Lighthouse mobile: landing di HP dev 81–88, di staging 82–83 (dari HP yang sama, benchmarkIndex 1493).
+  A11y/SEO 100. Best Practices di staging 92 karena script inline JavaScript Detections Cloudflare diblokir
+  CSP (lihat SECURITY.md). Target ≥ 90 diukur ulang di CI.
 - [x] Draf kebijakan (/kebijakan/*, label DRAF) + docs/LAUNCH-CHECKLIST.md + ekspor data & hapus akun (UU PDP)
-- [ ] Deploy staging
+- [x] Deploy staging (2026-10-22, **Workers Free**, ADR-035): https://staging.zeiko.biz.id dan
+  https://uc-staging.zeiko.biz.id. D1/KV/R2/6 Queue, 1 cron gabungan, 8 secret acak, email relay (fallback
+  mock sampai `MAIL_RELAY_TOKEN` dipasang). Smoke test lolos: login OTP → upload 10 KB, 0,5 MB, 1 MB, 5 MB, dan
+  20 MB (multipart) → scan `ready` → unduh (sha256 cocok) → link share 200 → ZIP.
+- [ ] Production: menunggu persetujuan pemilik. Apex `zeiko.biz.id` sudah dipakai layanan lain, dan Workers Paid
+  dibutuhkan untuk container serta Email Sending.

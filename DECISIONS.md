@@ -372,3 +372,13 @@ Workers Paid ($5/bulan) ditunda. Konsekuensinya:
   memakai `mock`: OTP disimpan di KV `dev:mail:*` dan tidak ada email yang terkirim ke alamat sungguhan.
 - Skrip: `node scripts/cf-setup.mjs staging --plan free --email mock|relay`. Saat pindah ke Paid, jalankan
   `--plan paid --email cloudflare`, lalu aktifkan container lewat CI (`--containers-ready`).
+- **Hasil pengukuran staging (2026-10-22):** walaupun batas resminya 10 ms, Free masih menjalankan invocation
+  yang lebih lama. Scan 20 MB memakai 659 ms CPU, login OTP sekitar 130 ms, dan semuanya berhasil.
+  Kelonggaran ini tidak dijamin, jadi untuk production tetap pakai Paid.
+- **Cron:** Free membatasi 5 cron trigger per akun, dan 3 sudah dipakai Worker lain. `CRON.combined`
+  (`5 * * * *`) menjalankan tugas per jam, ditambah tugas harian pada jam UTC-nya (17 = iklan harian,
+  19 = malam). Paid tetap memakai 3 trigger terpisah.
+- **Analytics Engine** harus diaktifkan sekali per akun dari dashboard (gratis).
+- `cf-setup` hanya membaca JSON dari stdout dan berhenti kalau daftar secret tidak terbaca. Sebelumnya, warning
+  wrangler di stderr membuat daftar terbaca kosong dan **semua secret dibuat ulang** (secret staging sempat
+  berganti satu kali).
