@@ -6,6 +6,7 @@ import { ulid } from '../lib/ids';
 import { AppError } from '../lib/errors';
 import { log } from '../lib/log';
 import { noticeEmail } from './email-templates';
+import { appUrl } from '../lib/paths';
 
 export type NotificationType =
   | 'file_rejected'
@@ -52,7 +53,7 @@ export async function notify(
 type Rendered = { title: string; paragraphs: string[]; cta?: { label: string; url: string } };
 
 function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | null {
-  const app = ctx.env.APP_ORIGIN;
+  const app = appUrl(ctx.env, '');
   const billing = { label: 'Buka Paket & tagihan', url: `${app}/paket` };
   switch (type) {
     case 'file_rejected':

@@ -5,7 +5,7 @@ import { Copy, Crown, MessageCircle, Send, Users } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 import { formatBytes, formatDate, formatRupiah } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { Logo } from '../components/Logo';
 import { StorageMeter } from '../components/StorageMeter';
@@ -107,7 +107,7 @@ function InvitePanel({ onDone }: { onDone: () => void }) {
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="email@contoh.com"
+              placeholder={t.auth.emailPlaceholder}
               inputMode="email"
               className="h-10 min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-transparent px-3 text-sm"
             />

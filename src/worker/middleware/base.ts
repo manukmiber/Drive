@@ -47,15 +47,17 @@ export const apiHeaders: MiddlewareHandler<AppBindings> = async (c, next) => {
   c.header('Referrer-Policy', 'strict-origin-when-cross-origin');
 };
 
-export function appCsp(env: { USERCONTENT_ORIGIN: string }): string {
+export function appCsp(env: { USERCONTENT_ORIGIN: string; ZEIKO_DOOR_URL?: string | undefined }): string {
   const uc = new URL(env.USERCONTENT_ORIGIN).origin;
+  // The Zeiko Accounts door the page asks for its sign-in ticket (ADR-036).
+  const door = env.ZEIKO_DOOR_URL ? ` ${new URL(env.ZEIKO_DOOR_URL).origin}` : '';
   return [
     "default-src 'self'",
     "script-src 'self' https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' blob: data: ${uc}`,
     `media-src 'self' blob: ${uc}`,
-    `connect-src 'self' ${uc}`,
+    `connect-src 'self' ${uc}${door}`,
     `frame-src ${uc} https://challenges.cloudflare.com`,
     "worker-src 'self' blob:",
     "font-src 'self'",

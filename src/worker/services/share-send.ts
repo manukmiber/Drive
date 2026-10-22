@@ -17,6 +17,7 @@ import { verifyTurnstile } from '../lib/turnstile';
 import { randomBase62, ulid } from '../lib/ids';
 import { shareEmail } from './email-templates';
 import { requireOwnShare, shareState, shareUrl } from './shares';
+import { appUrl } from '../lib/paths';
 
 const SPAM =
   /\b(slot|gacor|togel|judi|casino|maxwin|pinjol|deposit\s+pulsa|bit\.ly|tinyurl|verifikasi\s+akun|password\s+anda)\b/i;
@@ -301,7 +302,7 @@ export async function deliverShareEmail(ctx: Ctx, sendId: string, to: string): P
     expiresText: c.share.expires_at ? formatDateTime(c.share.expires_at) : null,
     message: c.send.message,
     unsubscribeUrl: unsub,
-    reportUrl: `${ctx.env.APP_ORIGIN}/lapor?share=${c.share.id}`,
+    reportUrl: appUrl(ctx.env, `/lapor?share=${c.share.id}`),
   });
   const res = await ctx.adapters.email.send({
     to: [to],

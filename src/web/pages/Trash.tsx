@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { formatBytes, formatDate } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { FileIcon } from '../components/FileIcon';
 import { Dialog } from '../components/ui/Dialog';

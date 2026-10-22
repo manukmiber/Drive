@@ -6,7 +6,7 @@ import { Check, Printer, Wallet } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 import { formatBytes, formatDate, formatDateTime, formatRupiah } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { StorageMeter } from '../components/StorageMeter';
 import { Dialog } from '../components/ui/Dialog';
@@ -174,8 +174,11 @@ function TopupDialog({
           )}
           <p className="text-xs text-[var(--fg-muted)]">{t.billing.waiting}</p>
           <p className="text-xs text-[var(--fg-muted)]">
-            Berlaku sampai {formatDateTime(charge.expiresAt)}
+            {t.billing.validUntil(formatDateTime(charge.expiresAt))}
           </p>
+          {method === 'qris' && (
+            <p className="text-xs text-[var(--fg-muted)]">{t.billing.uniqueCode}</p>
+          )}
         </div>
       )}
     </Dialog>

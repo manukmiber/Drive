@@ -1,5 +1,5 @@
 // Photo/video compression options, shared by the Drive dialog and the standalone page.
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import type { MediaOptions, Quality } from '../../lib/compress';
 
 export const defaultMediaOptions: MediaOptions = {

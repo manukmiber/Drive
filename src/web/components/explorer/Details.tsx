@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { formatBytes, formatDateTime } from '../../../shared/format';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import { nodeInfo } from '../../lib/files';
 import { useMe } from '../../lib/session';
 import { FileIcon } from '../FileIcon';

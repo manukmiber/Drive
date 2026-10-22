@@ -6,7 +6,7 @@ import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
 import { AD_BODY_MAX, AD_CATEGORIES, AD_CTA_TYPES, AD_TITLE_MAX } from '../../shared/ad-policy';
 import { formatPercent, formatRupiah } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { Turnstile } from '../components/Turnstile';
 import { Dialog } from '../components/ui/Dialog';

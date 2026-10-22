@@ -14,12 +14,19 @@ button,.btn{display:inline-block;margin-top:12px;width:100%;height:44px;border:0
 export function page(
   title: string,
   body: string,
-  opts: { status?: number; head?: string; reportUrl?: string; ad?: string } = {},
+  opts: {
+    status?: number;
+    head?: string;
+    reportUrl?: string;
+    ad?: string;
+    lang?: 'id' | 'en';
+    reportLabel?: string;
+  } = {},
 ): Response {
-  const html = `<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>${escapeHtml(title)} · Zeiko</title>${opts.head ?? ''}<style>${STYLE}</style></head>
-<body><main class="card"><p class="brand">Zeiko</p>${body}
-<div class="foot"><a href="/">zeiko.biz.id</a>${opts.reportUrl ? `<a href="${escapeHtml(opts.reportUrl)}">Laporkan</a>` : ''}</div>
+  const html = `<!doctype html><html lang="${opts.lang ?? 'id'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>${escapeHtml(title)} · Zeiko Drive</title>${opts.head ?? ''}<style>${STYLE}</style></head>
+<body><main class="card"><p class="brand">Zeiko Drive</p>${body}
+<div class="foot"><a href="/">zeiko.biz.id</a>${opts.reportUrl ? `<a href="${escapeHtml(opts.reportUrl)}">${escapeHtml(opts.reportLabel ?? 'Laporkan')}</a>` : ''}</div>
 ${opts.ad ?? ''}</main></body></html>`;
   return new Response(html, {
     status: opts.status ?? 200,

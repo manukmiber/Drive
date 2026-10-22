@@ -7,6 +7,7 @@ import { page } from '../lib/pages';
 import { applyPaymentEvent } from '../services/billing';
 import { escapeHtml } from '../services/email-templates';
 import type { AppBindings } from '../types';
+import { appPath } from '../lib/paths';
 
 export const payments = new Hono<AppBindings>()
   .post('/api/payments/webhook/:provider', async (c) => {
@@ -39,7 +40,7 @@ export const payments = new Hono<AppBindings>()
         amountIdr: p.amount_idr,
         raw: { simulated: true, status },
       });
-      return c.redirect('/paket?paid=1', 303);
+      return c.redirect(appPath(c.env, '/paket?paid=1'), 303);
     }
     const btn = (status: string, label: string, bg: string) =>
       `<form method="post"><input type="hidden" name="status" value="${status}"><button style="background:${bg}">${label}</button></form>`;
@@ -48,6 +49,6 @@ export const payments = new Hono<AppBindings>()
       `<h1>Simulasi pembayaran</h1><p>Gateway pembayaran belum dipilih, jadi ini halaman uji. Tidak ada uang sungguhan.</p>
 <p style="font-size:24px;font-weight:700;margin:8px 0">${escapeHtml(formatRupiah(p.amount_idr))}</p>
 <p>Metode: ${escapeHtml(p.method.toUpperCase())} · Status: ${escapeHtml(p.status)}</p>
-${p.status === 'pending' ? btn('paid', 'Bayar (berhasil)', '#16a34a') + btn('failed', 'Gagal', '#dc2626') + btn('expired', 'Kedaluwarsa', '#6b7280') : '<a class="btn" href="/paket">Kembali</a>'}`,
+${p.status === 'pending' ? btn('paid', 'Bayar (berhasil)', '#16a34a') + btn('failed', 'Gagal', '#dc2626') + btn('expired', 'Kedaluwarsa', '#6b7280') : `<a class="btn" href="${appPath(c.env, '/paket')}">Kembali</a>`}`,
     );
   });

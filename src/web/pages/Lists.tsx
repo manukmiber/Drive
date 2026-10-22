@@ -4,7 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { Copy, FolderOpen, Link2Off, Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { formatDateTime } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { FileView } from '../components/explorer/FileView';
 import { errorText } from '../components/explorer/useNodeActions';
 import { toast } from '../components/ui/Toast';
@@ -157,7 +157,7 @@ export function Shared() {
                   {s.hasPassword && (
                     <Lock
                       className="h-3 w-3 shrink-0 text-[var(--fg-muted)]"
-                      aria-label="Pakai password"
+                      aria-label={t.a11y.usePassword}
                     />
                   )}
                   <span className={`rounded-full px-2 py-0.5 text-[11px] ${st.tone}`}>

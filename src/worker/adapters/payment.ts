@@ -1,4 +1,4 @@
-// PaymentProvider adapter (SPEC §12.3). Real gateways (Midtrans/Xendit/…) plug in later (§16 #2).
+// PaymentProvider adapter (SPEC §12.3). The real one is Zeiko Accounts (`zeiko.ts`, ADR-036).
 import type { PaymentStatus } from '../../shared/enums';
 import { hmacBase64Url, timingSafeEqual } from '../lib/crypto';
 
@@ -8,6 +8,8 @@ export interface ChargeRequest {
   method: string;
   description: string;
   customerEmail: string;
+  /** The buyer's Zeiko Account id (provider `zeiko`). */
+  customerRef?: string | undefined;
 }
 
 export interface Charge {
@@ -17,6 +19,11 @@ export interface Charge {
   /** QRIS payload to render as a QR code, when the method is QRIS. */
   qrString: string | null;
   expiresAt: number;
+  /**
+   * What the buyer actually pays, when the provider changes it: a Zeiko QRIS adds a code of 1–999
+   * rupiah so the operator can tell transfers apart. All of it lands in Saldo.
+   */
+  amountIdr?: number;
 }
 
 export interface WebhookEvent {

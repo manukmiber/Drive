@@ -1,5 +1,5 @@
 import { formatBytes, formatPercent, usageRatios } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import type { Me } from '../lib/types';
 
 export function StorageMeter({ storage }: { storage: Me['storage'] }) {
@@ -14,7 +14,7 @@ export function StorageMeter({ storage }: { storage: Me['storage'] }) {
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(r.used * 100)}
-        aria-label="Penyimpanan terpakai"
+        aria-label={t.a11y.storageUsed}
       >
         <div
           className={`h-full ${tone}`}

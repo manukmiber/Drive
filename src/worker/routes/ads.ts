@@ -41,6 +41,7 @@ import {
 } from '../services/ads';
 import { escapeHtml } from '../services/email-templates';
 import type { AppBindings } from '../types';
+import { appPath } from '../lib/paths';
 
 /** Area hints from Cloudflare (`request.cf`). In dev, `x-dev-geo-*` headers stand in for it. */
 export function geoOf(c: Context<AppBindings>): Geo {
@@ -92,7 +93,7 @@ export async function shareAdHtml(
     const href = ad.internal ? new URL(ad.clickUrl, c.env.APP_ORIGIN).toString() : ad.clickUrl;
     return `<aside class="ad" aria-label="${escapeHtml(ad.label)}"><span class="adl">${escapeHtml(ad.label)}</span>
 <a href="${escapeHtml(href)}" target="_blank" rel="sponsored noopener noreferrer">${ad.imageUrl ? `<img src="${escapeHtml(ad.imageUrl)}" width="56" height="56" alt="">` : ''}<span><b>${escapeHtml(ad.title)}</b><br>${escapeHtml(ad.body)}</span></a>
-${ad.creativeId ? `<a class="adr" href="/lapor?ad=${escapeHtml(ad.creativeId)}">Laporkan iklan</a>` : ''}</aside>`;
+${ad.creativeId ? `<a class="adr" href="${escapeHtml(appPath(c.env, `/lapor?ad=${ad.creativeId}`))}">Laporkan iklan</a>` : ''}</aside>`;
   } catch {
     return ''; // an ad must never break the page around it
   }

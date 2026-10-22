@@ -27,6 +27,7 @@ import {
 import { consumeUsage } from './share-send';
 import { noticeEmail } from './email-templates';
 import { notify } from './notify';
+import { appUrl } from '../lib/paths';
 
 type Stmt = D1PreparedStatement;
 
@@ -271,7 +272,7 @@ export async function createInvite(
     )
     .run();
   await audit(ctx, ownerId, 'family.invite', m.familyId, { inviteId: id, channel });
-  return { id, url: `${ctx.env.APP_ORIGIN}/keluarga/gabung/${token}`, expiresAt: now + INVITE_TTL };
+  return { id, url: appUrl(ctx.env, `/keluarga/gabung/${token}`), expiresAt: now + INVITE_TTL };
 }
 
 export async function emailInvite(ctx: Ctx, ownerId: string, to: string): Promise<{ url: string }> {

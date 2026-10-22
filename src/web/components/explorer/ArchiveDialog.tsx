@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { formatBytes } from '../../../shared/format';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import { ApiError } from '../../lib/api';
 import { useCatalog } from '../../lib/catalog';
 import { downloadZip, estimateArchive, type ArchiveFormat } from '../../lib/files';

@@ -4,7 +4,7 @@ import { Check, Copy, Link2, Mail, MessageCircle, QrCode, Send, Share2 } from 'l
 import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
 import { formatDateTime } from '../../../shared/format';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import {
   createShare,
   emailShare,
@@ -172,7 +172,7 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
               value={share.url}
               onFocus={(e) => e.currentTarget.select()}
               className="h-11 min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 text-sm"
-              aria-label="Link"
+              aria-label={t.a11y.link}
             />
             <Button
               onClick={async () => {
@@ -254,7 +254,7 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
             className="rounded-xl border border-[var(--border)] p-3"
             open={panel === 'settings'}
           >
-            <summary className="cursor-pointer text-sm font-medium">Pengaturan link</summary>
+            <summary className="cursor-pointer text-sm font-medium">{t.share.linkSettings}</summary>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="text-xs text-[var(--fg-muted)]">
                 {t.share.expiry}

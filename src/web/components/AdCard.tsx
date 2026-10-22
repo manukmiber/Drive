@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { EyeOff, Flag, Megaphone } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { getAd, type Placement } from '../lib/ads';
 import { useCatalog } from '../lib/catalog';
 

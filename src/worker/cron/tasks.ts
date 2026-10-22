@@ -3,6 +3,7 @@ import { CRON, DAY_MS, HOUR_MS } from '../../shared/constants';
 import { log } from '../lib/log';
 import {
   expireStalePayments,
+  reconcilePayments,
   renewDueSubscriptions,
   runDunning,
   sendRenewalReminders,
@@ -107,6 +108,14 @@ registerCronTask(CRON.hourly, {
   async run(ctx) {
     const r = await renewDueSubscriptions(ctx);
     if (r.renewed || r.failed) log.info('renewals', r);
+  },
+});
+
+registerCronTask(CRON.hourly, {
+  name: 'reconcile_payments',
+  async run(ctx) {
+    const n = await reconcilePayments(ctx);
+    if (n) log.info('payments_reconciled', { n });
   },
 });
 

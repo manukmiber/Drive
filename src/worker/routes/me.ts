@@ -15,6 +15,8 @@ const profilePatch = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   /** "Lokasi untuk iklan lokal" (SPEC §10.3): optional, null clears it. */
   adCityCode: z.string().max(13).nullable().optional(),
+  /** UI and email language (ADR-036). */
+  locale: z.enum(['id', 'en']).optional(),
 });
 
 export const me = new Hono<AppBindings>()
@@ -29,6 +31,7 @@ export const me = new Hono<AppBindings>()
           image: schema.users.image,
           adCityCode: schema.users.adCityCode,
           deleteRequestedAt: schema.users.deleteRequestedAt,
+          locale: schema.users.locale,
         })
         .from(schema.users)
         .where(eq(schema.users.id, user.id))
@@ -45,7 +48,12 @@ export const me = new Hono<AppBindings>()
       getActiveSubscription(ctx, space.poolId),
     ]);
     return c.json({
-      user: { ...user, image: profile?.image ?? null, adCityCode: profile?.adCityCode ?? null },
+      user: {
+        ...user,
+        image: profile?.image ?? null,
+        adCityCode: profile?.adCityCode ?? null,
+        locale: profile?.locale ?? 'id',
+      },
       deleteRequestedAt: profile?.deleteRequestedAt ?? null,
       hasPasskey: (passkeys?.n ?? 0) > 0,
       space,
@@ -62,6 +70,12 @@ export const me = new Hono<AppBindings>()
       await ctx.db
         .update(schema.users)
         .set({ name: body.name, updatedAt: new Date(ctx.now()) })
+        .where(eq(schema.users.id, user.id));
+    }
+    if (body.locale !== undefined) {
+      await ctx.db
+        .update(schema.users)
+        .set({ locale: body.locale, updatedAt: new Date(ctx.now()) })
         .where(eq(schema.users.id, user.id));
     }
     if (body.adCityCode !== undefined) {

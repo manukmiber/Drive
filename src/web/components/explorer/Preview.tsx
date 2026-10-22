@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
 import { useEffect } from 'react';
 import { formatBytes } from '../../../shared/format';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import { downloadFile, previewInfo, type NodeDto } from '../../lib/files';
 import { FileIcon } from '../FileIcon';
 
@@ -86,7 +86,7 @@ export function Preview({
             type="button"
             onClick={() => onIndex(prev)}
             className="absolute left-2 z-10 rounded-full bg-white/10 p-2 hover:bg-white/20"
-            aria-label="Sebelumnya"
+            aria-label={t.a11y.previous}
           >
             <ChevronLeft className="h-6 w-6" />
           </button>
@@ -128,7 +128,7 @@ export function Preview({
             type="button"
             onClick={() => onIndex(next)}
             className="absolute right-2 z-10 rounded-full bg-white/10 p-2 hover:bg-white/20"
-            aria-label="Berikutnya"
+            aria-label={t.a11y.next}
           >
             <ChevronRight className="h-6 w-6" />
           </button>

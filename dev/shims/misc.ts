@@ -69,7 +69,8 @@ export class ShimAssets {
   async fetch(input: Request | string): Promise<Response> {
     const url = new URL(typeof input === 'string' ? input : input.url);
     const rel = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '');
-    const candidates = [join(this.dir, rel), join(this.dir, 'index.html')];
+    // Like Workers static assets with not_found_handling "none": a file or a 404.
+    const candidates = [join(this.dir, rel)];
     for (const file of candidates) {
       try {
         const body = await readFile(file);

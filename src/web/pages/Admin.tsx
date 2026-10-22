@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { formatBytes, formatDateTime, formatRupiah } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { PromptDialog } from '../components/ui/Dialog';
 import { toast } from '../components/ui/Toast';
@@ -98,7 +98,7 @@ function DashboardTab() {
             <tr>
               <th className="py-1">{t.admin.plan}</th>
               <th>{t.admin.subs}</th>
-              <th>Terpakai</th>
+              <th>{t.admin.used}</th>
               <th>{t.admin.revenue}</th>
               <th>Biaya (aktual)</th>
               <th>Margin @20/50/100%</th>
@@ -686,7 +686,7 @@ function ConfigTab() {
       <p className="mb-2 text-xs text-[var(--fg-muted)]">{t.admin.configHint}</p>
       <input
         className={cn(input, 'mb-2')}
-        placeholder="Filter…"
+        placeholder={t.admin.filter}
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
       />
@@ -789,7 +789,7 @@ function AuditTab() {
     <div className="space-y-2">
       <input
         className={input}
-        placeholder="Filter aksi (mis. report., wallet., config.)"
+        placeholder={t.admin.auditFilter}
         value={action}
         onChange={(e) => setAction(e.target.value)}
       />
@@ -839,7 +839,7 @@ export function Admin() {
   return (
     <div className="mx-auto max-w-6xl p-4 md:p-6">
       <h1 className="text-xl font-semibold">{t.admin.title}</h1>
-      <nav className="my-4 flex gap-1 overflow-x-auto" aria-label="Bagian admin">
+      <nav className="my-4 flex gap-1 overflow-x-auto" aria-label={t.a11y.adminSections}>
         {tabs.map((k) => (
           <button
             key={k}

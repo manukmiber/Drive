@@ -8,9 +8,12 @@ const API = `http://127.0.0.1:${process.env.ZEIKO_API_PORT ?? '8790'}`;
 export default defineConfig({
   root: 'src/web',
   publicDir: 'public',
+  // The app is served at zeiko.biz.id/dashboard beside the website (ADR-036): its files live
+  // under dist/web/dashboard, so the asset paths and the URLs agree.
+  base: '/dashboard/',
   plugins: [react(), tailwindcss()],
   build: {
-    outDir: '../../dist/web',
+    outDir: '../../dist/web/dashboard',
     emptyOutDir: true,
     sourcemap: true,
   },

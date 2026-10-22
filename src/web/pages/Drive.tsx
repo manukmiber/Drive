@@ -3,7 +3,7 @@ import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronRight, LayoutGrid, List, UploadCloud } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { AdCard } from '../components/AdCard';
 import { FileView, type View } from '../components/explorer/FileView';
 import { errorText } from '../components/explorer/useNodeActions';
@@ -159,7 +159,7 @@ export function Drive({ folderId }: { folderId?: string }) {
       onDrop={onDrop}
     >
       <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--bg)] px-4 py-2">
-        <nav aria-label="Lokasi" className="flex min-w-0 flex-1 items-center gap-1 text-lg">
+        <nav aria-label={t.a11y.location} className="flex min-w-0 flex-1 items-center gap-1 text-lg">
           {path.map((c, i) => (
             <span key={c.id} className="flex min-w-0 items-center gap-1">
               {i > 0 && (

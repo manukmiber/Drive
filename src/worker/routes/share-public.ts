@@ -3,7 +3,8 @@
 import { Hono, type Context } from 'hono';
 import { getCookie, setCookie } from 'hono/cookie';
 import { formatBytes } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import type { Strings } from '../../shared/strings.id';
+import { requestLang, strings } from '../lib/lang';
 import { track } from '../lib/analytics';
 import { hashIp, hmacBase62, sha256Hex, timingSafeEqual } from '../lib/crypto';
 import { contentDisposition, parseRange } from '../lib/http';
@@ -25,25 +26,30 @@ import {
 } from '../services/shares';
 import { wibDate } from '../../shared/time';
 import type { AppBindings } from '../types';
+import { appPath } from '../lib/paths';
 
-const DEAD_TEXT: Record<DeadReason, string> = {
-  not_found: t.share.linkNotFound,
-  revoked: 'Link ini sudah dicabut oleh pemiliknya.',
-  expired: t.share.linkExpired,
-  limit: 'Batas jumlah unduhan untuk link ini sudah tercapai.',
-  disabled: 'Link ini sedang tidak aktif.',
-};
+function deadText(tr: Strings, reason: DeadReason): string {
+  const text: Record<DeadReason, string> = {
+    not_found: tr.share.linkNotFound,
+    revoked: tr.share.revokedText,
+    expired: tr.share.linkExpired,
+    limit: tr.share.limitText,
+    disabled: tr.share.disabledText,
+  };
+  return text[reason];
+}
 
-function dead(reason: DeadReason, r64?: string, ad = ''): Response {
-  return page(
-    DEAD_TEXT[reason],
-    `<h1>${escapeHtml(DEAD_TEXT[reason])}</h1><p>Minta link baru ke orang yang membagikan file ini.</p>`,
-    {
-      status: reason === 'not_found' ? 404 : 410,
-      ad,
-      ...(r64 ? { reportUrl: `/lapor?share=${r64}` } : {}),
-    },
-  );
+function dead(c: Context<AppBindings>, reason: DeadReason, r64?: string, ad = ''): Response {
+  const lang = requestLang(c.req.raw);
+  const tr = strings(lang);
+  const text = deadText(tr, reason);
+  return page(text, `<h1>${escapeHtml(text)}</h1><p>${escapeHtml(tr.share.askNew)}</p>`, {
+    status: reason === 'not_found' ? 404 : 410,
+    ad,
+    lang,
+    reportLabel: tr.share.report,
+    ...(r64 ? { reportUrl: appPath(c.env, `/lapor?share=${r64}`) } : {}),
+  });
 }
 
 async function passCookieValue(secret: string, r64: string, exp: number): Promise<string> {
@@ -59,13 +65,21 @@ async function hasPassCookie(c: Context<AppBindings>, r64: string): Promise<bool
   return timingSafeEqual(v, await passCookieValue(c.env.DOWNLOAD_SECRET, r64, exp));
 }
 
-function passwordPage(error: boolean, r64: string, ad = ''): Response {
+function passwordPage(c: Context<AppBindings>, error: boolean, r64: string, ad = ''): Response {
+  const lang = requestLang(c.req.raw);
+  const tr = strings(lang);
   return page(
-    t.share.passwordTitle,
-    `<h1>${t.share.passwordTitle}</h1><p>Masukkan password dari orang yang membagikan link ini.</p>
-<form method="post"><input type="password" name="password" required autofocus autocomplete="current-password" aria-label="${t.share.passwordLabel}">
-${error ? `<p class="err">${t.share.passwordWrong}</p>` : ''}<button type="submit">${t.share.downloadNow}</button></form>`,
-    { status: error ? 401 : 200, reportUrl: `/lapor?share=${r64}`, ad },
+    tr.share.passwordTitle,
+    `<h1>${escapeHtml(tr.share.passwordTitle)}</h1><p>${escapeHtml(tr.share.passwordBody)}</p>
+<form method="post"><input type="password" name="password" required autofocus autocomplete="current-password" aria-label="${escapeHtml(tr.share.passwordLabel)}">
+${error ? `<p class="err">${escapeHtml(tr.share.passwordWrong)}</p>` : ''}<button type="submit">${escapeHtml(tr.share.downloadNow)}</button></form>`,
+    {
+      status: error ? 401 : 200,
+      reportUrl: appPath(c.env, `/lapor?share=${r64}`),
+      ad,
+      lang,
+      reportLabel: tr.share.report,
+    },
   );
 }
 
@@ -75,11 +89,13 @@ async function ogPage(c: Context<AppBindings>, s: ShareRow, url: string): Promis
   )
     .bind(s.id)
     .first<{ total: number; n: number }>();
-  const desc = `${s.kind === 'file' ? formatBytes(size?.total ?? 0) : s.kind === 'folder' ? 'Folder' : `${size?.n ?? 0} file`} · ${t.share.directDownload}`;
+  const lang = requestLang(c.req.raw);
+  const tr = strings(lang);
+  const desc = `${s.kind === 'file' ? formatBytes(size?.total ?? 0) : s.kind === 'folder' ? tr.share.folder : tr.share.fileCount(size?.n ?? 0)} · ${tr.share.directDownload}`;
   const head = `<meta property="og:title" content="${escapeHtml(s.title)}"><meta property="og:description" content="${escapeHtml(desc)}">
-<meta property="og:site_name" content="Zeiko"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(url)}">
+<meta property="og:site_name" content="Zeiko Drive"><meta property="og:type" content="website"><meta property="og:url" content="${escapeHtml(url)}">
 <meta property="og:image" content="${escapeHtml(new URL('/og.png', c.env.APP_ORIGIN).toString())}"><meta name="twitter:card" content="summary">`;
-  return page(s.title, `<h1>${escapeHtml(s.title)}</h1><p>${escapeHtml(desc)}</p>`, { head });
+  return page(s.title, `<h1>${escapeHtml(s.title)}</h1><p>${escapeHtml(desc)}</p>`, { head, lang });
 }
 
 export const sharePublic = new Hono<AppBindings>().on(
@@ -89,7 +105,7 @@ export const sharePublic = new Hono<AppBindings>().on(
     const ctx = c.get('ctx');
     const { r64, s32 } = c.req.param();
     // Forged or guessed links are rejected without touching D1.
-    if (!(await verifyShareSignature(c.env, r64, s32))) return dead('not_found');
+    if (!(await verifyShareSignature(c.env, r64, s32))) return dead(c, 'not_found');
     const ip = clientIp(c.req.raw);
     await enforceRateLimit(c.env, 'RL_DOWNLOAD', `share:${ip}:${r64.slice(0, 16)}`);
 
@@ -100,8 +116,8 @@ export const sharePublic = new Hono<AppBindings>().on(
       // Resuming a download that was already counted is still allowed.
       const fp = await hashIp(c.env.IP_HASH_SECRET, `${ip}|${ua ?? ''}`, wibDate(ctx.now()));
       if (!(await c.env.CONFIG_KV.get(`sd:${s.id.slice(0, 24)}:${fp}`)))
-        return dead('limit', r64, await shareAdHtml(c, s.created_by));
-    } else if (state) return dead(state, r64, await shareAdHtml(c, s?.created_by ?? null));
+        return dead(c, 'limit', r64, await shareAdHtml(c, s.created_by));
+    } else if (state) return dead(c, state, r64, await shareAdHtml(c, s?.created_by ?? null));
     const share = s!;
 
     if (isPreviewBot(ua)) return ogPage(c, share, c.req.url);
@@ -112,7 +128,7 @@ export const sharePublic = new Hono<AppBindings>().on(
         const ok =
           typeof form.password === 'string' &&
           (await verifyPassword(share.password_hash, form.password));
-        if (!ok) return passwordPage(true, r64, await shareAdHtml(c, share.created_by));
+        if (!ok) return passwordPage(c, true, r64, await shareAdHtml(c, share.created_by));
         const cfg = await ctx.config();
         const exp = Math.floor(ctx.now() / 1000) + cfg.share_password_cookie_minutes * 60;
         setCookie(c, 'zk_sp', await passCookieValue(c.env.DOWNLOAD_SECRET, r64, exp), {
@@ -125,7 +141,7 @@ export const sharePublic = new Hono<AppBindings>().on(
         return c.redirect(new URL(c.req.url).pathname, 303);
       }
       if (!(await hasPassCookie(c, r64)))
-        return passwordPage(false, r64, await shareAdHtml(c, share.created_by));
+        return passwordPage(c, false, r64, await shareAdHtml(c, share.created_by));
     } else if (c.req.method === 'POST') {
       return c.redirect(new URL(c.req.url).pathname, 303);
     }
@@ -154,8 +170,8 @@ export const sharePublic = new Hono<AppBindings>().on(
           sniffed_mime: string | null;
         }>();
       if (!row || row.status !== 'ready' || !['clean', 'skipped'].includes(row.scan_status))
-        return dead('not_found', r64);
-      if (counts && !(await countDownload(ctx, share, fp))) return dead('limit', r64);
+        return dead(c, 'not_found', r64);
+      if (counts && !(await countDownload(ctx, share, fp))) return dead(c, 'limit', r64);
       const { response, bytes } = await serveObject(c.env.BUCKET, c.req.raw, {
         key: row.r2_key,
         size: row.size,
@@ -178,7 +194,7 @@ export const sharePublic = new Hono<AppBindings>().on(
       ctx,
       items.map((i) => i.node_id),
     );
-    if (!content.fileCount && !content.entries.length) return dead('not_found', r64);
+    if (!content.fileCount && !content.entries.length) return dead(c, 'not_found', r64);
     const plan = planZip(content.entries);
     const etag = `"z${(await sha256Hex(JSON.stringify(content.entries.map((e) => [e.path, e.key, e.size])))).slice(0, 32)}"`;
     const filename = `Zeiko-${share.title}.zip`;
@@ -197,7 +213,7 @@ export const sharePublic = new Hono<AppBindings>().on(
       headers.set('Content-Range', `bytes */${plan.size}`);
       return new Response(null, { status: 416, headers });
     }
-    if (counts && !(await countDownload(ctx, share, fp))) return dead('limit', r64);
+    if (counts && !(await countDownload(ctx, share, fp))) return dead(c, 'limit', r64);
     if (r.kind === 'single') {
       const len = r.end - r.start + 1;
       headers.set('Content-Range', `bytes ${r.start}-${r.end}/${plan.size}`);

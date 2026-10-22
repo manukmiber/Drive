@@ -17,7 +17,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useCallback, useState, type ReactNode } from 'react';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import { ApiError } from '../../lib/api';
 import {
   canPreview,

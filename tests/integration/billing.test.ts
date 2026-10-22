@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { MockPaymentProvider } from '../../src/worker/adapters/payment';
+import { ZeikoPaymentProvider } from '../../src/worker/adapters/zeiko';
 import { FakeClock } from '../../src/worker/adapters/clock';
-import { DAY_MS } from '../../src/shared/constants';
+import { CRON, DAY_MS } from '../../src/shared/constants';
 import { APP, makeRuntime } from '../helpers/runtime';
 import { signIn, type Session } from '../helpers/session';
 import { rootOf, simpleUpload, uploadText } from '../helpers/files';
@@ -91,8 +92,8 @@ describe('Saldo & payments (SPEC §12.2–12.3)', () => {
       (await s.req('POST', '/api/billing/topups', { amountIdr: 5_000, method: 'qris' })).status,
     ).toBe(400);
     expect(
-      (await s.req('POST', '/api/billing/topups', { amountIdr: 20_000, method: 'va' })).status,
-    ).toBe(400); // VA min 50k
+      (await s.req('POST', '/api/billing/topups', { amountIdr: 20_000, method: 'crypto' })).status,
+    ).toBe(400); // crypto from 50k
     const res = await s.req('POST', '/api/billing/topups', { amountIdr: 15_000, method: 'qris' });
     const { paymentId } = (await res.json()) as { paymentId: string };
     await webhook(rt, { providerRef: `mock_${paymentId}`, status: 'paid', amountIdr: 1 });
@@ -301,5 +302,85 @@ describe('dunning cycle with a fake clock (SPEC §12.5)', () => {
     };
     expect(r.kind).toBe('reactivated');
     expect((await summary(s)).subscription?.status).toBe('active');
+  });
+});
+
+describe('paying through Zeiko Accounts (ADR-036)', () => {
+  const OPS = 'ops-key-for-tests-0123456789abcdef';
+  const vars = {
+    ADAPTER_PAYMENT: 'zeiko',
+    ZEIKO_DOOR_URL: 'https://door.test',
+    ZEIKO_SITE_URL: 'https://site.test',
+    ZEIKO_APP_TOKEN: 'app-token-for-tests-0123456789abcd',
+    ZEIKO_OPS_TOKEN: OPS,
+  };
+
+  it('puts the whole QRIS amount, its code included, in Saldo — once', async () => {
+    const opened: unknown[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url.startsWith('https://door.test/')) {
+        opened.push(JSON.parse(String(init?.body)));
+        return Response.json({
+          id: 'pay_zk1',
+          payUrl: 'https://site.test/account/pay?id=pay_zk1',
+          amountIdr: 20_123,
+          expiresAt: T0 + 3_600_000,
+        });
+      }
+      return realFetch(input, init);
+    }) as typeof fetch;
+    try {
+      const clock = new FakeClock(T0);
+      const rt = await makeRuntime({ clock, vars });
+      const s = await signIn(rt, 'qris@example.com');
+      const res = await s.req('POST', '/api/billing/topups', { amountIdr: 20_000, method: 'qris' });
+      expect(res.status, await res.clone().text()).toBe(201);
+      const t = (await res.json()) as { amountIdr: number; checkoutUrl: string };
+      expect(t).toMatchObject({ amountIdr: 20_123, checkoutUrl: 'https://site.test/account/pay?id=pay_zk1' });
+      expect(opened[0]).toMatchObject({ accountId: 'zk_qris_example_com', amountIdr: 20_000, method: 'qris' });
+
+      const callback = async (body: Record<string, unknown>, key = OPS) =>
+        rt.fetch(
+          await ZeikoPaymentProvider.signedRequest(`${APP}/api/payments/webhook/zeiko`, key, body, clock.now()),
+        );
+      const paid = { event: 'paid', id: 'pay_zk1', status: 'paid', amountIdr: 20_123 };
+      expect((await callback(paid, 'wrong-key')).status).toBe(401);
+      expect((await callback(paid)).status).toBe(200);
+      expect((await callback(paid)).status).toBe(200); // the relay retries; nothing doubles
+      expect((await summary(s)).balanceIdr).toBe(20_123);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('asks the door about a payment whose callback never came', async () => {
+    let paid = false;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url === 'https://door.test/apps/v1/payments')
+        return Response.json({ id: 'pay_zk2', payUrl: 'https://x.test', amountIdr: 60_000 });
+      if (url === 'https://door.test/apps/v1/payments/pay_zk2')
+        return Response.json({ id: 'pay_zk2', status: paid ? 'paid' : 'pending', amountIdr: 60_000 });
+      return realFetch(input, init);
+    }) as typeof fetch;
+    try {
+      const clock = new FakeClock(T0);
+      const rt = await makeRuntime({ clock, vars });
+      const s = await signIn(rt, 'lost@example.com');
+      const res = await s.req('POST', '/api/billing/topups', { amountIdr: 60_000, method: 'crypto' });
+      expect(res.status, await res.clone().text()).toBe(201);
+      clock.advance(5 * 60_000);
+      await rt.runCron(CRON.hourly);
+      expect((await summary(s)).balanceIdr).toBe(0); // still open at the door
+      paid = true;
+      clock.advance(60 * 60_000);
+      await rt.runCron(CRON.hourly);
+      expect((await summary(s)).balanceIdr).toBe(60_000);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

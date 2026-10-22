@@ -33,18 +33,22 @@ import { compress } from './routes/compress';
 import { adPublic, adsApi, advertiser } from './routes/ads';
 import { billing } from './routes/billing';
 import { payments } from './routes/payments';
+import { ops } from './routes/ops';
 import { notifications } from './routes/notifications';
 import { family } from './routes/family';
 import type { AppBindings } from './types';
+import { appPath, basePath } from './lib/paths';
 
 export function createApp() {
   const app = new Hono<AppBindings>();
 
   app.use('*', userContentGuard, requestContext);
 
-  // Webhooks authenticate with their own secret (no Origin/CSRF), so they sit before /api.
+  // Webhooks and the relay's ops API authenticate with their own secret (no Origin/CSRF), so
+  // they sit before /api.
   app.route('/', integrations);
   app.route('/', payments);
+  app.route('/api/ops', ops);
 
   const api = new Hono<AppBindings>();
   api.use('*', apiHeaders, originCheck);
@@ -96,11 +100,21 @@ export function createApp() {
   app.route('/__dev', dev);
 
   // Web Share Target without the service worker (first launch) → just open the Drive.
-  app.post('/share-target', (c) => c.redirect('/drive', 303));
+  app.post('/share-target', (c) => c.redirect(appPath(c.env, '/drive'), 303));
 
-  // Everything else is the SPA / static assets (run_worker_first, see wrangler.jsonc).
+  // Everything else is the SPA / static assets (run_worker_first, see wrangler.jsonc). The SPA is
+  // at APP_BASE_PATH (ADR-036): on zeiko.biz.id the website owns `/`, and on an address of Drive's
+  // own (staging) `/` goes there.
   app.all('*', async (c) => {
-    const res = await c.env.ASSETS.fetch(c.req.raw);
+    const url = new URL(c.req.url);
+    const base = basePath(c.env);
+    if (url.pathname === '/' || url.pathname === base) return c.redirect(`${base}/`, 302);
+    if (c.req.method === 'POST' && url.pathname === `${base}/share-target`)
+      return c.redirect(appPath(c.env, '/drive'), 303);
+    let res = await c.env.ASSETS.fetch(c.req.raw);
+    if (res.status === 404 && url.pathname.startsWith(`${base}/`) && !/\.[a-z0-9]+$/i.test(url.pathname)) {
+      res = await c.env.ASSETS.fetch(new Request(new URL(`${base}/index.html`, url)));
+    }
     const type = res.headers.get('content-type') ?? '';
     if (!type.includes('text/html')) return res;
     const out = new Response(res.body, res);

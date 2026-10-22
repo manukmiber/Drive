@@ -56,6 +56,8 @@ export const users = sqliteTable('users', {
   status: text('status', { enum: USER_STATUSES }).notNull().default('active'),
   twoFactorEnabled: bool('two_factor_enabled').notNull().default(false),
   deleteRequestedAt: ms('delete_requested_at'),
+  /** UI and email language (ADR-036). */
+  locale: text('locale', { enum: ['id', 'en'] }).notNull().default('id'),
   createdAt: date('created_at').notNull(),
   updatedAt: date('updated_at').notNull(),
 });

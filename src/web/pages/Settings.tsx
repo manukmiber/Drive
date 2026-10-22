@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { KeyRound, Send, ShieldCheck, Trash2 } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Brain, CircleUser, KeyRound, Languages, Send, ShieldCheck, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { formatDate } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { lang, setLang, t, type Lang } from '../lib/i18n';
+import { sitePage } from '../lib/zeiko';
 import { Button } from '../components/Button';
 import { TotpSetup } from '../components/TotpSetup';
 import { api, ApiError, sendJson } from '../lib/api';
@@ -28,7 +30,7 @@ export function Settings() {
   const saveName = useMutation({
     mutationFn: (value: string) => sendJson('PATCH', '/api/me', { name: value }),
     onSuccess: async () => {
-      setMsg('Profil disimpan.');
+      setMsg(t.settings.profileSaved);
       await qc.invalidateQueries({ queryKey: meQueryKey });
     },
   });
@@ -39,11 +41,11 @@ export function Settings() {
   async function addPasskey() {
     setMsg(null);
     const res = await authClient.passkey.addPasskey({
-      name: navigator.platform || 'Perangkat ini',
+      name: navigator.platform || t.settings.thisDevice,
     });
-    if (res?.error) setMsg('Gagal menambah passkey.');
+    if (res?.error) setMsg(t.settings.passkeyFailed);
     else {
-      setMsg('Passkey ditambahkan.');
+      setMsg(t.settings.passkeyAdded);
       await Promise.all([
         qc.invalidateQueries({ queryKey: ['passkeys'] }),
         qc.invalidateQueries({ queryKey: meQueryKey }),
@@ -68,9 +70,12 @@ export function Settings() {
         </p>
       )}
 
+      <ZeikoAccount />
+      <Language />
+
       <section className={card} aria-labelledby="profil">
         <h2 id="profil" className="font-medium">
-          Profil
+          {t.settings.profile}
         </h2>
         <p className="mt-1 text-sm text-[var(--fg-muted)]">{user.email}</p>
         <form
@@ -82,7 +87,7 @@ export function Settings() {
         >
           <input
             className={input}
-            aria-label="Nama"
+            aria-label={t.a11y.name}
             value={name ?? user.name}
             onChange={(e) => setName(e.target.value)}
             maxLength={80}
@@ -95,12 +100,9 @@ export function Settings() {
 
       <section className={card} aria-labelledby="keamanan">
         <h2 id="keamanan" className="flex items-center gap-2 font-medium">
-          <ShieldCheck className="h-4 w-4" aria-hidden="true" /> Keamanan
+          <ShieldCheck className="h-4 w-4" aria-hidden="true" /> {t.settings.security}
         </h2>
-        <p className="mt-1 text-sm text-[var(--fg-muted)]">
-          Zeiko tidak memakai password. Tambahkan passkey supaya bisa masuk dengan sidik jari atau
-          kunci layar.
-        </p>
+        <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.settings.securityBody}</p>
         <ul className="mt-4 divide-y divide-[var(--border)]">
           {(passkeys.data ?? []).map((p) => (
             <li key={p.id} className="flex items-center justify-between py-2 text-sm">
@@ -114,7 +116,7 @@ export function Settings() {
               <button
                 type="button"
                 onClick={() => removePasskey(p.id)}
-                aria-label="Hapus passkey"
+                aria-label={t.a11y.deletePasskey}
                 className="p-2 text-red-600"
               >
                 <Trash2 className="h-4 w-4" />
@@ -123,15 +125,13 @@ export function Settings() {
           ))}
         </ul>
         <Button variant="secondary" className="mt-3" onClick={addPasskey}>
-          <KeyRound className="h-4 w-4" aria-hidden="true" /> Tambah passkey
+          <KeyRound className="h-4 w-4" aria-hidden="true" /> {t.settings.addPasskey}
         </Button>
         <TotpSetup enabled={user.twoFactorEnabled} />
         {(user.role === 'admin' || user.role === 'moderator') &&
           !user.twoFactorEnabled &&
           !me.data.hasPasskey && (
-            <p className="mt-3 text-sm text-amber-600">
-              Akun staf wajib memakai passkey atau TOTP sebelum bisa membuka panel admin.
-            </p>
+            <p className="mt-3 text-sm text-amber-600">{t.settings.staffNeeds2fa}</p>
           )}
       </section>
 
@@ -157,6 +157,69 @@ export function Settings() {
         </Button>
       </section>
     </div>
+  );
+}
+
+/** The account itself is Zeiko Accounts' (ADR-036); the other products are one tap away. */
+function ZeikoAccount() {
+  const links = useQuery({
+    queryKey: ['zeiko-settings-link'],
+    queryFn: () => sitePage('settings'),
+    staleTime: Infinity,
+  });
+  return (
+    <section className={card} aria-labelledby="zeiko-account">
+      <h2 id="zeiko-account" className="flex items-center gap-2 font-medium">
+        <CircleUser className="h-4 w-4" aria-hidden="true" /> {t.products.account}
+      </h2>
+      <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.auth.managedThere}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {links.data && (
+          <a
+            href={links.data}
+            className="inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium"
+          >
+            {t.auth.manageAccount}
+          </a>
+        )}
+        <Link
+          to="/ai"
+          className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--border)] px-4 text-sm font-medium"
+        >
+          <Brain className="h-4 w-4" aria-hidden="true" /> {t.products.ai}
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+/** Indonesian or English, for every screen and for the emails we send. */
+function Language() {
+  async function choose(next: Lang) {
+    if (next === lang) return;
+    await sendJson('PATCH', '/api/me', { locale: next }).catch(() => undefined);
+    setLang(next);
+  }
+  return (
+    <section className={card} aria-labelledby="bahasa">
+      <h2 id="bahasa" className="flex items-center gap-2 font-medium">
+        <Languages className="h-4 w-4" aria-hidden="true" /> {t.lang.label}
+      </h2>
+      <div className="mt-3 flex gap-2" role="radiogroup" aria-labelledby="bahasa">
+        {(['id', 'en'] as const).map((l) => (
+          <button
+            key={l}
+            type="button"
+            role="radio"
+            aria-checked={lang === l}
+            onClick={() => void choose(l)}
+            className={`h-9 rounded-full border px-4 text-sm ${lang === l ? 'border-brand-500 bg-brand-50 font-medium text-brand-800 dark:bg-brand-800/40 dark:text-brand-100' : 'border-[var(--border)]'}`}
+          >
+            {t.lang[l]}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 

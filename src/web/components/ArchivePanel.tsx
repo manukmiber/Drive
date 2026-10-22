@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Archive, Download, X } from 'lucide-react';
 import { useState } from 'react';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { clickLink, listArchives, type ArchiveJob } from '../lib/files';
 
 const RECENT_MS = 60 * 60_000;

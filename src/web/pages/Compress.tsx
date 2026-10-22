@@ -4,7 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { Download, FolderOpen, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { formatBytes, formatDateTime } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { FileIcon } from '../components/FileIcon';
 import { MediaOptionsForm, defaultMediaOptions } from '../components/explorer/MediaOptionsForm';

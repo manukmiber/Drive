@@ -19,7 +19,16 @@ export interface Env {
   /** `relay` = HTTPS → SMTP relay Worker (Workers Free, ADR-035). */
   ADAPTER_EMAIL: 'mock' | 'cloudflare' | 'relay';
   MAIL_RELAY_URL?: string;
-  ADAPTER_PAYMENT: 'mock';
+  /** `zeiko` = Zeiko Accounts on the relay (ADR-036). */
+  ADAPTER_PAYMENT: 'mock' | 'zeiko';
+  /** Who signs people in: `zeiko` = Zeiko Accounts tickets, `mock` = the dev door (dev only). */
+  ADAPTER_ACCOUNTS?: 'mock' | 'zeiko';
+  /** The relay's sign-in door, e.g. https://auth.zeiko.biz.id (browser and server both call it). */
+  ZEIKO_DOOR_URL?: string;
+  /** The website the door belongs to (sign-in pages, payment page), e.g. https://zeiko.biz.id. */
+  ZEIKO_SITE_URL?: string;
+  /** Where the SPA lives under APP_ORIGIN. */
+  APP_BASE_PATH?: string;
   ADAPTER_SCANNER: 'mock' | 'container';
   ADAPTER_CSAM: 'mock';
   /** `mock-nocontainer` = mock without Container `media` (tests the "too large" path). */
@@ -46,6 +55,10 @@ export interface Env {
   TELEGRAM_WEBHOOK_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
   MAIL_RELAY_TOKEN?: string;
+  /** Bearer for the door's /apps/v1 routes (minted on the relay's Zeiko Drive screen). */
+  ZEIKO_APP_TOKEN?: string;
+  /** The relay's bearer for /api/ops/* and the key its payment callbacks are signed with. */
+  ZEIKO_OPS_TOKEN?: string;
 
   // ── bindings ──
   DB: D1Database;

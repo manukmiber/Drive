@@ -1,4 +1,4 @@
-# CLAUDE.md — aturan proyek Zeiko Cloud Storage
+# CLAUDE.md — aturan proyek Zeiko Drive (dulu Zeiko Cloud Storage)
 
 Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIONS.md`.
 
@@ -22,17 +22,23 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
 | Deploy staging | `npm run deploy:staging` (butuh izin pemilik untuk pertama kali) |
 | Migrasi remote | `npm run db:migrate:staging` |
 
-Buka app lewat **http://localhost:5173** (bukan IP LAN): cookie `__Host-` butuh origin aman, dan
-browser hanya menganggap `localhost` aman tanpa HTTPS. Akun demo: `demo@zeiko.local` (Plus),
-`admin@zeiko.local` (admin, Max), `baru@zeiko.local` (tanpa paket); kode OTP muncul di log API.
+Buka app lewat **http://localhost:5173/dashboard/** (bukan IP LAN): cookie `__Host-` butuh origin
+aman, dan browser hanya menganggap `localhost` aman tanpa HTTPS. App ada di `/dashboard` (ADR-036);
+landing, harga, dan deskripsi produk ada di website (`proxychat`, zeiko.biz.id). Login lewat Akun Zeiko:
+di dev, "Masuk dengan Akun Zeiko" membuka pintu tiruan `/__dev/door/account/signin` untuk memilih akun
+demo `demo@zeiko.local` (Plus), `admin@zeiko.local` (admin, Max), atau `baru@zeiko.local` (tanpa paket).
 
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.
 
 ## Konvensi
 - TypeScript strict. Tidak ada `any` tanpa komentar alasan.
-- Kode/komentar English; **teks UI Bahasa Indonesia** santai & sopan, semua string UI di
-  `src/shared/strings.id.ts`.
+- Kode/komentar English. **Semua UI dua bahasa** (ADR-036): string ada di `src/shared/strings.id.ts`
+  (santai & sopan) dan `src/shared/strings.en.ts` (kunci sama, dicek oleh tipe). Jangan menulis teks UI
+  langsung di komponen. Web memakai `t` dari `src/web/lib/i18n.ts` (bahasa dari cookie `zk_lang`), halaman
+  Worker memakai `requestLang` + `strings()` dari `src/worker/lib/lang.ts`.
+- Path halaman app selalu lewat `appPath`/`appUrl` (`src/worker/lib/paths.ts`), karena SPA ada di
+  `APP_BASE_PATH`.
 - Waktu = integer ms UTC (ADR-008). Uang = integer Rupiah. Ukuran = integer byte, GB = 2^30.
 - Angka bisnis (harga, kuota, limit, masa tenggang) **tidak di-hardcode**: baca dari
   `app_config`/tabel katalog via `services/config.ts`. Default ada di `src/shared/config-defaults.ts`.

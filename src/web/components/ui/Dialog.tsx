@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import { Button } from '../Button';
 
 /** Native <dialog> modal: focus trap, Esc and backdrop handled by the browser. */

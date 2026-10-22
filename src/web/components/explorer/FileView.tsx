@@ -19,7 +19,7 @@ import {
   type ReactNode,
 } from 'react';
 import { formatBytes, formatDate } from '../../../shared/format';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import { cn } from '../../lib/cn';
 import { type NodeDto } from '../../lib/files';
 import { ArchiveDialog } from './ArchiveDialog';
@@ -259,7 +259,7 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
           <button
             type="button"
             className="rounded-full p-2 hover:bg-brand-100 dark:hover:bg-brand-800"
-            aria-label="Aksi lain"
+            aria-label={t.a11y.moreActions}
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
               setMenu({ x: r.left, y: r.bottom, ids: sel });

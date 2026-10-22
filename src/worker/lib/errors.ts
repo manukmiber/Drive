@@ -22,6 +22,9 @@ export type ErrorCode =
   | 'RATE_LIMITED'
   | 'ORIGIN_MISMATCH'
   | 'CSRF'
+  | 'SIGN_IN_EXPIRED'
+  | 'EMAIL_UNVERIFIED'
+  | 'ACCOUNTS_UNAVAILABLE'
   | 'INTERNAL';
 
 const STATUS: Record<ErrorCode, number> = {
@@ -47,6 +50,9 @@ const STATUS: Record<ErrorCode, number> = {
   RATE_LIMITED: 429,
   ORIGIN_MISMATCH: 403,
   CSRF: 403,
+  SIGN_IN_EXPIRED: 400,
+  EMAIL_UNVERIFIED: 403,
+  ACCOUNTS_UNAVAILABLE: 503,
   INTERNAL: 500,
 };
 

@@ -23,6 +23,7 @@ import {
   type TopupResult,
 } from './billing';
 import { notify } from './notify';
+import { appPath } from '../lib/paths';
 
 type Stmt = D1PreparedStatement;
 
@@ -1044,7 +1045,7 @@ export async function serveAd(
     body: `Iklan lokal untuk usahamu, mulai Rp${(cheapest?.p ?? 0).toLocaleString('id-ID')}/hari. Tampil di kotamu saja.`,
     imageUrl: null,
     ctaLabel: 'Pasang iklan',
-    clickUrl: '/iklan',
+    clickUrl: appPath(ctx.env, '/iklan'),
     label: 'Iklan · Zeiko',
     token: null,
     internal: true,

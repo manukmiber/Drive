@@ -14,3 +14,11 @@
 # TELEGRAM_BOT_TOKEN=...
 # TELEGRAM_WEBHOOK_SECRET=...
 # TURNSTILE_SECRET_KEY=...
+# Zeiko Accounts (ADR-036). Dev uses the stand-in door at /__dev/door, so these are only for
+# trying the real relay door locally:
+# ADAPTER_ACCOUNTS=zeiko
+# ADAPTER_PAYMENT=zeiko
+# ZEIKO_DOOR_URL=https://auth.zeiko.biz.id
+# ZEIKO_SITE_URL=https://zeiko.biz.id
+# ZEIKO_APP_TOKEN=... (relay → Zeiko Drive → Setup → Mint app token)
+# ZEIKO_OPS_TOKEN=... (relay → Zeiko Drive → Setup → Mint ops key)

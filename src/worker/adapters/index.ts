@@ -6,6 +6,12 @@ import {
   type EmailSender,
 } from './email';
 import { MockPaymentProvider, type PaymentProvider } from './payment';
+import {
+  MockZeikoAccounts,
+  RelayZeikoAccounts,
+  ZeikoPaymentProvider,
+  type ZeikoAccounts,
+} from './zeiko';
 import { ContainerScanner, MockScanner, type Scanner } from './scanner';
 import { MockCsamDetector, type CsamDetector } from './csam';
 import type { Clock } from './clock';
@@ -21,6 +27,12 @@ export interface Adapters {
   telegram: TelegramClient;
   media: MediaProcessor;
   archiver: Archiver;
+  accounts: ZeikoAccounts;
+}
+
+/** Zeiko Accounts is set up: the door's address and the app token. */
+export function zeikoReady(env: Env): boolean {
+  return Boolean(env.ZEIKO_DOOR_URL && env.ZEIKO_APP_TOKEN);
 }
 
 export function createAdapters(env: Env, clock: Clock): Adapters {
@@ -30,10 +42,23 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
       : env.ADAPTER_EMAIL === 'relay' && env.MAIL_RELAY_URL && env.MAIL_RELAY_TOKEN
         ? new RelayEmailSender(env.MAIL_RELAY_URL, env.MAIL_RELAY_TOKEN)
         : new MockEmailSender(env.CONFIG_KV, env.EMAIL_FROM);
-  // Only the mock gateway exists until the owner picks a provider (SPEC §16 #2).
-  const payment = new MockPaymentProvider(env.PAYMENT_WEBHOOK_SECRET, env.APP_ORIGIN, () =>
-    clock.now(),
-  );
+  const base = env.APP_BASE_PATH ?? '/dashboard';
+  const payment: PaymentProvider =
+    env.ADAPTER_PAYMENT === 'zeiko' && zeikoReady(env) && env.ZEIKO_OPS_TOKEN
+      ? new ZeikoPaymentProvider(
+          env.ZEIKO_DOOR_URL!,
+          env.ZEIKO_APP_TOKEN!,
+          env.ZEIKO_OPS_TOKEN,
+          `${env.APP_ORIGIN}${base}/paket`,
+          () => clock.now(),
+        )
+      : new MockPaymentProvider(env.PAYMENT_WEBHOOK_SECRET, env.APP_ORIGIN, () => clock.now());
+  // The dev door's tickets only exist in dev and tests; anywhere else, no Zeiko Accounts means
+  // nobody can sign in (the routes say so) rather than a door anyone could walk through.
+  const accounts: ZeikoAccounts =
+    env.ADAPTER_ACCOUNTS === 'zeiko' && zeikoReady(env)
+      ? new RelayZeikoAccounts(env.ZEIKO_DOOR_URL!, env.ZEIKO_APP_TOKEN!)
+      : new MockZeikoAccounts(env.CONFIG_KV);
   const scanner: Scanner =
     env.ADAPTER_SCANNER === 'container' && env.SCANNER
       ? new ContainerScanner(env.BUCKET, env.SCANNER, Number(env.SCANNER_INSTANCES ?? 3))
@@ -53,5 +78,5 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
       : env.ADAPTER_ARCHIVER === 'mock'
         ? new MockArchiver(env.BUCKET)
         : new NoArchiver();
-  return { email, payment, scanner, csam, telegram, media, archiver };
+  return { email, payment, scanner, csam, telegram, media, archiver, accounts };
 }

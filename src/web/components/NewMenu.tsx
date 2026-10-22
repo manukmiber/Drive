@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { FileUp, FolderPlus, FolderUp, Plus } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { ApiError } from '../lib/api';
 import { useCurrentFolder } from '../lib/explorer-store';
 import { createFolder, filesKeys } from '../lib/files';

@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bell as BellIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { formatDateTime } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { api, postJson } from '../lib/api';
 import { cn } from '../lib/cn';
 

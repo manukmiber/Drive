@@ -59,7 +59,17 @@ function bindings(env, nsBase, ids) {
       ...(email === 'relay'
         ? { MAIL_RELAY_URL: ids.mailRelayUrl ?? 'https://mailer.zeiko.biz.id' }
         : {}),
-      ADAPTER_PAYMENT: 'mock',
+      // Zeiko Accounts (ADR-036): sign-in tickets and payments through the relay's door. Its two
+      // secrets (ZEIKO_APP_TOKEN, ZEIKO_OPS_TOKEN) come from the relay's Zeiko Drive screen.
+      ADAPTER_PAYMENT: env === 'dev' ? 'mock' : (ids.payment ?? 'zeiko'),
+      ADAPTER_ACCOUNTS: env === 'dev' ? 'mock' : 'zeiko',
+      APP_BASE_PATH: '/dashboard',
+      ...(env === 'dev'
+        ? {}
+        : {
+            ZEIKO_DOOR_URL: ids.door ?? 'https://auth.zeiko.biz.id',
+            ZEIKO_SITE_URL: ids.site ?? 'https://zeiko.biz.id',
+          }),
       ADAPTER_SCANNER: containers ? 'container' : 'mock',
       ADAPTER_CSAM: 'mock',
       ADAPTER_MEDIA: env === 'dev' ? 'mock' : 'cloudflare',
@@ -148,7 +158,9 @@ const config = {
   assets: {
     directory: './dist/web',
     binding: 'ASSETS',
-    not_found_handling: 'single-page-application',
+    // The Worker serves the SPA's index for /dashboard/* itself (src/worker/app.ts): the build
+    // lives under dist/web/dashboard, beside nothing else.
+    not_found_handling: 'none',
     run_worker_first: true,
   },
   triggers: { crons: ['5 17 * * *', '0 * * * *', '0 19 * * *'] },
@@ -181,6 +193,7 @@ const header = `// Zeiko Cloud Storage — Wrangler config.
 //   SHARE_LINK_SECRET_PREV (rotation only), PREVIEW_SECRET, CONTACTS_ENC_KEY, IP_HASH_SECRET,
 //   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
 //   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, MAIL_RELAY_TOKEN (ADAPTER_EMAIL=relay only).
+//   ZEIKO_APP_TOKEN, ZEIKO_OPS_TOKEN (minted on the relay's Zeiko Drive screen, ADR-036).
 // REPLACE_WITH_* ids are filled by scripts/cf-setup.mjs (deploy/{env}.json).
 `;
 process.stdout.write(header + JSON.stringify(config, null, 2) + '\n');

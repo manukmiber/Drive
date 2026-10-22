@@ -1,29 +1,47 @@
 {
-  "name": "Zeiko Cloud Storage",
-  "short_name": "Zeiko",
+  "name": "Zeiko Drive",
+  "short_name": "Zeiko Drive",
   "description": "Simpan, buka, dan bagikan file dari mana saja.",
   "lang": "id",
-  "id": "/drive",
-  "start_url": "/drive",
-  "scope": "/",
+  "id": "/dashboard/",
+  "start_url": "/dashboard/",
+  "scope": "/dashboard/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#4338ca",
   "icons": [
-    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "/dashboard/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ],
   "share_target": {
-    "action": "/share-target",
+    "action": "/dashboard/share-target",
     "method": "POST",
     "enctype": "multipart/form-data",
     "params": {
       "title": "title",
       "text": "text",
-      "files": [{ "name": "files", "accept": ["*/*"] }]
+      "files": [
+        {
+          "name": "files",
+          "accept": [
+            "*/*"
+          ]
+        }
+      ]
     }
   },
   "shortcuts": [
-    { "name": "Terbaru", "url": "/terbaru" },
-    { "name": "Dibagikan", "url": "/dibagikan" }
+    {
+      "name": "Terbaru",
+      "url": "/dashboard/terbaru"
+    },
+    {
+      "name": "Dibagikan",
+      "url": "/dashboard/dibagikan"
+    }
   ]
 }

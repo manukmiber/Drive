@@ -2,7 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { ChevronRight, Folder } from 'lucide-react';
 import { useState } from 'react';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import { listChildren } from '../../lib/files';
 import { Button } from '../Button';
 import { Dialog } from '../ui/Dialog';

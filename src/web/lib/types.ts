@@ -63,9 +63,14 @@ export interface Me {
 }
 
 export interface PublicAuth {
-  google: boolean;
+  /** The Zeiko Accounts door (its /v1 calls), or null when not set up. */
+  doorUrl: string | null;
+  /** The website: sign-in, sign-up and payment pages. */
+  siteUrl: string | null;
+  basePath: string;
+  chatUrl: string;
   turnstileSiteKey: string | null;
-  devMailbox: boolean;
+  dev: boolean;
 }
 
 export interface BillingSummary {

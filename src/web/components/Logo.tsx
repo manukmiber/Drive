@@ -1,4 +1,4 @@
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 
 export function Logo({ className = '' }: { className?: string }) {
   return (

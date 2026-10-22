@@ -1,71 +1,67 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { KeyRound, Mail } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
-import { t } from '../../shared/strings.id';
+import { LogIn, UserPlus } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/Button';
 import { Logo } from '../components/Logo';
-import { Turnstile } from '../components/Turnstile';
-import { api } from '../lib/api';
-import { authClient } from '../lib/auth-client';
+import { t } from '../lib/i18n';
 import { meQueryKey } from '../lib/session';
-import type { PublicAuth } from '../lib/types';
+import { signInSilently, sitePage, zeikoConfig, type SilentResult } from '../lib/zeiko';
 
-const input =
-  'h-11 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 text-sm outline-none focus:border-brand-500';
+/** Only same-app paths are accepted as a return target (no open redirect). */
+function nextPath(): string {
+  const next = new URLSearchParams(location.search).get('next');
+  return next && /^\/(?!\/)[\w\-/]*$/.test(next) ? next : '/drive';
+}
 
+/**
+ * Sign-in is Zeiko Accounts' (ADR-036): if this browser is already signed in there, we sign in
+ * here without a click; otherwise the website's own sign-in and sign-up pages do it and send the
+ * visitor back to this page, which then finishes by itself.
+ */
 export function SignIn() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const cfg = useQuery({
-    queryKey: ['public-auth'],
-    queryFn: () => api<PublicAuth>('/api/public/auth'),
-  });
-  const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
-  const [step, setStep] = useState<'email' | 'code'>('email');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [captcha, setCaptcha] = useState<string | null>(null);
-  const needsCaptcha = Boolean(cfg.data?.turnstileSiteKey);
+  const [state, setState] = useState<SilentResult | 'checking'>('checking');
+  const [links, setLinks] = useState<{ signIn: string; signUp: string; account: string } | null>(
+    null,
+  );
+  const [dev, setDev] = useState(false);
 
-  async function done() {
-    await qc.invalidateQueries({ queryKey: meQueryKey });
-    // Only same-app paths are accepted as a return target (no open redirect).
-    const next = new URLSearchParams(location.search).get('next');
-    if (next && /^\/(?!\/)[\w\-/]*$/.test(next)) await navigate({ to: next as '/' });
-    else await navigate({ to: '/drive' });
-  }
+  const attempt = useCallback(async () => {
+    setState('checking');
+    const r = await signInSilently();
+    if (r === 'signed-in') {
+      await qc.invalidateQueries({ queryKey: meQueryKey });
+      await navigate({ to: nextPath() as '/' });
+      return;
+    }
+    setState(r);
+  }, [navigate, qc]);
 
-  async function sendCode(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const res = await authClient.emailOtp.sendVerificationOtp(
-      { email: email.trim(), type: 'sign-in' },
-      captcha ? { headers: { 'x-captcha-response': captcha } } : undefined,
-    );
-    setBusy(false);
-    if (res.error) setError(res.error.status === 429 ? t.errors.rateLimited : t.errors.generic);
-    else setStep('code');
-  }
-
-  async function verify(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    const res = await authClient.signIn.emailOtp({ email: email.trim(), otp: otp.trim() });
-    setBusy(false);
-    if (res.error) setError('Kode salah atau sudah kedaluwarsa.');
-    else await done();
-  }
-
-  async function withPasskey() {
-    setError(null);
-    const res = await authClient.signIn.passkey();
-    if (res?.error) setError('Passkey tidak bisa dipakai di perangkat ini.');
-    else await done();
-  }
+  useEffect(() => {
+    void (async () => {
+      const cfg = await zeikoConfig().catch(() => null);
+      setDev(Boolean(cfg?.dev));
+      const back = `${cfg?.basePath ?? '/dashboard'}/masuk?next=${encodeURIComponent(nextPath())}`;
+      const [signIn, signUp, account] = await Promise.all([
+        sitePage('signin', back),
+        sitePage('signup', back),
+        sitePage('settings'),
+      ]);
+      if (signIn && signUp && account) setLinks({ signIn, signUp, account });
+    })();
+    const first = setTimeout(() => void attempt(), 0);
+    // Signed in on the website in another tab: carry on when this one is looked at again.
+    const again = () => {
+      if (document.visibilityState === 'visible') void attempt();
+    };
+    document.addEventListener('visibilitychange', again);
+    return () => {
+      clearTimeout(first);
+      document.removeEventListener('visibilitychange', again);
+    };
+  }, [attempt]);
 
   return (
     <div className="flex min-h-full items-center justify-center bg-[var(--bg-subtle)] p-4">
@@ -74,88 +70,62 @@ export function SignIn() {
         <h1 className="mt-6 text-xl font-semibold">{t.auth.signInTitle}</h1>
         <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.auth.signInSubtitle}</p>
 
-        {step === 'email' ? (
-          <form onSubmit={sendCode} className="mt-6 space-y-3">
-            <label className="block text-sm font-medium" htmlFor="email">
-              {t.auth.emailLabel}
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email webauthn"
-              inputMode="email"
-              placeholder={t.auth.emailPlaceholder}
-              className={input}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <Turnstile onToken={setCaptcha} />
-            <Button type="submit" className="w-full" disabled={busy || (needsCaptcha && !captcha)}>
-              <Mail className="h-4 w-4" aria-hidden="true" />
-              {t.auth.sendCode}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={verify} className="mt-6 space-y-3">
-            <p className="text-sm text-[var(--fg-muted)]">{t.auth.codeSent(email)}</p>
-            <label className="block text-sm font-medium" htmlFor="otp">
-              {t.auth.codeLabel}
-            </label>
-            <input
-              id="otp"
-              required
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              pattern="[0-9]{6}"
-              maxLength={6}
-              className={`${input} text-center text-lg tracking-[0.4em]`}
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-              autoFocus
-            />
-            <Button type="submit" className="w-full" disabled={busy || otp.length !== 6}>
-              {t.auth.verify}
-            </Button>
-            <button
-              type="button"
-              className="w-full text-sm text-brand-700"
-              onClick={() => setStep('email')}
-            >
-              Ganti email
-            </button>
-            {cfg.data?.devMailbox && <p className="text-xs text-amber-600">{t.auth.devMailHint}</p>}
-          </form>
-        )}
-
-        {error && (
-          <p role="alert" className="mt-3 text-sm text-red-600">
-            {error}
+        {state === 'checking' && (
+          <p role="status" className="mt-6 text-sm text-[var(--fg-muted)]">
+            {t.auth.checking}
           </p>
         )}
 
-        <div className="my-5 flex items-center gap-3 text-xs text-[var(--fg-muted)]">
-          <span className="h-px flex-1 bg-[var(--border)]" />
-          atau
-          <span className="h-px flex-1 bg-[var(--border)]" />
-        </div>
-        <div className="space-y-2">
-          {cfg.data?.google && (
-            <Button
-              variant="secondary"
-              className="w-full"
-              onClick={() =>
-                authClient.signIn.social({ provider: 'google', callbackURL: '/drive' })
-              }
+        {state === 'no-session' && links && (
+          <div className="mt-6 space-y-2">
+            <a
+              href={links.signIn}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-brand-700 text-sm font-medium text-white"
             >
-              {t.auth.withGoogle}
+              <LogIn className="h-4 w-4" aria-hidden="true" />
+              {t.auth.withZeiko}
+            </a>
+            <a
+              href={links.signUp}
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-full border border-[var(--border)] text-sm font-medium"
+            >
+              <UserPlus className="h-4 w-4" aria-hidden="true" />
+              {t.auth.createAccount}
+            </a>
+            <p className="pt-2 text-xs text-[var(--fg-muted)]">{t.auth.otherTab}</p>
+            {dev && <p className="text-xs text-amber-600">{t.auth.devHint}</p>}
+          </div>
+        )}
+
+        {state === 'unverified' && (
+          <div className="mt-6 space-y-3">
+            <p role="alert" className="text-sm text-amber-700">
+              {t.auth.emailUnverified}
+            </p>
+            {links && (
+              <a
+                href={links.account}
+                className="flex h-11 w-full items-center justify-center rounded-full bg-brand-700 text-sm font-medium text-white"
+              >
+                {t.auth.openAccount}
+              </a>
+            )}
+            <Button variant="secondary" className="w-full" onClick={() => void attempt()}>
+              {t.common.retry}
             </Button>
-          )}
-          <Button variant="secondary" className="w-full" onClick={withPasskey}>
-            <KeyRound className="h-4 w-4" aria-hidden="true" />
-            {t.auth.withPasskey}
-          </Button>
-        </div>
+          </div>
+        )}
+
+        {state === 'unavailable' && (
+          <div className="mt-6 space-y-3">
+            <p role="alert" className="text-sm text-red-600">
+              {t.auth.unavailable}
+            </p>
+            <Button variant="secondary" className="w-full" onClick={() => void attempt()}>
+              {t.common.retry}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );

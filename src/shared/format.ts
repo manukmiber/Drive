@@ -1,4 +1,5 @@
-// Display formatting for Indonesian users. GB = 2^30 (SPEC §0.2).
+// Display formatting. Numbers and rupiah keep Indonesian grouping (Rp1.000) in both languages;
+// dates follow the UI language. GB = 2^30 (SPEC §0.2).
 import { GIB, KIB, MIB } from './constants';
 
 const id1 = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 });
@@ -29,20 +30,24 @@ export function usageRatios(used: number, limit: number): { used: number; free: 
   return { used: u, free: 1 - u };
 }
 
-const dateFmt = new Intl.DateTimeFormat('id-ID', {
+const dateOpts: Intl.DateTimeFormatOptions = {
   timeZone: 'Asia/Jakarta',
   day: 'numeric',
   month: 'short',
   year: 'numeric',
-});
-const dateTimeFmt = new Intl.DateTimeFormat('id-ID', {
-  timeZone: 'Asia/Jakarta',
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
+};
+let dateFmt = new Intl.DateTimeFormat('id-ID', dateOpts);
+let dateTimeFmt = new Intl.DateTimeFormat('id-ID', {
+  ...dateOpts,
   hour: '2-digit',
   minute: '2-digit',
 });
+
+/** Month names in the UI language (the web app sets this once at start; ADR-036). */
+export function setDateLocale(locale: string): void {
+  dateFmt = new Intl.DateTimeFormat(locale, dateOpts);
+  dateTimeFmt = new Intl.DateTimeFormat(locale, { ...dateOpts, hour: '2-digit', minute: '2-digit' });
+}
 
 export function formatDate(ms: number): string {
   return dateFmt.format(ms);

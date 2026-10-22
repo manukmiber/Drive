@@ -2,7 +2,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { t } from '../../../shared/strings.id';
+import { t } from '../../lib/i18n';
 import {
   listCompressJobs,
   mediaKind,

@@ -382,3 +382,53 @@ Workers Paid ($5/bulan) ditunda. Konsekuensinya:
 - `cf-setup` hanya membaca JSON dari stdout dan berhenti kalau daftar secret tidak terbaca. Sebelumnya, warning
   wrangler di stderr membuat daftar terbaca kosong dan **semua secret dibuat ulang** (secret staging sempat
   berganti satu kali).
+
+## ADR-036 — Login dan pembayaran lewat Zeiko Accounts (relay), harga tetap Rupiah
+Pemilik memutuskan (2026-10-22) Cloud Storage memakai **Zeiko Accounts** yang sama dengan ZeikoAI dan
+Zeiko Chat (relay `Chtting-relay-worker`, pintu `https://auth.zeiko.biz.id`). Pembayarannya memakai alur
+proxychat (QRIS yang dikonfirmasi operator, dan crypto lewat NOWPayments). Harga storage tetap **Rupiah**.
+Operator mengatur Cloud Storage dari layar baru di dashboard relay. Ini menyimpang dari SPEC §2 ("tanpa
+password", Better Auth dengan Google/OTP/passkey) dan §16 #2 (gateway pembayaran).
+
+- **Login = "Masuk dengan Akun Zeiko".** `GET /api/auth/zeiko/start` menyimpan `state` di cookie, lalu
+  mengarahkan browser ke `{ZEIKO_SITE_URL}/account/connect?app=storage&state=…`. Website memakai sesi pintu
+  (atau meminta login/daftar dulu), lalu meminta tiket sekali pakai (`POST /v1/ticket`, berlaku 2 menit).
+  Pintu mengembalikan browser ke `/api/auth/zeiko/callback?ticket&state`. Worker menukar tiket
+  server-ke-server (`POST /apps/v1/tickets/redeem`, bearer `ZEIKO_APP_TOKEN`), mencocokkan `state`, lalu
+  membuat sesi Better Auth. Identitasnya disimpan di tabel `accounts` (`providerId = 'zeiko'`, `accountId` =
+  id Zeiko), jadi id user lokal tetap ULID. Email dan nama disegarkan setiap kali login.
+- **Yang dilepas:** OTP email, Google langsung, dan login dengan passkey (`disabledPaths`). Password, lupa
+  password, konfirmasi email, Google, dan GitHub semuanya diurus Zeiko Accounts. Passkey dan TOTP tetap
+  dipakai sebagai faktor kedua staf (SPEC §13.1).
+- **Pembayaran = adapter `zeiko`.** `createCharge` → `POST /apps/v1/payments` (`amountIdr`, `method`
+  `qris|crypto`, `orderRef` = id pembayaran lokal). QRIS mengembalikan halaman bayar website
+  (`/account/pay?id=`). Nominalnya rupiah persis plus kode unik 1–999 (`Charge.amountIdr`), dan seluruh nominal
+  itu masuk Saldo, jadi pembeli tidak kehilangan kodenya. Crypto mengembalikan invoice NOWPayments dengan
+  dolar dari kurs QRIS yang diketik operator, dan hanya ditawarkan di atas `min_idr` metode `crypto`. Relay
+  memberi kabar ke `/api/payments/webhook/zeiko` (HMAC-SHA256 dengan `ZEIKO_OPS_TOKEN` atas
+  `timestamp.body`, maksimal 5 menit). `getStatus` dipakai cron untuk menyamakan kabar yang hilang.
+  Semua pembelian tetap lewat Saldo dulu (ADR-026), sehingga paket keluarga, add-on, kompres, iklan, dan siklus
+  tunggakan tidak berubah.
+- **Saldo tetap Rupiah dan milik Cloud Storage**, tidak digabung dengan saldo dolar ZeikoAI/Zeiko Chat.
+  Kalau digabung, nilainya akan ikut naik-turun dengan kurs yang diketik tangan. Penggabungan bisa diputuskan
+  belakangan.
+- **Layar Cloud Storage di dashboard relay** memanggil `/api/ops/*` di Worker (bearer `ZEIKO_OPS_TOKEN`).
+  Layar ini mencakup ringkasan untung-rugi (`services/admin.ts::dashboard`), katalog paket, konfigurasi
+  bisnis, pengguna (Saldo, kuota bonus, paket, suspend), dan pembayaran. Setiap perubahan butuh alasan dan
+  dicatat di `audit_logs` atas nama operator relay. Tetap tidak ada akses melihat isi file user.
+- **Relay offline** (HP mati): orang tidak bisa login baru atau bayar. Sesi yang ada, file, dan share tetap
+  jalan karena sesi disimpan di D1.
+- Dev dan test memakai mock: `/dev/zeiko-login` menerbitkan tiket mock untuk akun demo, dan pembayaran mock
+  tetap memakai halaman `/dev/pay`.
+- **Tambahan pemilik (2026-10-22, pesan lanjutan):** produk ini bernama **Zeiko Drive**. Harga dan
+  deskripsinya pindah ke zeiko.biz.id (`proxychat`: halaman `/drive`, kartu paket dirender Worker situs dari
+  `/api/public/catalog`, jadi perubahan harga di dashboard relay langsung terlihat). App-nya ada di
+  **`zeiko.biz.id/dashboard`** (`APP_BASE_PATH`; build Vite di `dist/web/dashboard`) dan dibuka di storage.
+  Sidebar punya "Produk Zeiko": AI Decision (`/dashboard/ai`, data dari pintu `/v1/account` dengan sesi
+  browser sendiri), Zeiko Chat, dan Akun Zeiko. Worker situs meneruskan `/dashboard`, `/api/*`, `/d/*`, `/z/*`,
+  `/ad/*`, dan link share ke Worker Drive lewat service binding `DRIVE`. Karena halaman ada di origin situs,
+  pintu sudah mengizinkan CORS-nya, sehingga login tanpa klik (`signInSilently`) bekerja kalau browser sudah
+  masuk di website.
+- **Dua bahasa (EN/ID) di semua UI:** `strings.en.ts` mengikuti bentuk `strings.id.ts`. Bahasa disimpan di
+  cookie `zk_lang` milik seluruh zeiko.biz.id (website ikut membacanya) dan di `users.locale` (migrasi 0004)
+  untuk email. Halaman share yang dirender Worker memilih bahasa dari cookie atau `Accept-Language`.

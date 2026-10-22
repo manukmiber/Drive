@@ -6,6 +6,9 @@ import { DAY_MS, GIB } from '../../shared/constants';
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
+import { addBillingMonth } from '../../shared/time';
+import { ensurePersonalSpace } from './accounts';
+import { poolLimitStmt, wibAnchorDay } from './billing';
 import { getConfig, setConfig } from './config';
 import { setUserStatus } from './reports';
 
@@ -108,6 +111,8 @@ export async function dashboard(ctx: Ctx, days = 30) {
     (paidTransforms / 1000) * cfg.image_transform_usd_per_1000 * usd,
   );
   const revenueIdr = revenue.results.reduce((s, r) => s + r.idr, 0);
+  // Fixed costs for the period (Workers Paid and the like), pro rata over 30-day months.
+  const fixedIdr = Math.round((cfg.fixed_costs_usd_per_month * usd * days) / 30);
   const plans = byPlan.results.map((p) => {
     const costPerSub = (p.storageBytes / GIB) * cfg.r2_storage_usd_per_gb_month * usd;
     return {
@@ -134,10 +139,17 @@ export async function dashboard(ctx: Ctx, days = 30) {
       storageIdr: storageCostIdr,
       compressIdr: compressCostIdr,
       paymentFeesIdr: fees?.idr ?? 0,
-      totalIdr: storageCostIdr + compressCostIdr + (fees?.idr ?? 0),
-      note: 'Estimasi R2 storage + kompres (Lampiran B) + biaya gateway. Operasi R2, Workers, D1, Containers, dan Email lihat tagihan Cloudflare; tarifnya di component_tariffs_usd.',
+      fixedIdr,
+      totalIdr: storageCostIdr + compressCostIdr + (fees?.idr ?? 0) + fixedIdr,
+      note: 'Estimasi R2 storage + kompres (Lampiran B) + biaya gateway + biaya tetap (fixed_costs_usd_per_month). Operasi R2, Workers, D1, Containers, dan Email lihat tagihan Cloudflare; tarifnya di component_tariffs_usd.',
     },
-    marginIdr: revenueIdr - (storageCostIdr + compressCostIdr + (fees?.idr ?? 0)),
+    marginIdr: revenueIdr - (storageCostIdr + compressCostIdr + (fees?.idr ?? 0) + fixedIdr),
+    assumptions: {
+      usdIdrRate: usd,
+      r2UsdPerGbMonth: cfg.r2_storage_usd_per_gb_month,
+      qrisFeePct: cfg.payment_methods.find((m) => m.code === 'qris')?.fee_pct ?? 0,
+      fixedUsdPerMonth: cfg.fixed_costs_usd_per_month,
+    },
     scans: scans.results,
     reports: { open: reports?.open ?? 0, overdue: reports?.overdue ?? 0 },
   };
@@ -416,4 +428,47 @@ export async function auditLog(
     .bind(f.action ?? null, f.targetId ?? null, f.before ?? Number.MAX_SAFE_INTEGER)
     .all();
   return results;
+}
+
+// ── Plans given by the operator (relay screen, ADR-036) ──
+/**
+ * Puts the user's personal pool on `planCode` for `months` from now, free of charge: compensation,
+ * a partner, a test account. Their current subscription ends now. No auto-renewal: when it ends the
+ * ordinary dunning applies, as for any unpaid period.
+ */
+export async function grantPlan(
+  ctx: Ctx,
+  actorId: string,
+  userId: string,
+  planCode: string,
+  months: number,
+  reason: string | undefined,
+): Promise<void> {
+  const r = requireReason(reason);
+  if (!Number.isInteger(months) || months < 1 || months > 24)
+    throw new AppError('VALIDATION', 'months must be 1-24', { field: 'months' });
+  const DB = ctx.env.DB;
+  const plan = await DB.prepare('SELECT code, name, price_idr FROM plans WHERE code = ?1')
+    .bind(planCode)
+    .first<{ code: string; name: string; price_idr: number }>();
+  if (!plan) throw new AppError('NOT_FOUND', 'unknown plan', { field: 'planCode' });
+  const space = await ensurePersonalSpace(ctx, userId);
+  const now = ctx.now();
+  const anchor = wibAnchorDay(now);
+  let end = now;
+  for (let i = 0; i < months; i++) end = addBillingMonth(end, anchor);
+  const subId = ulid(now);
+  await DB.batch([
+    DB.prepare(
+      `UPDATE subscriptions SET status = 'cancelled', status_changed_at = ?2, updated_at = ?2
+       WHERE pool_id = ?1 AND status IN ('active', 'grace', 'readonly', 'suspended')`,
+    ).bind(space.poolId, now),
+    DB.prepare(
+      `INSERT INTO subscriptions (id, pool_id, payer_user_id, plan_code, status, period_start, period_end, anchor_day,
+         auto_renew, cancel_at_period_end, status_changed_at, created_at, updated_at)
+       VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, 0, 1, ?5, ?5, ?5)`,
+    ).bind(subId, space.poolId, userId, plan.code, now, end, anchor),
+    poolLimitStmt(ctx, space.poolId),
+  ]);
+  await audit(ctx, actorId, 'plan.grant', 'user', userId, { plan: plan.code, months, reason: r });
 }

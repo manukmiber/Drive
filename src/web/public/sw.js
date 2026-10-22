@@ -1,13 +1,15 @@
-// Zeiko service worker: app-shell caching + Web Share Target (files shared from other apps are
-// stashed in IndexedDB, then the app uploads them to Drive Saya). Never caches API or file bytes.
-const SHELL = 'zk-shell-v1';
+// Zeiko Drive service worker (scope /dashboard/): app-shell caching + Web Share Target (files
+// shared from other apps are stashed in IndexedDB, then the app uploads them to My Drive). Never
+// caches API or file bytes.
+const SHELL = 'zk-shell-v2';
+const BASE = '/dashboard';
 const NEVER = /^\/(api|d|z|p|__dev)\//;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches
       .open(SHELL)
-      .then((c) => c.addAll(['/drive']))
+      .then((c) => c.addAll([`${BASE}/drive`]))
       .then(() => self.skipWaiting()),
   );
 });
@@ -40,13 +42,13 @@ async function stashShared(request) {
     tx.oncomplete = resolve;
     tx.onerror = () => reject(tx.error);
   });
-  return Response.redirect(`/drive?shared=${files.length}`, 303);
+  return Response.redirect(`${BASE}/drive?shared=${files.length}`, 303);
 }
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
-  if (e.request.method === 'POST' && url.pathname === '/share-target') {
+  if (e.request.method === 'POST' && url.pathname === `${BASE}/share-target`) {
     e.respondWith(stashShared(e.request));
     return;
   }
@@ -58,15 +60,15 @@ self.addEventListener('fetch', (e) => {
         .then((res) => {
           if (res.ok && res.headers.get('content-type')?.includes('text/html')) {
             const copy = res.clone();
-            void caches.open(SHELL).then((c) => c.put('/drive', copy));
+            void caches.open(SHELL).then((c) => c.put(`${BASE}/drive`, copy));
           }
           return res;
         })
-        .catch(() => caches.match('/drive').then((r) => r || Response.error())),
+        .catch(() => caches.match(`${BASE}/drive`).then((r) => r || Response.error())),
     );
     return;
   }
-  if (url.pathname.startsWith('/assets/')) {
+  if (url.pathname.startsWith(`${BASE}/assets/`)) {
     // Hashed build assets are immutable.
     e.respondWith(
       caches.match(e.request).then(

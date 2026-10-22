@@ -107,3 +107,15 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   20 MB (multipart) → scan `ready` → unduh (sha256 cocok) → link share 200 → ZIP.
 - [ ] Production: menunggu persetujuan pemilik. Apex `zeiko.biz.id` sudah dipakai layanan lain, dan Workers Paid
   dibutuhkan untuk container serta Email Sending.
+
+## Zeiko Drive di Akun Zeiko (ADR-036, 2026-10-22)
+- [x] Login lewat Akun Zeiko: tiket sekali pakai dari pintu (`/v1/ticket`) → `/api/auth/zeiko/exchange`; OTP email
+  dan Google dihapus, passkey/TOTP tinggal sebagai faktor kedua staf. Pintu tiruan di dev (`/__dev/door`).
+- [x] Pembayaran rupiah lewat relay (adapter `zeiko`: QRIS + crypto, callback HMAC, cron rekonsiliasi per jam).
+- [x] Ops API (`/api/ops/*`) untuk layar Zeiko Drive di dashboard relay: profit, paket, angka bisnis, orang, audit.
+- [x] App pindah ke `/dashboard` (Vite base, router basepath, PWA, link email/share lewat `appUrl`).
+- [x] Sidebar "Produk Zeiko": AI Decision (`/dashboard/ai`), Zeiko Chat, Akun Zeiko. Landing pindah ke website.
+- [x] Dua bahasa EN/ID di semua UI (`strings.en.ts`, cookie `zk_lang`, `users.locale`), halaman share bilingual.
+- [ ] Email bilingual menurut `users.locale` (template email masih Bahasa Indonesia).
+- [ ] Staging dengan SSO sungguhan: menunggu relay live diperbarui pemilik, secret `ZEIKO_APP_TOKEN`/`ZEIKO_OPS_TOKEN`,
+  dan `https://staging.zeiko.biz.id` di `site.auth.origins`.

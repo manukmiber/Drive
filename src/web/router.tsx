@@ -6,10 +6,11 @@ import {
   useParams,
 } from '@tanstack/react-router';
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
-import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
 
-// Everything except the landing page loads on demand, so the first visit only downloads what it needs (Lighthouse mobile, SPEC §15 Fase 12).
+// The app lives at /dashboard on the website's own address (ADR-036); its landing page, prices and
+// description are the website's now. Every page loads on demand, so the first visit only
+// downloads what it needs (Lighthouse mobile, SPEC §15 Fase 12).
 // `any` is React's own default for ComponentType; the real props come from M[K].
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyComponent = ComponentType<any>;
@@ -41,6 +42,7 @@ const Settings = page(() => import('./pages/Settings'), 'Settings');
 const Compress = page(() => import('./pages/Compress'), 'Compress');
 const Advertiser = page(() => import('./pages/Advertiser'), 'Advertiser');
 const Downloads = page(() => import('./pages/Downloads'), 'Downloads');
+const AiDecision = page(() => import('./pages/AiDecision'), 'AiDecision');
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: AppShell });
@@ -77,7 +79,6 @@ function DriveFolder() {
 }
 
 const routeTree = rootRoute.addChildren([
-  createRoute({ getParentRoute: () => rootRoute, path: '/', component: Landing }),
   createRoute({ getParentRoute: () => rootRoute, path: '/masuk', component: SignIn }),
   reportRoute,
   createRoute({
@@ -97,11 +98,14 @@ const routeTree = rootRoute.addChildren([
     },
   }),
   appRoute.addChildren([
+    // Storage is what /dashboard opens on.
+    createRoute({ getParentRoute: () => appRoute, path: '/', component: () => <Drive key="root" /> }),
     createRoute({
       getParentRoute: () => appRoute,
       path: '/drive',
       component: () => <Drive key="root" />,
     }),
+    createRoute({ getParentRoute: () => appRoute, path: '/ai', component: AiDecision }),
     createRoute({
       getParentRoute: () => appRoute,
       path: '/drive/$folderId',
@@ -130,7 +134,10 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const router = createRouter({ routeTree, defaultPreload: 'intent' });
+/** Where the app is served (APP_BASE_PATH on the Worker; the build is made for it). */
+export const BASE_PATH = '/dashboard';
+
+export const router = createRouter({ routeTree, basepath: BASE_PATH, defaultPreload: 'intent' });
 
 declare module '@tanstack/react-router' {
   interface Register {

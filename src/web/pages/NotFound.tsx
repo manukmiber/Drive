@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 
 export function NotFound() {
   return (

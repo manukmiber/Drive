@@ -2,11 +2,12 @@ import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { getDb, schema } from '../../src/worker/db/client';
 import { SESSION_COOKIE } from '../../src/worker/auth';
-import { APP, makeRuntime } from '../helpers/runtime';
-import { lastOtp, signIn } from '../helpers/session';
+import { MockZeikoAccounts } from '../../src/worker/adapters/zeiko';
+import { APP, jsonReq, makeRuntime } from '../helpers/runtime';
+import { exchange, Jar, signIn, zeikoAccountFor } from '../helpers/session';
 
 describe('auth (Better Auth on D1)', () => {
-  it('signs up with email OTP and bootstraps the personal space', async () => {
+  it('signs up with a Zeiko Account and bootstraps the personal space', async () => {
     const rt = await makeRuntime();
     const s = await signIn(rt, 'siti@example.com');
     expect(s.jar.get(SESSION_COOKIE)).toBeTruthy();
@@ -39,23 +40,9 @@ describe('auth (Better Auth on D1)', () => {
 
   it('issues __Host- cookies only', async () => {
     const rt = await makeRuntime();
-    const res = await rt.fetch(
-      new Request(`${APP}/api/auth/email-otp/send-verification-otp`, {
-        method: 'POST',
-        headers: { origin: APP, 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'a@example.com', type: 'sign-in' }),
-      }),
-    );
+    const res = await exchange(rt, new Jar(), zeikoAccountFor('a@example.com'));
     expect(res.status).toBe(200);
-    const otp = await lastOtp(rt, 'a@example.com');
-    const signed = await rt.fetch(
-      new Request(`${APP}/api/auth/sign-in/email-otp`, {
-        method: 'POST',
-        headers: { origin: APP, 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'a@example.com', otp }),
-      }),
-    );
-    const cookies = signed.headers.getSetCookie();
+    const cookies = res.headers.getSetCookie();
     expect(cookies.length).toBeGreaterThan(0);
     for (const c of cookies) {
       expect(c).toMatch(/^__Host-/);
@@ -65,23 +52,72 @@ describe('auth (Better Auth on D1)', () => {
     }
   });
 
-  it('rejects a wrong OTP', async () => {
+  it('opens a ticket once, and never for an unconfirmed email', async () => {
     const rt = await makeRuntime();
-    await rt.fetch(
-      new Request(`${APP}/api/auth/email-otp/send-verification-otp`, {
-        method: 'POST',
-        headers: { origin: APP, 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'b@example.com', type: 'sign-in' }),
-      }),
+    const a = zeikoAccountFor('b@example.com');
+    const ticket = await MockZeikoAccounts.issue(rt.env.CONFIG_KV, a);
+    const post = (body: unknown) =>
+      rt.fetch(jsonReq('POST', '/api/auth/zeiko/exchange', body));
+    expect((await post({ ticket })).status).toBe(200);
+    const again = await post({ ticket });
+    expect(again.status).toBe(400);
+    expect(await again.json()).toMatchObject({ code: 'SIGN_IN_EXPIRED' });
+
+    const unconfirmed = await exchange(
+      rt,
+      new Jar(),
+      zeikoAccountFor('e@example.com', { emailVerified: false }),
     );
-    const res = await rt.fetch(
-      new Request(`${APP}/api/auth/sign-in/email-otp`, {
-        method: 'POST',
-        headers: { origin: APP, 'content-type': 'application/json' },
-        body: JSON.stringify({ email: 'b@example.com', otp: '000000' }),
-      }),
-    );
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(unconfirmed.status).toBe(403);
+    expect(await unconfirmed.json()).toMatchObject({ code: 'EMAIL_UNVERIFIED' });
+  });
+
+  it('keeps one user per Zeiko Account and follows its email and name', async () => {
+    const rt = await makeRuntime();
+    const first = await signIn(rt, 'nina@example.com');
+    const moved = zeikoAccountFor('nina@example.com', { email: 'nina@new.example', name: 'Nina K' });
+    const again = await exchange(rt, new Jar(), moved, 'en');
+    expect(again.status).toBe(200);
+    const db = getDb(rt.env.DB);
+    const users = await db.select().from(schema.users).all();
+    expect(users).toHaveLength(1);
+    expect(users[0]).toMatchObject({ id: first.userId, email: 'nina@new.example', name: 'Nina K' });
+    // The language is only taken from the first sign-in.
+    expect(users[0]!.locale).toBe('id');
+  });
+
+  it('links an existing user with the same confirmed email once', async () => {
+    const rt = await makeRuntime();
+    const old = await signIn(rt, 'lama@example.com');
+    // A second Zeiko Account with that address (e.g. the first was deleted at the door).
+    const other = zeikoAccountFor('lama@example.com', { id: 'zk_other' });
+    expect((await exchange(rt, new Jar(), other)).status).toBe(200);
+    const db = getDb(rt.env.DB);
+    const links = await db
+      .select()
+      .from(schema.accounts)
+      .where(eq(schema.accounts.userId, old.userId))
+      .all();
+    expect(links.map((l) => l.accountId).sort()).toEqual(['zk_lama_example_com', 'zk_other']);
+  });
+
+  it('turns the mock door off outside dev', async () => {
+    const rt = await makeRuntime({ vars: { APP_ENV: 'staging' } });
+    const res = await exchange(rt, new Jar(), zeikoAccountFor('x@example.com'));
+    expect(res.status).toBe(503);
+  });
+
+  it('offers no OTP, password or passkey sign-in', async () => {
+    const rt = await makeRuntime();
+    for (const path of [
+      '/api/auth/email-otp/send-verification-otp',
+      '/api/auth/sign-in/email',
+      '/api/auth/passkey/generate-authenticate-options',
+    ]) {
+      const res = await rt.fetch(jsonReq('POST', path, { email: 'z@example.com' }));
+      expect(res.status, path).toBeGreaterThanOrEqual(400);
+      expect(res.status, path).not.toBe(500);
+    }
   });
 
   it('requires a session for /api/me', async () => {
@@ -106,18 +142,11 @@ describe('auth (Better Auth on D1)', () => {
     expect(await bad.json()).toMatchObject({ error: { code: 'CSRF' } });
   });
 
-  it('rate-limits OTP requests', async () => {
+  it('rate-limits sign-in attempts', async () => {
     const rt = await makeRuntime({ rateLimits: { RL_AUTH: { limit: 2, period: 60 } } });
-    const send = () =>
-      rt.fetch(
-        new Request(`${APP}/api/auth/email-otp/send-verification-otp`, {
-          method: 'POST',
-          headers: { origin: APP, 'content-type': 'application/json' },
-          body: JSON.stringify({ email: 'd@example.com', type: 'sign-in' }),
-        }),
-      );
-    expect((await send()).status).toBe(200);
-    expect((await send()).status).toBe(200);
+    const send = () => rt.fetch(jsonReq('POST', '/api/auth/zeiko/exchange', { ticket: 'nope-nope-nope' }));
+    expect((await send()).status).toBe(400);
+    expect((await send()).status).toBe(400);
     expect((await send()).status).toBe(429);
   });
 });

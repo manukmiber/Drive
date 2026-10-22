@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import { formatBytes } from '../../shared/format';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { uploads, useUploads } from '../upload/useUploads';
 import type { UploadTask } from '../upload/manager';
 import { Button } from './Button';
@@ -201,7 +201,7 @@ export function UploadPanel() {
   return (
     <>
       <section
-        aria-label="Upload"
+        aria-label={t.a11y.upload}
         className="fixed right-2 bottom-20 z-40 w-[min(96vw,24rem)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-xl md:right-6 md:bottom-6"
       >
         <header className="flex items-center gap-2 bg-[var(--bg-subtle)] px-4 py-3">

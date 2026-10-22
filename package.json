@@ -12,7 +12,7 @@
     "dev:api": "NODE_OPTIONS=--disable-warning=ExperimentalWarning tsx watch --clear-screen=false dev/server.ts",
     "dev:web": "vite",
     "dev:reset": "node scripts/dev-reset.mjs",
-    "build": "vite build",
+    "build": "node -e \"require('node:fs').rmSync('dist/web', { recursive: true, force: true })\" && vite build",
     "typecheck": "tsc -p tsconfig.worker.json && tsc -p tsconfig.web.json && tsc -p tsconfig.node.json",
     "lint": "eslint .",
     "format": "prettier --write .",

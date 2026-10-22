@@ -1,6 +1,6 @@
 // /lapor — public abuse report form (linked from every share page; SPEC §14.3, §14.5).
 import { useState } from 'react';
-import { t } from '../../shared/strings.id';
+import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { Logo } from '../components/Logo';
 import { Turnstile } from '../components/Turnstile';

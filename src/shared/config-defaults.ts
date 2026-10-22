@@ -15,6 +15,8 @@ export const configSchema = z.object({
   video_transform_usd_per_1000: z.number().nonnegative().default(0.5),
   free_transforms_per_month: nonNeg().default(5_000),
   usage_scenarios_pct: z.array(z.number().nonnegative()).default([20, 50, 100]),
+  /** Fixed monthly costs whatever the traffic (Workers Paid $5, …), for the profit figures. */
+  fixed_costs_usd_per_month: z.number().nonnegative().default(5),
   // Other component tariffs (USD), filled from docs for the admin cost dashboard (SPEC §13.1).
   component_tariffs_usd: z
     .object({
@@ -95,15 +97,10 @@ export const configSchema = z.object({
       }),
     )
     .default([
+      // Zeiko Accounts (ADR-036): QRIS checked by the operator, crypto through NOWPayments from the
+      // relay's own minimum (drive.cryptoMinIdr).
       { code: 'qris', label: 'QRIS', min_idr: 10_000, fee_flat_idr: 0, fee_pct: 0.7, active: true },
-      {
-        code: 'va',
-        label: 'Virtual Account',
-        min_idr: 50_000,
-        fee_flat_idr: 4_000,
-        fee_pct: 0,
-        active: true,
-      },
+      { code: 'crypto', label: 'Crypto', min_idr: 50_000, fee_flat_idr: 0, fee_pct: 0, active: true },
     ]),
   tax_rate_pct: z.number().nonnegative().default(0),
   billing_reminder_days_before: z.array(nonNeg()).default([3, 1]),

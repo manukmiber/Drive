@@ -474,6 +474,16 @@ export type DirectPurpose =
   | { kind: 'compress'; code: string }
   | { kind: 'ads'; bookingIds: string[] };
 
+/** The user's Zeiko Account id (ADR-036), for the payments opened in their name. */
+async function zeikoIdOf(ctx: Ctx, userId: string): Promise<string | undefined> {
+  const row = await ctx.env.DB.prepare(
+    `SELECT account_id FROM accounts WHERE user_id = ?1 AND provider_id = 'zeiko' ORDER BY created_at DESC LIMIT 1`,
+  )
+    .bind(userId)
+    .first<{ account_id: string }>();
+  return row?.account_id;
+}
+
 export async function createTopup(
   ctx: Ctx,
   user: { id: string; email: string },
@@ -491,16 +501,19 @@ export async function createTopup(
   if (input.amountIdr > 10_000_000)
     throw new AppError('VALIDATION', 'amount too large', { maxIdr: 10_000_000 });
   const fee = method.fee_flat_idr + Math.ceil((input.amountIdr * method.fee_pct) / 100);
-  const charged = cfg.payment_fee_paid_by === 'user' ? input.amountIdr + fee : input.amountIdr;
+  const asked = cfg.payment_fee_paid_by === 'user' ? input.amountIdr + fee : input.amountIdr;
   const now = ctx.now();
   const paymentId = ulid(now);
   const charge = await ctx.adapters.payment.createCharge({
     paymentId,
-    amountIdr: charged,
+    amountIdr: asked,
     method: method.code,
-    description: input.then ? 'Pembayaran Zeiko' : 'Isi Saldo Zeiko',
+    description: input.then ? 'Pembayaran Zeiko Drive' : 'Isi Saldo Zeiko Drive',
     customerEmail: user.email,
+    customerRef: await zeikoIdOf(ctx, user.id),
   });
+  // A Zeiko QRIS asks a few rupiah more (its code); the buyer pays them, so Saldo gets them.
+  const charged = charge.amountIdr ?? asked;
   await ctx.env.DB.prepare(
     `INSERT INTO payments (id, user_id, provider, provider_ref, method, amount_idr, fee_idr, status, purpose, purpose_ref, created_at, updated_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, ?9, ?10, ?10)`,
@@ -620,6 +633,36 @@ export async function applyPaymentEvent(
     }
   }
   return 'applied';
+}
+
+/**
+ * A callback the gateway sent and we never got (ADR-036: the relay tries four times): ask it
+ * about our open payments of the last week. Its answer is server to server, with our own token,
+ * and is applied exactly like a callback.
+ */
+export async function reconcilePayments(ctx: Ctx, limit = 50): Promise<number> {
+  const provider = ctx.adapters.payment;
+  if (provider.name === 'mock') return 0;
+  const { results } = await ctx.env.DB.prepare(
+    `SELECT provider_ref, amount_idr FROM payments
+     WHERE provider = ?1 AND status IN ('pending', 'expired') AND created_at > ?2 AND created_at < ?3
+     ORDER BY created_at DESC LIMIT ?4`,
+  )
+    .bind(provider.name, ctx.now() - 7 * DAY_MS, ctx.now() - 2 * 60_000, limit)
+    .all<{ provider_ref: string; amount_idr: number }>();
+  let applied = 0;
+  for (const p of results) {
+    const status = await provider.getStatus(p.provider_ref).catch(() => 'pending' as const);
+    if (status === 'pending') continue;
+    const r = await applyPaymentEvent(ctx, provider.name, {
+      providerRef: p.provider_ref,
+      status,
+      amountIdr: p.amount_idr,
+      raw: { reconciled: true, status },
+    });
+    if (r === 'applied') applied++;
+  }
+  return applied;
 }
 
 export async function expireStalePayments(ctx: Ctx): Promise<number> {
