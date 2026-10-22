@@ -16,7 +16,9 @@ export interface Env {
   APP_ORIGIN: string;
   USERCONTENT_ORIGIN: string;
   EMAIL_FROM: string;
-  ADAPTER_EMAIL: 'mock' | 'cloudflare';
+  /** `relay` = HTTPS → SMTP relay Worker (Workers Free, ADR-035). */
+  ADAPTER_EMAIL: 'mock' | 'cloudflare' | 'relay';
+  MAIL_RELAY_URL?: string;
   ADAPTER_PAYMENT: 'mock';
   ADAPTER_SCANNER: 'mock' | 'container';
   ADAPTER_CSAM: 'mock';
@@ -43,6 +45,7 @@ export interface Env {
   TELEGRAM_BOT_TOKEN?: string;
   TELEGRAM_WEBHOOK_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
+  MAIL_RELAY_TOKEN?: string;
 
   // ── bindings ──
   DB: D1Database;
@@ -64,7 +67,8 @@ export interface Env {
   RL_REPORT: RateLimit;
   IMAGES: ImagesBinding;
   MEDIA: MediaBinding;
-  EMAIL: SendEmail;
+  /** Email Sending (Workers Paid). Absent with ADAPTER_EMAIL=relay|mock. */
+  EMAIL?: SendEmail;
   /** Containers (absent in local dev; adapters fall back to mocks). */
   SCANNER?: DurableObjectNamespace;
   MEDIA_CONTAINER?: DurableObjectNamespace;

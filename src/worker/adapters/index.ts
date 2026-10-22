@@ -1,5 +1,10 @@
 import type { Env } from '../env';
-import { CloudflareEmailSender, MockEmailSender, type EmailSender } from './email';
+import {
+  CloudflareEmailSender,
+  MockEmailSender,
+  RelayEmailSender,
+  type EmailSender,
+} from './email';
 import { MockPaymentProvider, type PaymentProvider } from './payment';
 import { ContainerScanner, MockScanner, type Scanner } from './scanner';
 import { MockCsamDetector, type CsamDetector } from './csam';
@@ -20,9 +25,11 @@ export interface Adapters {
 
 export function createAdapters(env: Env, clock: Clock): Adapters {
   const email: EmailSender =
-    env.ADAPTER_EMAIL === 'cloudflare'
+    env.ADAPTER_EMAIL === 'cloudflare' && env.EMAIL
       ? new CloudflareEmailSender(env.EMAIL, env.EMAIL_FROM)
-      : new MockEmailSender(env.CONFIG_KV, env.EMAIL_FROM);
+      : env.ADAPTER_EMAIL === 'relay' && env.MAIL_RELAY_URL && env.MAIL_RELAY_TOKEN
+        ? new RelayEmailSender(env.MAIL_RELAY_URL, env.MAIL_RELAY_TOKEN)
+        : new MockEmailSender(env.CONFIG_KV, env.EMAIL_FROM);
   // Only the mock gateway exists until the owner picks a provider (SPEC §16 #2).
   const payment = new MockPaymentProvider(env.PAYMENT_WEBHOOK_SECRET, env.APP_ORIGIN, () =>
     clock.now(),

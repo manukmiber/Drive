@@ -355,3 +355,20 @@ membuka ambang baru.
 - **HSTS** `max-age=1 tahun` tanpa `includeSubDomains`/preload (domain induk dipakai produk lain).
 - **Uji beban**: `tests/load/download.js` (k6) hanya untuk staging. Mencakup link share (tanpa halaman iklan)
   dan Range 4 koneksi.
+
+## ADR-035 — Staging di Workers Free + email lewat relay HTTPS→SMTP
+Pemilik memutuskan (2026-10-22) staging untuk persiapan dan uji coba jalan di **Workers Free** dulu.
+Workers Paid ($5/bulan) ditunda. Konsekuensinya:
+- **Container tidak tersedia.** Scanner memakai scanner bawaan (hash + EICAR + blocklist, ADR-027), opsi
+  TAR.ZST disembunyikan (`ADAPTER_ARCHIVER=none`), dan kompres video panjang ditolak tanpa memotong kredit.
+- **CPU dibatasi 10 ms per pemanggilan**, dan Free menolak `limits.cpu_ms`. Karena itu `limits` sekarang
+  diatur per environment di `gen-wrangler`, dan dibuang saat `deploy/{env}.json` berisi `"plan": "free"`.
+  Pekerjaan berat CPU (hash file besar, ZIP terkompres) bisa gagal di Free. Batas praktisnya diukur di
+  staging dan dicatat di PROGRESS.
+- **Email Sending tidak tersedia.** Adapter email baru `relay` mengirim lewat Worker `zeiko-mailer` milik
+  pemilik (`https://mailer.zeiko.biz.id`, HTTPS → SMTP Private Email, satu penerima per request). URL-nya
+  diisi lewat var `MAIL_RELAY_URL`, token lewat secret `MAIL_RELAY_TOKEN`, dan pemilik sendiri yang memasang
+  token itu. Pengirimnya adalah alamat FROM relay, bukan `no-reply@`. Sebelum token dipasang, staging
+  memakai `mock`: OTP disimpan di KV `dev:mail:*` dan tidak ada email yang terkirim ke alamat sungguhan.
+- Skrip: `node scripts/cf-setup.mjs staging --plan free --email mock|relay`. Saat pindah ke Paid, jalankan
+  `--plan paid --email cloudflare`, lalu aktifkan container lewat CI (`--containers-ready`).

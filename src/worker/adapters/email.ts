@@ -36,6 +36,40 @@ export class CloudflareEmailSender implements EmailSender {
   }
 }
 
+/**
+ * HTTPS → SMTP relay Worker (`zeiko-mailer`, ADR-035): works on Workers Free, where the send_email
+ * binding can't reach arbitrary addresses. The relay sends as its own FROM and takes one recipient
+ * per request, so a message to several addresses is several requests.
+ */
+export class RelayEmailSender implements EmailSender {
+  readonly name = 'relay';
+  constructor(
+    private url: string,
+    private token: string,
+    private fetcher: typeof fetch = fetch,
+  ) {}
+  async send(msg: OutboundEmail): Promise<{ id: string }> {
+    for (const to of msg.to) {
+      const res = await this.fetcher(this.url, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          subject: msg.subject,
+          text: msg.text,
+          ...(msg.html ? { html: msg.html } : {}),
+          fromName: 'Zeiko',
+        }),
+      });
+      if (!res.ok) {
+        const said = (await res.text().catch(() => '')).slice(0, 200);
+        throw new Error(`mail relay ${res.status} (${msg.tag}): ${said}`);
+      }
+    }
+    return { id: `relay-${Date.now().toString(36)}-${crypto.randomUUID().slice(0, 8)}` };
+  }
+}
+
 export const DEV_MAIL_PREFIX = 'dev:mail:';
 
 export class MockEmailSender implements EmailSender {

@@ -47,13 +47,18 @@ function bindings(env, nsBase, ids) {
   // ZK_CONTAINERS=1|0 overrides (CI with Docker forces them on).
   const force = process.env.ZK_CONTAINERS;
   const containers = env !== 'dev' && (force ? force === '1' : ids.containers !== false);
+  // Email Sending needs Workers Paid; on Free use the HTTPS→SMTP relay (or mock), ADR-035.
+  const email = env === 'dev' ? 'mock' : (ids.email ?? 'cloudflare');
   return {
     vars: {
       APP_ENV: env,
       APP_ORIGIN: ids.app,
       USERCONTENT_ORIGIN: ids.uc,
       EMAIL_FROM: 'no-reply@zeiko.biz.id',
-      ADAPTER_EMAIL: env === 'dev' ? 'mock' : 'cloudflare',
+      ADAPTER_EMAIL: email,
+      ...(email === 'relay'
+        ? { MAIL_RELAY_URL: ids.mailRelayUrl ?? 'https://mailer.zeiko.biz.id' }
+        : {}),
       ADAPTER_PAYMENT: 'mock',
       ADAPTER_SCANNER: containers ? 'container' : 'mock',
       ADAPTER_CSAM: 'mock',
@@ -91,7 +96,9 @@ function bindings(env, nsBase, ids) {
     })),
     images: { binding: 'IMAGES' },
     media: { binding: 'MEDIA' },
-    send_email: [{ name: 'EMAIL', allowed_sender_addresses: ['no-reply@zeiko.biz.id'] }],
+    ...(email === 'cloudflare' || env === 'dev'
+      ? { send_email: [{ name: 'EMAIL', allowed_sender_addresses: ['no-reply@zeiko.biz.id'] }] }
+      : {}),
     ...(!containers
       ? {}
       : {
@@ -102,6 +109,8 @@ function bindings(env, nsBase, ids) {
         }),
   };
 }
+// Hashing multi-GB files in the scan consumer needs more than the 30 s default CPU budget, so
+// `limits` is per environment (it is inheritable, and Workers Free refuses it).
 function envBlock(env, nsBase, defaults) {
   const d = { ...defaults, ...deployFile(env) };
   const app = d.appOrigin;
@@ -111,7 +120,17 @@ function envBlock(env, nsBase, defaults) {
       { pattern: new URL(app).hostname, custom_domain: true },
       { pattern: new URL(uc).hostname, custom_domain: true },
     ],
-    ...bindings(env, nsBase, { app, uc, d1: d.d1Id, kv: d.kvId, containers: d.containers }),
+    // Workers Free rejects a custom CPU limit (it is fixed at 10 ms there, ADR-035).
+    ...(d.plan === 'free' ? {} : { limits: { cpu_ms: 300000 } }),
+    ...bindings(env, nsBase, {
+      app,
+      uc,
+      d1: d.d1Id,
+      kv: d.kvId,
+      containers: d.containers,
+      email: d.email,
+      mailRelayUrl: d.mailRelayUrl,
+    }),
   };
 }
 
@@ -151,8 +170,6 @@ const config = {
       kvId: 'REPLACE_WITH_PRODUCTION_KV_ID',
     }),
   },
-  // Hashing multi-GB files in the scan consumer needs more than the 30 s default CPU budget.
-  limits: { cpu_ms: 300000 },
 };
 const header = `// Zeiko Cloud Storage — Wrangler config.
 // Top level = local dev reference only (dev runs on Node shims, ADR-001; never deployed).
@@ -160,7 +177,7 @@ const header = `// Zeiko Cloud Storage — Wrangler config.
 // Secrets (wrangler secret put …): BETTER_AUTH_SECRET, DOWNLOAD_SECRET, SHARE_LINK_SECRET,
 //   SHARE_LINK_SECRET_PREV (rotation only), PREVIEW_SECRET, CONTACTS_ENC_KEY, IP_HASH_SECRET,
 //   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
-//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY.
+//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, MAIL_RELAY_TOKEN (ADAPTER_EMAIL=relay only).
 // REPLACE_WITH_* ids are filled by scripts/cf-setup.mjs (deploy/{env}.json).
 `;
 process.stdout.write(header + JSON.stringify(config, null, 2) + '\n');

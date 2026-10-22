@@ -1,6 +1,9 @@
 // One-command Cloudflare setup for an environment (idempotent; safe to re-run):
 //   node scripts/cf-setup.mjs staging [--dry-run] [--no-containers] [--skip-deploy]
 //       [--containers-ready] [--app-origin https://… --uc-origin https://…]
+//       [--plan free|paid] [--email cloudflare|relay|mock]
+// `--plan free` (Workers Free: no CPU limit override, no containers) usually goes with
+// `--email relay` (HTTPS→SMTP relay Worker) or `--email mock` (OTP only in KV), ADR-035.
 // Creates D1 / KV / R2 / Queues, writes their IDs to deploy/{env}.json, regenerates wrangler.jsonc,
 // applies D1 migrations, deploys, and sets any missing secrets to fresh random values. Secret values
 // are never printed or written to the repo.
@@ -88,6 +91,9 @@ const state = existsSync(deployPath) ? JSON.parse(readFileSync(deployPath, 'utf8
 if (opt('--app-origin')) state.appOrigin = opt('--app-origin');
 if (opt('--uc-origin')) state.usercontentOrigin = opt('--uc-origin');
 if (flag('--no-containers')) state.containers = false;
+if (opt('--plan')) state.plan = opt('--plan');
+if (opt('--email')) state.email = opt('--email');
+if (state.plan === 'free') state.containers = false; // Containers need Workers Paid
 // After CI (with Docker) has pushed the scanner image once, switch this env to ClamAV for good.
 if (flag('--containers-ready'))
   Object.assign(state, { containers: true, containersDeployed: true, containersAuto: false });
@@ -192,7 +198,10 @@ if (missing.length && !DRY) {
 console.log(
   `✓ secret: ${missing.length ? `${missing.length} dibuat (${missing.join(', ')})` : 'lengkap'}`,
 );
-const ownerMissing = OWNER_SECRETS.filter((s) => !existing.has(s));
+const ownerMissing = [
+  ...OWNER_SECRETS,
+  ...(state.email === 'relay' ? ['MAIL_RELAY_TOKEN'] : []),
+].filter((s) => !existing.has(s));
 if (ownerMissing.length) {
   console.log(
     `  opsional, isi sendiri bila dipakai: ${ownerMissing.map((s) => `npx wrangler secret put ${s} --env ${env}`).join('\n    ')}`,
