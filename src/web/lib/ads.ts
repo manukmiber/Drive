@@ -80,8 +80,12 @@ export const searchAreas = (q: string) =>
   api<{ areas: Area[] }>(`/api/ads/areas?${new URLSearchParams({ q })}`);
 
 export const dashboard = () => api<Dashboard>('/api/advertiser');
-export const saveAdvertiser = (b: { businessName: string; kind: string; phone: string }) =>
-  sendJson<Dashboard>('PUT', '/api/advertiser', b);
+export const saveAdvertiser = (b: {
+  businessName: string;
+  kind: string;
+  phone: string;
+  turnstileToken?: string | null;
+}) => sendJson<Dashboard>('PUT', '/api/advertiser', b);
 
 export type CreativeInput = Pick<Creative, 'title' | 'body' | 'ctaType' | 'ctaValue' | 'category'>;
 export const saveCreative = (input: CreativeInput, id?: string) =>

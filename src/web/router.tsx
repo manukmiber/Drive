@@ -5,22 +5,42 @@ import {
   Outlet,
   useParams,
 } from '@tanstack/react-router';
-import { AppShell } from './components/AppShell';
-import { Drive } from './pages/Drive';
-import { Trash } from './pages/Trash';
-import { Recent, Search, Shared, Starred } from './pages/Lists';
-import { Billing, InvoicePage } from './pages/Billing';
-import { Admin } from './pages/Admin';
-import { Report } from './pages/Report';
-import { Legal } from './pages/Legal';
-import { FamilyPage, JoinFamily } from './pages/Family';
+import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 import { Landing } from './pages/Landing';
 import { NotFound } from './pages/NotFound';
-import { Settings } from './pages/Settings';
-import { Compress } from './pages/Compress';
-import { Advertiser } from './pages/Advertiser';
-import { Downloads } from './pages/Downloads';
-import { SignIn } from './pages/SignIn';
+
+// Everything except the landing page loads on demand, so the first visit only downloads what it needs (Lighthouse mobile, SPEC §15 Fase 12).
+// `any` is React's own default for ComponentType; the real props come from M[K].
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyComponent = ComponentType<any>;
+
+/** React.lazy for a named export (route components render inside the router's Suspense). */
+function page<M, K extends keyof M>(
+  load: () => Promise<M>,
+  name: K,
+): LazyExoticComponent<M[K] & AnyComponent> {
+  return lazy(async () => ({ default: (await load())[name] as M[K] & AnyComponent }));
+}
+
+const SignIn = page(() => import('./pages/SignIn'), 'SignIn');
+const AppShell = page(() => import('./components/AppShell'), 'AppShell');
+const Drive = page(() => import('./pages/Drive'), 'Drive');
+const Trash = page(() => import('./pages/Trash'), 'Trash');
+const Recent = page(() => import('./pages/Lists'), 'Recent');
+const Search = page(() => import('./pages/Lists'), 'Search');
+const Shared = page(() => import('./pages/Lists'), 'Shared');
+const Starred = page(() => import('./pages/Lists'), 'Starred');
+const Billing = page(() => import('./pages/Billing'), 'Billing');
+const InvoicePage = page(() => import('./pages/Billing'), 'InvoicePage');
+const Admin = page(() => import('./pages/Admin'), 'Admin');
+const Report = page(() => import('./pages/Report'), 'Report');
+const Legal = page(() => import('./pages/Legal'), 'Legal');
+const FamilyPage = page(() => import('./pages/Family'), 'FamilyPage');
+const JoinFamily = page(() => import('./pages/Family'), 'JoinFamily');
+const Settings = page(() => import('./pages/Settings'), 'Settings');
+const Compress = page(() => import('./pages/Compress'), 'Compress');
+const Advertiser = page(() => import('./pages/Advertiser'), 'Advertiser');
+const Downloads = page(() => import('./pages/Downloads'), 'Downloads');
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: AppShell });

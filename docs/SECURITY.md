@@ -1,0 +1,77 @@
+# Audit keamanan (SPEC §14)
+
+Tanggal: 2026-10-22 · Cakupan: kode di repo ini (Worker, web, container). Infrastruktur Cloudflare
+(zona, WAF, CSAM Scanning Tool) dicek ulang saat staging dibuat.
+
+Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemilik · ⬜ di luar kode.
+
+## 14.1 Akses & isolasi
+
+| Item                                                           | Status | Bukti                                                                                                                               |
+| -------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| R2 privat, semua akses lewat Worker + cek izin per node        | ✅     | `services/access.ts` (`requireNode`), tidak ada presigned URL/kredensial S3 (container media/archiver juga tanpa kunci S3, ADR-033) |
+| Key objek opaque, ID tidak bisa ditebak                        | ✅     | `u/{userId}/{ulid}`, share `r64` acak + `s32` HMAC diverifikasi sebelum query D1                                                    |
+| Test IDOR untuk setiap endpoint                                | ✅     | `tests/integration/idor.test.ts`: 39 endpoint dicoba memakai ID milik akun lain → semua 4xx, data korban tidak berubah              |
+| Isi file anggota keluarga tidak terlihat oleh pemilik keluarga | ✅     | `tests/integration/family.test.ts`                                                                                                  |
+
+## 14.2 Pemindai
+
+| Item                                                        | Status | Bukti                                                                                       |
+| ----------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
+| Tidak pernah mengunggah isi file ke VirusTotal/layanan luar | ✅     | tidak ada klien VirusTotal; `features.virustotal_hash_lookup` hanya placeholder hash-lookup |
+| SHA-256 + CRC32 semua file, blocklist hash                  | ✅     | `containers/scanner`, `services/scan.ts`, `tests/integration/scan.test.ts`                  |
+| ClamAV ≤ `scan_max_bytes`, retry 3× lalu alert              | ✅     | container scanner + `scan_max_attempts`                                                     |
+| File `pending` hanya untuk pemilik, tidak bisa di-share     | ✅     | `assertDownloadable`, `createShare` mewajibkan `ready`                                      |
+| Hasil kompres mewarisi status `clean`                       | ✅     | ADR-031 (dibuat transcoder kita sendiri dari file yang sudah dipindai)                      |
+
+## 14.3 Anti-CSAM
+
+| Item                                                                                     | Status | Bukti                                                                                 |
+| ---------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------- |
+| Laporan CSAM → link mati, karantina + legal hold, uploader dibekukan, prioritas mendesak | ✅     | `services/reports.ts`, `tests/integration/admin.test.ts`                              |
+| Hash takedown masuk blocklist                                                            | ✅     | aksi `blocklist`                                                                      |
+| Timer SLA 4 jam / 24 jam di admin                                                        | ✅     | Admin → Laporan                                                                       |
+| Adapter `CsamDetector`                                                                   | 🟡     | mock; butuh perjanjian vendor (LAUNCH-CHECKLIST)                                      |
+| Cloudflare CSAM Scanning Tool                                                            | 🟡     | aktifkan di zona saat staging; verifikasi cakupan respons Worker (catat di DECISIONS) |
+| Prosedur                                                                                 | ✅     | `docs/runbook/takedown.md`                                                            |
+
+## 14.4 Keamanan web
+
+| Item                                                                      | Status | Bukti                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cookie `__Host-`, HttpOnly, Secure, SameSite=Lax                          | ✅     | `auth.ts` (`__Host-zk`)                                                                                                                                                                                                                                                                       |
+| Origin wajib = `APP_ORIGIN` + token CSRF untuk request yang mengubah data | ✅     | `originCheck` + `csrfCheck` (double-submit bila ada sesi; tanpa sesi cukup Origin, ADR-028)                                                                                                                                                                                                   |
+| Endpoint di luar `/api`                                                   | ✅     | webhook (tanda tangan sendiri), `/ad/i` & `/ad/c` (tanpa sesi, token HMAC, rate limit per IP), form password share (tanpa sesi)                                                                                                                                                               |
+| CSP ketat app                                                             | ✅     | `appCsp`: `script-src 'self'` (+ Turnstile), `object-src 'none'`, `frame-ancestors 'none'`, `base-uri 'none'`                                                                                                                                                                                 |
+| Trusted Types                                                             | 🟡     | belum: `require-trusted-types-for` perlu diuji dengan semua dependency. Kandidat setelah staging                                                                                                                                                                                              |
+| HSTS                                                                      | ✅     | `Strict-Transport-Security: max-age=31536000` di luar dev (tanpa `includeSubDomains`, karena subdomain lain di zeiko.biz.id bukan milik app ini)                                                                                                                                              |
+| Respons file: attachment, `nosniff`, `CSP: sandbox`                       | ✅     | `lib/serve.ts`; inline hanya dari `USERCONTENT_ORIGIN` dengan token pendek; CORS uc hanya `APP_ORIGIN`                                                                                                                                                                                        |
+| Nama file disanitasi                                                      | ✅     | `lib/names.ts` + unit test                                                                                                                                                                                                                                                                    |
+| Zod di setiap input + batas body JSON                                     | ✅     | `validate(...)`, `bodyLimit` untuk JSON; endpoint biner mewajibkan `Content-Length` yang cocok                                                                                                                                                                                                |
+| Rate limit                                                                | ✅     | login/OTP, init upload, buat share, kirim share, unduh per IP per link, booking iklan, laporan; beacon/klik iklan per IP                                                                                                                                                                      |
+| Turnstile: login, email share, daftar pengiklan, laporan anonim           | ✅     | backend memeriksa saat `TURNSTILE_SECRET_KEY` diisi; widget di form web (`components/Turnstile.tsx`). **Temuan audit:** sebelumnya widget belum ada di web, sehingga login akan gagal begitu secret dipasang. Sudah diperbaiki                                                                |
+| Secret hanya via `wrangler secret` + prosedur rotasi                      | ✅     | `docs/runbook/rotasi-secret.md`, `.dev.vars` di-ignore                                                                                                                                                                                                                                        |
+| Dependency audit di CI                                                    | ✅     | `npm audit --omit=dev --audit-level=high` (0 high/critical. Ada 4 moderate: GHSA-67mh-4wv8-2f99 di dev server esbuild lama, yang terbawa `better-auth` → `drizzle-kit`. Tidak ikut bundle Worker maupun SPA dan hanya berdampak saat dev server esbuild dijalankan. Pantau rilis better-auth) |
+
+## 14.5 Privasi (UU PDP)
+
+| Item                                            | Status | Bukti                                                                                                                           |
+| ----------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| Tanpa tracker pihak ketiga; iklan tanpa ID user | ✅     | ADR-032                                                                                                                         |
+| IP disimpan sebagai hash bersalt harian         | ✅     | `hashIp`                                                                                                                        |
+| Halaman kebijakan bertanda DRAF                 | ✅     | `/kebijakan/*`                                                                                                                  |
+| Ekspor data + hapus akun (7 hari)               | ✅     | `tests/integration/account.test.ts`                                                                                             |
+| Runbook kebocoran data (3×24 jam)               | ✅     | `docs/runbook/kebocoran-data.md`. **Temuan audit:** sebelumnya belum ada                                                        |
+| Retensi log `log_retention_days`                | ✅     | cron `purge_old_logs`. **Temuan audit:** sebelumnya config ada tapi tidak dipakai. Audit log admin tidak ikut dihapus (ADR-034) |
+
+## Temuan lain yang diperbaiki saat audit
+
+- Pemesanan iklan belum memakai binding `RL_AD_BOOK`. Sudah dipasang.
+- Beacon impresi dan klik iklan tanpa batas per IP, sehingga statistik pengiklan bisa digelembungkan. Sudah diberi rate limit.
+
+## Sisa yang perlu dicek di staging
+
+- Header di edge: pastikan Cloudflare tidak menimpa CSP/HSTS, dan "Always Use HTTPS" aktif.
+- CSAM Scanning Tool dan cakupan respons Worker.
+- Lighthouse mobile ≥ 90 diukur ulang di perangkat/CI biasa (di HP pengembangan: 81–88, lihat PROGRESS).
+- Uji beban `tests/load/download.js` (k6) terhadap staging.

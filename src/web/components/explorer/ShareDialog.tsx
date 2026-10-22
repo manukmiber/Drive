@@ -17,6 +17,7 @@ import {
   type ShareDto,
 } from '../../lib/files';
 import { Button } from '../Button';
+import { Turnstile, useTurnstileSiteKey } from '../Turnstile';
 import { Dialog } from '../ui/Dialog';
 import { toast } from '../ui/Toast';
 import { errorText } from './useNodeActions';
@@ -58,6 +59,8 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
   const [qr, setQr] = useState<string | null>(null);
   const [panel, setPanel] = useState<'none' | 'email' | 'qr' | 'settings'>('none');
   const [emails, setEmails] = useState('');
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const needsCaptcha = Boolean(useTurnstileSiteKey());
   const [message, setMessage] = useState('');
   const [expiryInput, setExpiry] = useState<number | null>(null);
   const [password, setPassword] = useState('');
@@ -128,7 +131,7 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
     if (!share) return;
     const list = emails.split(/[\s,;]+/).filter(Boolean);
     try {
-      const r = await emailShare(share.id, list, message || null);
+      const r = await emailShare(share.id, list, message || null, captcha);
       toast(t.share.emailSent(r.queued));
       setEmails('');
       setMessage('');
@@ -230,7 +233,11 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
                 rows={3}
                 className="w-full rounded-xl border border-[var(--border)] bg-transparent p-3 text-sm"
               />
-              <Button onClick={() => void sendEmail()} disabled={!emails.trim()}>
+              <Turnstile onToken={setCaptcha} />
+              <Button
+                onClick={() => void sendEmail()}
+                disabled={!emails.trim() || (needsCaptcha && !captcha)}
+              >
                 {t.share.send}
               </Button>
             </div>

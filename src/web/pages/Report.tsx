@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { t } from '../../shared/strings.id';
 import { Button } from '../components/Button';
 import { Logo } from '../components/Logo';
+import { Turnstile } from '../components/Turnstile';
 import { ApiError, postJson } from '../lib/api';
 
 /** Accepts a full share URL or a bare r64 id. */
@@ -20,6 +21,7 @@ export function Report({ share, ad }: { share?: string | undefined; ad?: string 
   const [contact, setContact] = useState('');
   const [state, setState] = useState<'idle' | 'sending' | 'sent'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [captcha, setCaptcha] = useState<string | null>(null);
 
   const submit = async () => {
     const id = ad ?? shareIdFrom(link);
@@ -33,6 +35,7 @@ export function Report({ share, ad }: { share?: string | undefined; ad?: string 
         category,
         details: details || undefined,
         contact: contact || undefined,
+        turnstileToken: captcha,
       });
       setState('sent');
     } catch (e) {
@@ -108,6 +111,7 @@ export function Report({ share, ad }: { share?: string | undefined; ad?: string 
               />
             </label>
             {error && <p className="text-sm text-red-600">{error}</p>}
+            <Turnstile onToken={setCaptcha} />
             <Button type="submit" className="w-full" disabled={state === 'sending'}>
               {t.report.send}
             </Button>

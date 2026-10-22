@@ -13,7 +13,8 @@ import { AppError } from '../lib/errors';
 import { contentLength } from '../lib/http';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
-import { rateLimit } from '../middleware/ratelimit';
+import { verifyTurnstile } from '../lib/turnstile';
+import { clientIp, enforceRateLimit, rateLimit } from '../middleware/ratelimit';
 import {
   adsAllowedForUser,
   advertiserDashboard,
@@ -21,6 +22,7 @@ import {
   cancelHeld,
   checkoutBookings,
   creativeImage,
+  getAdvertiser,
   holdBookings,
   ownCreativeImage,
   recordClick,
@@ -132,10 +134,15 @@ export const advertiser = new Hono<AppBindings>()
         businessName: z.string().min(1).max(80),
         kind: z.enum(['umkm', 'mahasiswa', 'lainnya']),
         phone: z.string().min(8).max(20),
+        turnstileToken: z.string().max(4096).nullable().optional(),
       }),
     ),
     async (c) => {
-      await upsertAdvertiser(c.get('ctx'), c.get('user')!.id, c.req.valid('json'));
+      const { turnstileToken, ...body } = c.req.valid('json');
+      const ctx = c.get('ctx');
+      if (!(await getAdvertiser(ctx, c.get('user')!.id)))
+        await verifyTurnstile(ctx, turnstileToken, clientIp(c.req.raw));
+      await upsertAdvertiser(ctx, c.get('user')!.id, body);
       return c.json(await advertiserDashboard(c.get('ctx'), c.get('user')!.id));
     },
   )
@@ -229,6 +236,7 @@ export const advertiser = new Hono<AppBindings>()
 /** Public, cookie-less ad endpoints (outside /api: no session, no CSRF, no user IDs). */
 export const adPublic = new Hono<AppBindings>()
   .post('/i', async (c) => {
+    await enforceRateLimit(c.env, 'RL_DOWNLOAD', `ad:${clientIp(c.req.raw)}`);
     const body = (await c.req.json().catch(() => null)) as { b?: unknown; t?: unknown } | null;
     if (
       body &&

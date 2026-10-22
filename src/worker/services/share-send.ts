@@ -13,6 +13,7 @@ import {
   timingSafeEqual,
 } from '../lib/crypto';
 import { AppError } from '../lib/errors';
+import { verifyTurnstile } from '../lib/turnstile';
 import { randomBase62, ulid } from '../lib/ids';
 import { shareEmail } from './email-templates';
 import { requireOwnShare, shareState, shareUrl } from './shares';
@@ -126,25 +127,6 @@ export async function logDeeplinkSend(
     status: 'opened',
   });
   return { sendId, recipient };
-}
-
-async function verifyTurnstile(
-  ctx: Ctx,
-  token: string | null | undefined,
-  ip: string,
-): Promise<void> {
-  if (!ctx.env.TURNSTILE_SECRET_KEY) return; // not configured (dev)
-  if (!token) throw new AppError('FORBIDDEN', 'captcha required', { reason: 'TURNSTILE' });
-  const body = new FormData();
-  body.set('secret', ctx.env.TURNSTILE_SECRET_KEY);
-  body.set('response', token);
-  body.set('remoteip', ip);
-  const res = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    method: 'POST',
-    body,
-  });
-  const data = (await res.json()) as { success: boolean };
-  if (!data.success) throw new AppError('FORBIDDEN', 'captcha failed', { reason: 'TURNSTILE' });
 }
 
 export async function sendShareEmail(

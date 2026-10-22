@@ -151,11 +151,17 @@ export const logShareSend = (id: string, channel: string, recipient?: string) =>
     channel,
     recipient: recipient ?? null,
   });
-export const emailShare = (id: string, recipients: string[], message: string | null) =>
+export const emailShare = (
+  id: string,
+  recipients: string[],
+  message: string | null,
+  turnstileToken: string | null = null,
+) =>
   postJson<{ queued: number; suppressed: number }>(`/api/shares/${id}/sends`, {
     mode: 'email',
     recipients,
     message,
+    turnstileToken,
   });
 
 /** Downloads several items as one ZIP via a signed /z/ link. */

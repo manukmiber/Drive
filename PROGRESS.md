@@ -92,6 +92,9 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Laporan & takedown + SLA (CSAM otomatis: link mati, karantina + legal hold, pengunggah dibekukan)
 
 ## Fase 12 — Hardening & rilis
-- [ ] E2E, k6, audit keamanan, Lighthouse
+- [x] E2E Playwright (desktop + Pixel 7: login OTP → upload → share → unduh → sampah; semua halaman tanpa error console)
+- [x] Audit keamanan §14 → `docs/SECURITY.md` + suite IDOR (39 endpoint), runbook di `docs/runbook/`
+- [x] k6 `tests/load/download.js` (jalankan terhadap staging)
+- [~] Lighthouse mobile: landing 81–88 di HP dev (A11y/BP/SEO 100); ukur ulang ≥ 90 di CI/staging
 - [x] Draf kebijakan (/kebijakan/*, label DRAF) + docs/LAUNCH-CHECKLIST.md + ekspor data & hapus akun (UU PDP)
 - [ ] Deploy staging

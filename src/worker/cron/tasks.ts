@@ -1,5 +1,5 @@
 // Registers cron tasks (SPEC §13.4). Imported once by the Worker entry point.
-import { CRON, HOUR_MS } from '../../shared/constants';
+import { CRON, DAY_MS, HOUR_MS } from '../../shared/constants';
 import { log } from '../lib/log';
 import {
   expireStalePayments,
@@ -40,6 +40,30 @@ registerCronTask(CRON.hourly, {
 registerCronTask(CRON.dailyAds, {
   name: 'ads_daily',
   run: async (ctx) => void (await runAdsDaily(ctx)),
+});
+
+// Log/PII retention (SPEC §14.5, `log_retention_days`). Audit logs are kept (moderation/legal, ADR-034).
+registerCronTask(CRON.nightly, {
+  name: 'purge_old_logs',
+  async run(ctx) {
+    const cfg = await ctx.config();
+    const cutoff = ctx.now() - cfg.log_retention_days * DAY_MS;
+    const DB = ctx.env.DB;
+    await DB.batch([
+      DB.prepare('DELETE FROM share_sends WHERE created_at < ?1').bind(cutoff),
+      DB.prepare('DELETE FROM notifications WHERE created_at < ?1 AND read_at IS NOT NULL').bind(
+        cutoff,
+      ),
+      DB.prepare('DELETE FROM usage_counters WHERE expires_at < ?1').bind(ctx.now()),
+      // Better Auth judges expiry by the system clock, so expired rows are judged the same way.
+      DB.prepare('DELETE FROM sessions WHERE expires_at < ?1').bind(Date.now()),
+      DB.prepare('DELETE FROM verifications WHERE expires_at < ?1').bind(Date.now()),
+      DB.prepare(
+        `DELETE FROM compress_jobs WHERE updated_at < ?1 AND status IN ('done', 'failed', 'skipped') AND source_key IS NULL AND out_key IS NULL`,
+      ).bind(cutoff),
+      DB.prepare(`DELETE FROM archive_jobs WHERE updated_at < ?1 AND out_key IS NULL`).bind(cutoff),
+    ]);
+  },
 });
 
 registerCronTask(CRON.nightly, {

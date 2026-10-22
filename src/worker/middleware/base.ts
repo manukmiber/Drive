@@ -8,6 +8,8 @@ export const requestContext: MiddlewareHandler<AppBindings> = async (c, next) =>
   c.set('ctx', createCtx(c.env));
   c.set('user', null);
   await next();
+  // HTTPS only from the first visit on (no includeSubDomains: other zeiko.biz.id hosts aren't ours to pin).
+  if (c.env.APP_ENV !== 'dev') c.header('Strict-Transport-Security', 'max-age=31536000');
 };
 
 /** True when the request targets USERCONTENT_ORIGIN (user content previews, SPEC §14.4). */
@@ -49,12 +51,12 @@ export function appCsp(env: { USERCONTENT_ORIGIN: string }): string {
   const uc = new URL(env.USERCONTENT_ORIGIN).origin;
   return [
     "default-src 'self'",
-    "script-src 'self'",
+    "script-src 'self' https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' blob: data: ${uc}`,
     `media-src 'self' blob: ${uc}`,
     `connect-src 'self' ${uc}`,
-    `frame-src ${uc}`,
+    `frame-src ${uc} https://challenges.cloudflare.com`,
     "worker-src 'self' blob:",
     "font-src 'self'",
     "object-src 'none'",

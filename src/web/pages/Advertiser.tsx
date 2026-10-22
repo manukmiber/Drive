@@ -8,6 +8,7 @@ import { AD_BODY_MAX, AD_CATEGORIES, AD_CTA_TYPES, AD_TITLE_MAX } from '../../sh
 import { formatPercent, formatRupiah } from '../../shared/format';
 import { t } from '../../shared/strings.id';
 import { Button } from '../components/Button';
+import { Turnstile } from '../components/Turnstile';
 import { Dialog } from '../components/ui/Dialog';
 import { toast } from '../components/ui/Toast';
 import {
@@ -102,8 +103,9 @@ function Profile({ data }: { data: Dashboard }) {
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(false);
+  const [captcha, setCaptcha] = useState<string | null>(null);
   const save = useMutation({
-    mutationFn: () => saveAdvertiser(f),
+    mutationFn: () => saveAdvertiser({ ...f, turnstileToken: captcha }),
     onSuccess: (d) => {
       qc.setQueryData(KEY, d);
       toast(t.common.saved);
@@ -158,6 +160,7 @@ function Profile({ data }: { data: Dashboard }) {
           />
         </label>
         <div className="sm:col-span-3">
+          {!a && <Turnstile onToken={setCaptcha} />}
           <Button type="submit" disabled={save.isPending}>
             {a ? t.ads.saveProfile : t.ads.register}
           </Button>

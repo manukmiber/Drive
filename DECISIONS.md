@@ -333,3 +333,25 @@ membuka ambang baru.
   Katalog publik mengirim `capabilities.asyncArchives=false` sehingga dialog menonaktifkan opsi itu. ZIP cepat
   dan ZIP terkompres ≤ 2 GiB tetap jalan. Mock dev: TAR.ZST = tar tanpa kompresi (bisa dibaca tes), ZIP deflate
   dibuat di Worker.
+
+## ADR-034 — Hardening (Fase 12)
+- **E2E** memakai Playwright dengan Chromium sistem (`PW_CHROMIUM`, default `/usr/bin/chromium`), karena
+  unduhan browser Playwright tidak jalan di HP pengembangan. Di CI browser dipasang lewat
+  `playwright install`. Ada dua proyek, desktop dan Pixel 7, yang dijalankan terhadap `npm run dev`
+  (adapter mock).
+- **IDOR**: satu suite (`tests/integration/idor.test.ts`) memutar ulang semua endpoint ber-ID memakai ID milik
+  akun lain, lalu membandingkan snapshot data korban sebelum dan sesudah. Endpoint ber-ID baru wajib
+  ditambahkan ke sana.
+- **Retensi**: `log_retention_days` menghapus `share_sends`, notifikasi yang sudah dibaca, `usage_counters`
+  kedaluwarsa, sesi/verifikasi kedaluwarsa, dan baris job kompres/arsip yang sudah selesai. **`audit_logs`
+  tidak dihapus otomatis**, karena dipakai sebagai bukti moderasi, legal hold, dan akuntabilitas staf. Batas
+  retensinya diputuskan pemilik bersama review hukum (LAUNCH-CHECKLIST).
+- **Turnstile** dipakai di login (header `x-captcha-response` untuk plugin captcha Better Auth), email share,
+  pendaftaran pengiklan pertama kali, dan laporan anonim. Widget hanya muncul kalau server mengirim site key.
+  CSP mengizinkan `https://challenges.cloudflare.com` untuk `script-src` dan `frame-src`.
+- **Performa**: semua halaman kecuali landing dimuat on-demand (`lazyRouteComponent`), sehingga landing tidak
+  ikut membawa klien auth, explorer, atau halaman admin. Lighthouse mobile di HP pengembangan: 72 → 81–88
+  (Accessibility/Best Practices/SEO 100). Target ≥ 90 diukur ulang di CI (job `e2e`) dan di staging.
+- **HSTS** `max-age=1 tahun` tanpa `includeSubDomains`/preload (domain induk dipakai produk lain).
+- **Uji beban**: `tests/load/download.js` (k6) hanya untuk staging. Mencakup link share (tanpa halaman iklan)
+  dan Range 4 koneksi.

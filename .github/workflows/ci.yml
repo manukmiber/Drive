@@ -28,10 +28,38 @@ jobs:
       - name: Dependency audit
         run: npm audit --omit=dev --audit-level=high
 
+  e2e:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: PW_CHROMIUM="$(node -e "console.log(require('playwright-core').chromium.executablePath())")" npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces
+          path: test-results/
+      # Lighthouse mobile against a production build (SPEC §15: target ≥ 90).
+      - run: npm run build
+      - run: |
+          (npm run dev:api > api.log 2>&1 &)
+          (npx vite preview --port 4173 --strictPort > preview.log 2>&1 &)
+          npx wait-on -t 60000 http://127.0.0.1:8790/api/health http://127.0.0.1:4173/
+          npx -y lighthouse@13.5.0 http://localhost:4173/ --form-factor=mobile --quiet \
+            --chrome-flags="--headless=new --no-sandbox" --output=json --output-path=lh.json \
+            --only-categories=performance,accessibility,best-practices,seo
+          node -e "const c=require('./lh.json').categories;for(const k in c)console.log(k,Math.round(c[k].score*100))"
+
   # Staging deploy runs only after the owner creates the remote resources and sets the repo
   # variable STAGING_DEPLOY_ENABLED=true. Production is never deployed from CI.
   deploy-staging:
-    needs: check
+    needs: [check, e2e]
     if: github.ref == 'refs/heads/main' && vars.STAGING_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: staging

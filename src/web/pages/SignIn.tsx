@@ -5,6 +5,7 @@ import { useState, type FormEvent } from 'react';
 import { t } from '../../shared/strings.id';
 import { Button } from '../components/Button';
 import { Logo } from '../components/Logo';
+import { Turnstile } from '../components/Turnstile';
 import { api } from '../lib/api';
 import { authClient } from '../lib/auth-client';
 import { meQueryKey } from '../lib/session';
@@ -25,6 +26,8 @@ export function SignIn() {
   const [step, setStep] = useState<'email' | 'code'>('email');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captcha, setCaptcha] = useState<string | null>(null);
+  const needsCaptcha = Boolean(cfg.data?.turnstileSiteKey);
 
   async function done() {
     await qc.invalidateQueries({ queryKey: meQueryKey });
@@ -38,10 +41,10 @@ export function SignIn() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const res = await authClient.emailOtp.sendVerificationOtp({
-      email: email.trim(),
-      type: 'sign-in',
-    });
+    const res = await authClient.emailOtp.sendVerificationOtp(
+      { email: email.trim(), type: 'sign-in' },
+      captcha ? { headers: { 'x-captcha-response': captcha } } : undefined,
+    );
     setBusy(false);
     if (res.error) setError(res.error.status === 429 ? t.errors.rateLimited : t.errors.generic);
     else setStep('code');
@@ -87,7 +90,8 @@ export function SignIn() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
-            <Button type="submit" className="w-full" disabled={busy}>
+            <Turnstile onToken={setCaptcha} />
+            <Button type="submit" className="w-full" disabled={busy || (needsCaptcha && !captcha)}>
               <Mail className="h-4 w-4" aria-hidden="true" />
               {t.auth.sendCode}
             </Button>
