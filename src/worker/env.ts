@@ -39,6 +39,10 @@ export interface Env {
   ADMIN_ALERT_TELEGRAM_CHAT_ID?: string;
   SCANNER_INSTANCES?: string;
   TELEGRAM_BOT_USERNAME?: string;
+  /** This environment's R2 bucket, as Cloudflare's analytics name it (ADR-037). */
+  R2_BUCKET_NAME?: string;
+  /** The Cloudflare account the bucket is in, for R2's analytics (ADR-037). */
+  CF_ACCOUNT_ID?: string;
 
   // ── secrets (wrangler secret / .dev.vars) ──
   BETTER_AUTH_SECRET: string;
@@ -59,6 +63,8 @@ export interface Env {
   ZEIKO_APP_TOKEN?: string;
   /** The relay's bearer for /api/ops/* and the key its payment callbacks are signed with. */
   ZEIKO_OPS_TOKEN?: string;
+  /** API token with Account Analytics: Read, for R2's real usage on the relay's screen (ADR-037). */
+  CF_ANALYTICS_TOKEN?: string;
 
   // ── bindings ──
   DB: D1Database;

@@ -432,3 +432,46 @@ password", Better Auth dengan Google/OTP/passkey) dan §16 #2 (gateway pembayara
 - **Dua bahasa (EN/ID) di semua UI:** `strings.en.ts` mengikuti bentuk `strings.id.ts`. Bahasa disimpan di
   cookie `zk_lang` milik seluruh zeiko.biz.id (website ikut membacanya) dan di `users.locale` (migrasi 0004)
   untuk email. Halaman share yang dirender Worker memilih bahasa dari cookie atau `Accept-Language`.
+
+## ADR-037 — Layar R2 di dashboard relay: meteran R2 sendiri, bukan hitungan Drive
+
+**Konteks:** permintaan pemilik (2026-10-23): tab cloud storage di relay harus menghitung harga R2
+(developers.cloudflare.com/r2/pricing) lengkap dengan pemakaian nyata, storage yang dialokasikan (orang × paket),
+untung/rugi, dan operasi Class A/B. `dashboard()` sebelumnya hanya menghitung `used_bytes × $0.015`, tanpa
+free tier, operasi, maupun pembulatan.
+
+**Keputusan:**
+- **Pemakaian nyata diambil dari GraphQL Analytics Cloudflare** (`r2StorageAdaptiveGroups`,
+  `r2OperationsAdaptiveGroups`, `r2BandwidthUsageAdaptiveGroups`). Ini dataset yang sama dengan dasbor dan
+  tagihan Cloudflare. D1 hanya tahu apa yang Drive catat. Thumbnail, arsip, manifest, dan multipart yang
+  belum selesai ikut ditagih tetapi tidak ada di `blobs`, dan Worker tidak bisa menghitung operasinya sendiri
+  tanpa menulis ke D1 di setiap akses R2. Adapter `adapters/r2-metrics.ts` memakai secret `CF_ANALYTICS_TOKEN`
+  (token API dengan izin Account Analytics: Read) dan `CF_ACCOUNT_ID`, ditambah var `R2_BUCKET_NAME` per
+  environment.
+- **Per hari, hanya field yang didokumentasikan:** storage dan operasi diminta satu kali per hari UTC (alias
+  `s0…`/`o0…`) dalam satu request, lalu dikelompokkan per bucket. Nilai `max` dalam satu hari adalah puncak
+  harian yang dipakai R2 untuk menghitung GB-month, jadi hasilnya tidak bergantung pada seberapa sering
+  Cloudflare mengambil sampel. Hasilnya di-cache 10 menit di `CONFIG_KV`.
+- **Rumus tagihan mengikuti halaman harga.** GB-month adalah rata-rata puncak harian selama periode tagihan.
+  Free tier (10 GB-month, 1 juta Class A, 10 juta Class B) berlaku per akun dan hanya untuk Standard.
+  Pemakaian dibulatkan ke atas ke unit berikutnya. Egress gratis. Operasi diklasifikasikan menurut daftar
+  Class A/B/gratis di halaman yang sama. Operasi yang tidak ada di daftar dihitung terpisah dan tidak ditagih.
+- **Bagian Drive dihitung sebagai biaya marjinal:** tagihan akun dengan bucket Drive dikurangi tagihan tanpa
+  bucket Drive. Alasannya, free tier dipakai bersama bucket lain di akun yang sama (`zeiko-models`, staging).
+  Proyeksi akhir periode: storage memakai puncak terakhir untuk hari yang tersisa, operasi memakai laju
+  sejauh ini (minimal dihitung satu hari).
+- **Untung/rugi bulanan:** MRR (harga katalog × langganan `active`, plus add-on) dikurangi biaya R2, fee QRIS
+  atas MRR, dan `fixed_costs_usd_per_month`. Yang juga dihitung: skenario `usage_scenarios_pct`, kondisi
+  "semua kuota penuh", dan persentase isi kuota tempat titik impas.
+- **Harga ada di `app_config`:** kunci baru `r2_billing` (free tier, tarif Infrequent Access, retrieval,
+  `gb_bytes`, `cycle_start_day`). Kunci lama `r2_storage_usd_per_gb_month` dan
+  `component_tariffs_usd.r2_class_*` tetap berlaku untuk Standard. Halaman harga tidak menyebut apakah GB
+  berarti 10^9 atau 2^30, jadi `gb_bytes` mengikuti GB Drive (2^30) sampai ada tagihan yang menunjukkan
+  sebaliknya.
+- **Kalau token belum diisi atau Cloudflare menolak**, layar memakai hitungan Drive sendiri
+  (`blobs`) dan menyebutkannya. Operasi ditampilkan sebagai *tidak diketahui*, bukan nol.
+
+**Endpoint:** `GET /api/ops/storage` (`services/storage-report.ts`). Tes: `tests/integration/storage-report.test.ts`
+(dua contoh di halaman harga, pembulatan, free tier milik akun, siklus tagihan, query per hari, laporan lengkap
+dengan Cloudflare tiruan, fallback tanpa token, dan error dari Cloudflare).
+

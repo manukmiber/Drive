@@ -20,6 +20,7 @@ import {
   updateCatalogItem,
   updateConfig,
 } from '../services/admin';
+import { storageReport } from '../services/storage-report';
 import type { AppBindings } from '../types';
 
 /** Who the audit log says made an operator's change. */
@@ -47,6 +48,8 @@ export const ops = new Hono<AppBindings>()
     validate('query', z.object({ days: z.coerce.number().int().min(1).max(365).default(30) })),
     async (c) => c.json(await dashboard(c.get('ctx'), c.req.valid('query').days)),
   )
+  // R2 against what Drive sold (ADR-037): real usage, people × plan, Class A/B and the margin.
+  .get('/storage', async (c) => c.json(await storageReport(c.get('ctx'))))
   .get('/catalog', async (c) => c.json(await catalogView(c.get('ctx'))))
   .patch(
     '/catalog/:kind/:code',

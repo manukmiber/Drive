@@ -39,6 +39,36 @@ export const configSchema = z.object({
       container_vcpu_second: 0.00002,
       container_gib_second: 0.0000025,
     }),
+  /**
+   * The rest of R2's price list (developers.cloudflare.com/r2/pricing, ADR-037) for the relay's
+   * storage screen; Standard storage and Class A/B are the two keys above. The free tier is per
+   * Cloudflare account and Standard only. Cloudflare's page does not say whether its GB is 10^9
+   * or 2^30 bytes, so `gb_bytes` follows Drive's GB until a bill says otherwise.
+   */
+  r2_billing: z
+    .object({
+      gb_bytes: z.number().int().positive(),
+      /** Day of the month the Cloudflare billing period starts (UTC). */
+      cycle_start_day: z.number().int().min(1).max(28),
+      free_storage_gb_month: z.number().nonnegative(),
+      free_class_a: z.number().int().nonnegative(),
+      free_class_b: z.number().int().nonnegative(),
+      ia_storage_usd_per_gb_month: z.number().nonnegative(),
+      ia_class_a_per_million: z.number().nonnegative(),
+      ia_class_b_per_million: z.number().nonnegative(),
+      ia_retrieval_usd_per_gb: z.number().nonnegative(),
+    })
+    .default({
+      gb_bytes: GIB,
+      cycle_start_day: 1,
+      free_storage_gb_month: 10,
+      free_class_a: 1_000_000,
+      free_class_b: 10_000_000,
+      ia_storage_usd_per_gb_month: 0.01,
+      ia_class_a_per_million: 9,
+      ia_class_b_per_million: 0.9,
+      ia_retrieval_usd_per_gb: 0.01,
+    }),
 
   // ── Upload / storage ──
   upload_part_concurrency: int().min(1).max(16).default(4),

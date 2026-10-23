@@ -18,6 +18,7 @@ import type { Clock } from './clock';
 import { BotApiTelegram, MockTelegram, type TelegramClient } from './telegram';
 import { CloudflareMediaProcessor, MockMediaProcessor, type MediaProcessor } from './media';
 import { ContainerArchiver, MockArchiver, NoArchiver, type Archiver } from './archiver';
+import { GraphqlR2Metrics, NoR2Metrics, type R2Metrics } from './r2-metrics';
 
 export interface Adapters {
   email: EmailSender;
@@ -28,6 +29,7 @@ export interface Adapters {
   media: MediaProcessor;
   archiver: Archiver;
   accounts: ZeikoAccounts;
+  r2metrics: R2Metrics;
 }
 
 /** Zeiko Accounts is set up: the door's address and the app token. */
@@ -78,5 +80,9 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
       : env.ADAPTER_ARCHIVER === 'mock'
         ? new MockArchiver(env.BUCKET)
         : new NoArchiver();
-  return { email, payment, scanner, csam, telegram, media, archiver, accounts };
+  const r2metrics: R2Metrics =
+    env.CF_ACCOUNT_ID && env.CF_ANALYTICS_TOKEN
+      ? new GraphqlR2Metrics(env.CF_ACCOUNT_ID, env.CF_ANALYTICS_TOKEN)
+      : new NoR2Metrics();
+  return { email, payment, scanner, csam, telegram, media, archiver, accounts, r2metrics };
 }

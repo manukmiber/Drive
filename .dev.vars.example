@@ -22,3 +22,8 @@
 # ZEIKO_SITE_URL=https://zeiko.biz.id
 # ZEIKO_APP_TOKEN=... (relay → Zeiko Drive → Setup → Mint app token)
 # ZEIKO_OPS_TOKEN=... (relay → Zeiko Drive → Setup → Mint ops key)
+# R2's own meters for the relay's R2 storage tab (ADR-037). Without these the tab shows Drive's own
+# count and says Class A/B are unknown:
+# CF_ACCOUNT_ID=...
+# CF_ANALYTICS_TOKEN=... (API token with Account Analytics: Read)
+# R2_BUCKET_NAME=zeiko-dev

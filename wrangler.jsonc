@@ -4,7 +4,8 @@
 // Secrets (wrangler secret put …): BETTER_AUTH_SECRET, DOWNLOAD_SECRET, SHARE_LINK_SECRET,
 //   SHARE_LINK_SECRET_PREV (rotation only), PREVIEW_SECRET, CONTACTS_ENC_KEY, IP_HASH_SECRET,
 //   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
-//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, MAIL_RELAY_TOKEN (ADAPTER_EMAIL=relay only).
+//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, MAIL_RELAY_TOKEN (ADAPTER_EMAIL=relay only),
+//   CF_ACCOUNT_ID + CF_ANALYTICS_TOKEN (R2's own meters for the relay's storage tab, ADR-037).
 // REPLACE_WITH_* ids are filled by scripts/cf-setup.mjs (deploy/{env}.json).
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
@@ -51,7 +52,8 @@
     "ADAPTER_SCANNER": "mock",
     "ADAPTER_CSAM": "mock",
     "ADAPTER_MEDIA": "mock",
-    "ADAPTER_ARCHIVER": "mock"
+    "ADAPTER_ARCHIVER": "mock",
+    "R2_BUCKET_NAME": "zeiko-dev"
   },
   "d1_databases": [
     {
@@ -240,7 +242,8 @@
         "ADAPTER_SCANNER": "mock",
         "ADAPTER_CSAM": "mock",
         "ADAPTER_MEDIA": "cloudflare",
-        "ADAPTER_ARCHIVER": "none"
+        "ADAPTER_ARCHIVER": "none",
+        "R2_BUCKET_NAME": "zeiko-staging"
       },
       "d1_databases": [
         {
@@ -418,7 +421,8 @@
         "ADAPTER_SCANNER": "container",
         "ADAPTER_CSAM": "mock",
         "ADAPTER_MEDIA": "cloudflare",
-        "ADAPTER_ARCHIVER": "container"
+        "ADAPTER_ARCHIVER": "container",
+        "R2_BUCKET_NAME": "zeiko-production"
       },
       "d1_databases": [
         {
