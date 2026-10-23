@@ -81,7 +81,8 @@ Cloudflare tidak mencakup `a.b.zeiko.biz.id`). Setelah alamat berubah, ganti jug
 | `TELEGRAM_BOT_TOKEN` (+ var `TELEGRAM_BOT_USERNAME`) | kamu, dari @BotFather |
 | `TURNSTILE_SECRET_KEY` (+ var `TURNSTILE_SITE_KEY`) | kamu, dari dashboard Turnstile |
 | `SHARE_LINK_SECRET_PREV` | hanya saat rotasi secret link share |
-| `CF_ANALYTICS_TOKEN`, `CF_ACCOUNT_ID` | kamu, untuk tab R2 storage di relay (ADR-037): token API Cloudflare dengan izin **Account Analytics: Read**, plus account id-nya. Tanpa keduanya, tab itu memakai hitungan Drive sendiri dan operasi A/B tidak diketahui. |
+| `ZEIKO_APP_TOKEN`, `ZEIKO_OPS_TOKEN` | relay, lewat **Zeiko Drive → Setup → Save and connect Drive**: isi account ID Cloudflare, token API dengan izin **Workers Scripts: Edit**, dan nama Worker (`zeiko-production`); relay membuat kedua secret dan memasangnya langsung ke Worker ini. Worker-nya harus sudah di-deploy. |
+| `CF_ANALYTICS_TOKEN`, `CF_ACCOUNT_ID` | untuk tab R2 storage di relay (ADR-037): token API Cloudflare dengan izin **Account Analytics: Read**. Isi di kolom "R2 analytics token" pada Setup yang sama; relay memasangnya ke Worker ini bersama account id, tanpa menyimpannya. Tanpa keduanya, tab itu memakai hitungan Drive sendiri dan operasi A/B tidak diketahui. |
 
 Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai lamanya dipindah ke
 `SHARE_LINK_SECRET_PREV` dulu.
