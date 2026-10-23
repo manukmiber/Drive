@@ -1,4 +1,4 @@
-import { count, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { schema } from '../db/client';
@@ -6,6 +6,7 @@ import { AppError } from '../lib/errors';
 import { validate } from '../lib/validate';
 import { areaName } from '../services/ads';
 import { ensureCsrfCookie, requireUser } from '../middleware/auth';
+import { ZEIKO_PROVIDER } from '../auth';
 import { ensurePersonalSpace } from '../services/accounts';
 import { cancelDeletion, exportData, requestDeletion } from '../services/account';
 import { getActiveSubscription, getPoolUsage } from '../services/storage';
@@ -25,7 +26,7 @@ export const me = new Hono<AppBindings>()
     const ctx = c.get('ctx');
     const user = c.get('user')!;
     const csrfToken = ensureCsrfCookie(c);
-    const [profile, space, passkeys] = await Promise.all([
+    const [profile, space, passkeys, zeiko] = await Promise.all([
       ctx.db
         .select({
           image: schema.users.image,
@@ -42,6 +43,15 @@ export const me = new Hono<AppBindings>()
         .from(schema.passkeys)
         .where(eq(schema.passkeys.userId, user.id))
         .get(),
+      // The Zeiko Account this user signs in as: the page checks it against the door's session
+      // (ADR-039), so Drive follows whoever is signed in there.
+      ctx.db
+        .select({ id: schema.accounts.accountId })
+        .from(schema.accounts)
+        .where(
+          and(eq(schema.accounts.userId, user.id), eq(schema.accounts.providerId, ZEIKO_PROVIDER)),
+        )
+        .get(),
     ]);
     const [storage, subscription] = await Promise.all([
       getPoolUsage(ctx, space.poolId),
@@ -53,6 +63,7 @@ export const me = new Hono<AppBindings>()
         image: profile?.image ?? null,
         adCityCode: profile?.adCityCode ?? null,
         locale: profile?.locale ?? 'id',
+        zeikoId: zeiko?.id ?? null,
       },
       deleteRequestedAt: profile?.deleteRequestedAt ?? null,
       hasPasskey: (passkeys?.n ?? 0) > 0,

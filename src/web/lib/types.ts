@@ -48,6 +48,8 @@ export interface Me {
     twoFactorEnabled: boolean;
     image: string | null;
     adCityCode: string | null;
+    /** The Zeiko Account this user signs in as (null for one made before Zeiko Accounts). */
+    zeikoId: string | null;
   };
   hasPasskey: boolean;
   deleteRequestedAt: number | string | null;

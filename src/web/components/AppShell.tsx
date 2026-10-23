@@ -25,6 +25,7 @@ import { lang, setLang, t } from '../lib/i18n';
 import { authClient } from '../lib/auth-client';
 import { sendJson } from '../lib/api';
 import { meQueryKey, useMe } from '../lib/session';
+import { useDoorSync } from '../lib/door-sync';
 import { signOutOfDoor, sitePage, zeikoConfig } from '../lib/zeiko';
 import { Logo } from './Logo';
 import { NewMenu } from './NewMenu';
@@ -106,6 +107,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const links = useProductLinks();
+  useDoorSync(me.data ? me.data.user.zeikoId : undefined);
 
   if (me.isPending) {
     return (

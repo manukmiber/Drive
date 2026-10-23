@@ -29,6 +29,10 @@ deskripsi produk ada di website (`proxychat`, zeiko.biz.id/drive). Drive dibayar
 di dev, "Masuk dengan Akun Zeiko" membuka pintu tiruan `/__dev/door/account/signin` untuk memilih akun
 demo `demo@zeiko.local` (Plus), `admin@zeiko.local` (admin, Max), atau `baru@zeiko.local` (tanpa paket).
 
+**Sesi pintu (`zk_auth`) yang menentukan** (ADR-039): Drive keluar kalau pintu bilang keluar, dan pindah
+akun kalau pintu bilang orang lain (`src/web/lib/door-sync.ts`). Login dari Drive pulang langsung ke
+`https://drive.zeiko.biz.id/masuk?next=…`.
+
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.
 

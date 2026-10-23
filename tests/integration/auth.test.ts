@@ -101,6 +101,37 @@ describe('auth (Better Auth on D1)', () => {
     expect(links.map((l) => l.accountId).sort()).toEqual(['zk_lama_example_com', 'zk_other']);
   });
 
+  it('says which Zeiko Account the user signs in as', async () => {
+    const rt = await makeRuntime();
+    const s = await signIn(rt, 'rina@example.com');
+    const me = (await (await s.req('GET', '/api/me')).json()) as { user: { zeikoId: string } };
+    expect(me.user.zeikoId).toBe('zk_rina_example_com');
+  });
+
+  it('ends the session a browser held when it signs in again (ADR-039)', async () => {
+    const rt = await makeRuntime();
+    const jar = new Jar();
+    expect((await exchange(rt, jar, zeikoAccountFor('satu@example.com'))).status).toBe(200);
+    const first = jar.get(SESSION_COOKIE);
+    expect(first).toBeTruthy();
+    // Signed in as somebody else at the door: the same browser trades its session in.
+    expect((await exchange(rt, jar, zeikoAccountFor('dua@example.com'))).status).toBe(200);
+    expect(jar.get(SESSION_COOKIE)).not.toBe(first);
+
+    const db = getDb(rt.env.DB);
+    const sessions = await db.select().from(schema.sessions).all();
+    expect(sessions).toHaveLength(1);
+    const me = (await (
+      await rt.fetch(new Request(`${APP}/api/me`, { headers: { cookie: jar.header() } }))
+    ).json()) as { user: { email: string; zeikoId: string } };
+    expect(me.user).toMatchObject({ email: 'dua@example.com', zeikoId: 'zk_dua_example_com' });
+    // The first person's cookie, kept elsewhere, opens nothing any more.
+    const stale = await rt.fetch(
+      new Request(`${APP}/api/me`, { headers: { cookie: `${SESSION_COOKIE}=${first}` } }),
+    );
+    expect(stale.status).toBe(401);
+  });
+
   it('turns the mock door off outside dev', async () => {
     const rt = await makeRuntime({ vars: { APP_ENV: 'staging' } });
     const res = await exchange(rt, new Jar(), zeikoAccountFor('x@example.com'));

@@ -6,24 +6,18 @@ import { Button } from '../components/Button';
 import { Logo } from '../components/Logo';
 import { t } from '../lib/i18n';
 import { meQueryKey } from '../lib/session';
-import {
-  SITE_WAY_BACK,
-  signInSilently,
-  sitePage,
-  zeikoConfig,
-  type SilentResult,
-} from '../lib/zeiko';
+import { signInSilently, sitePage, zeikoConfig, type SilentResult } from '../lib/zeiko';
 
 /** Only same-app paths are accepted as a return target (no open redirect). */
 function nextPath(): string {
   const next = new URLSearchParams(location.search).get('next');
-  return next && /^\/(?!\/)[\w\-/]*$/.test(next) ? next : '/drive';
+  return next && /^\/(?!\/)[\w\-/]*$/.test(next) ? next : '/';
 }
 
 /**
  * Sign-in is Zeiko Accounts' (ADR-036): if this browser is already signed in there, we sign in
  * here without a click; otherwise the website's own sign-in and sign-up pages do it and send the
- * visitor back to this page, which then finishes by itself.
+ * visitor straight back to this page (ADR-039), which then finishes by itself.
  */
 export function SignIn() {
   const navigate = useNavigate();
@@ -49,7 +43,7 @@ export function SignIn() {
     void (async () => {
       const cfg = await zeikoConfig().catch(() => null);
       setDev(Boolean(cfg?.dev));
-      const back = `${SITE_WAY_BACK}/masuk?next=${encodeURIComponent(nextPath())}`;
+      const back = `/masuk?next=${encodeURIComponent(nextPath())}`;
       const [signIn, signUp, account] = await Promise.all([
         sitePage('signin', back),
         sitePage('signup', back),

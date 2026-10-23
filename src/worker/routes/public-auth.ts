@@ -7,7 +7,9 @@ import type { AppBindings } from '../types';
  */
 export const publicAuth = new Hono<AppBindings>().get('/auth', (c) => {
   const dev = c.env.APP_ENV === 'dev';
-  const origin = new URL(c.req.url).origin;
+  // The app's own address, not this request's: in dev the API sits behind Vite's proxy on another
+  // port, and the stand-in door must be on the app's site for its cookie to be sent.
+  const origin = c.env.APP_ORIGIN;
   return c.json({
     doorUrl: dev ? `${origin}/__dev/door` : (c.env.ZEIKO_DOOR_URL ?? null),
     siteUrl: dev ? `${origin}/__dev/door` : (c.env.ZEIKO_SITE_URL ?? null),

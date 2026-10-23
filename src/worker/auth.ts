@@ -5,7 +5,7 @@
 import { passkey } from '@better-auth/passkey';
 import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { APIError, createAuthEndpoint } from 'better-auth/api';
+import { APIError, createAuthEndpoint, getSessionFromCtx } from 'better-auth/api';
 import { setSessionCookie } from 'better-auth/cookies';
 import { twoFactor } from 'better-auth/plugins';
 import { and, eq } from 'drizzle-orm';
@@ -125,6 +125,10 @@ function zeikoSignIn(ctx: Ctx): BetterAuthPlugin {
             .run();
           const user = await ia.findUserById(userId);
           if (!user) throw new APIError('INTERNAL_SERVER_ERROR', { message: 'user vanished' });
+          // A session this browser still holds (the person before, or this one from an earlier
+          // sign-in) ends here: one browser, one session (ADR-039).
+          const held = await getSessionFromCtx(c, { disableRefresh: true }).catch(() => null);
+          if (held) await ia.deleteSession(held.session.token);
           const session = await ia.createSession(userId);
           await setSessionCookie(c, { session, user });
           return c.json({ ok: true });

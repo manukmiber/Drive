@@ -16,9 +16,19 @@ export function devAccount(email: string): ZeikoAccount {
   return { id: `zk_${slug}`, email, username: slug.slice(0, 30), name: email.split('@')[0] ?? email, emailVerified: true };
 }
 
-/** Where the stand-in door may send a browser back to: one of our own app pages. */
-function safeNext(next: string | undefined): string {
-  return next && /^\/(dashboard|account)(\/[\w\-/]*)?(\?[\w=&-]*)?$/.test(next) ? next : '/dashboard';
+/**
+ * Where the stand-in door may send a browser back to, as the website does: a page of this app at
+ * its own address (`origin`), or a path of ours.
+ */
+function safeNext(next: string | undefined, origin: string): string {
+  if (!next) return '/';
+  if (/^\/(?!\/)[\w\-/]*(\?[\w=&%.-]*)?$/.test(next)) return next;
+  try {
+    const u = new URL(next);
+    return u.origin === origin && !u.hash && /^\/(?!\/)[\w\-/]*$/.test(u.pathname) ? u.href : '/';
+  } catch {
+    return '/';
+  }
 }
 
 export const dev = new Hono<AppBindings>()
@@ -68,11 +78,13 @@ export const dev = new Hono<AppBindings>()
       ? c.json({ key: 'zk-dev-not-a-real-key-0000' })
       : c.json({ error: { code: 'signed_out', message: 'Sign in first.' } }, 401),
   )
-  .on(['GET', 'POST'], '/door/account/signin', async (c) => {
-    const next = safeNext(c.req.query('next'));
+  // Sign-in and sign-up are one page here: any email makes an account.
+  .on(['GET', 'POST'], ['/door/account/signin', '/door/account/signup'], async (c) => {
+    const next = safeNext(c.req.query('next'), c.env.APP_ORIGIN);
     if (c.req.method === 'POST') {
       const form = await c.req.parseBody();
-      const email = String(form.email ?? '').trim().toLowerCase();
+      // A demo button sends `email`; the box (and its own button) sends `typed`.
+      const email = String(form.email ?? form.typed ?? '').trim().toLowerCase();
       if (!/^[^@\s]+@[^@\s]+$/.test(email)) return c.text('bad email', 400);
       setCookie(c, DOOR_COOKIE, email, { path: '/', httpOnly: true, sameSite: 'Lax', secure: true });
       return c.redirect(next, 303);
@@ -83,5 +95,5 @@ export const dev = new Hono<AppBindings>()
     return c.html(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dev door</title>
 <body style="font-family:system-ui;max-width:420px;margin:40px auto;padding:0 16px">
 <h1>Stand-in Zeiko Accounts door</h1><p>Dev only. Pick a demo account, or type any email.</p>
-<form method="post">${pick}<p><input name="email" type="email" placeholder="you@example.com"> <button>Sign in</button></p></form></body>`);
+<form method="post">${pick}<p><input name="typed" type="email" placeholder="you@example.com"> <button>Sign in</button></p></form></body>`);
   });

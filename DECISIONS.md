@@ -506,3 +506,36 @@ oleh Worker situs lewat service binding `DRIVE` (ADR-036), dan Saldo bisa diisi 
 - **Yang harus diubah operator di relay (layar Zeiko Drive → Setup):** URL Drive menjadi
   `https://drive.zeiko.biz.id` dan return path menjadi `/paket`. Return path lama `/dashboard/paket` tetap
   sampai ke halaman yang benar lewat 301 di atas.
+
+## ADR-039 — Drive mengikuti sesi Akun Zeiko, dan login pulang langsung ke Drive
+
+**Konteks:** keluhan pemilik (2026-10-23): "alur akun dan cookies sangat tidak beraturan … Zeiko Drive
+gabisa masuk, bentrok". Drive punya sesi Better Auth sendiri (30 hari) yang lepas dari sesi pintu
+(`zk_auth`). Akibatnya: keluar di website tetapi Drive tetap masuk; masuk di website sebagai orang lain
+tetapi Drive tetap menampilkan orang sebelumnya; dua identitas di satu browser. Jalan pulang setelah login
+juga memutar lewat `zeiko.biz.id/dashboard/masuk` (ADR-038), yang bergantung pada Worker situs versi baru.
+
+**Keputusan:**
+- **Sesi pintu adalah satu-satunya yang menentukan.** Sesi Drive hanya mewakilinya. `/api/me` sekarang
+  menyertakan `user.zeikoId` (Akun Zeiko yang ditautkan), dan `useDoorSync` (`src/web/lib/door-sync.ts`,
+  dipasang di `AppShell`) bertanya ke pintu `GET /v1/session` saat app dibuka dan saat tab dilihat lagi
+  (paling sering 15 detik sekali):
+  - pintu bilang **keluar** → Drive keluar juga (sesi dihapus, data di layar dibuang), lalu halaman masuk;
+  - pintu bilang **orang lain** → Drive keluar, dan halaman masuk langsung memasukkan orang itu (tiket);
+  - pintu **tidak menjawab** → Drive jalan terus seperti biasa (ADR-036: Drive tetap jalan saat relay mati).
+- **Satu browser, satu sesi.** `POST /api/auth/zeiko/exchange` menghapus sesi yang masih dibawa browser
+  (orang sebelumnya, atau orang yang sama dari login lama) sebelum membuat yang baru. Pintu melakukan hal
+  yang sama untuk `zk_auth` saat login/daftar/OAuth.
+- **Login pulang langsung ke Drive.** Halaman masuk mengirim
+  `next=https://drive.zeiko.biz.id/masuk?next=…` (alamat Drive sendiri, `sitePage` di `src/web/lib/zeiko.ts`).
+  Website (`safeNext`, daftar `APPS`) dan pintu (`safe_next`, dari `drive.url`) menerima alamat itu persis:
+  origin Drive, path dan query biasa, tanpa user dan fragmen. `SITE_WAY_BACK` dihapus. `/dashboard/…` tetap
+  diteruskan oleh website dan Drive untuk link lama.
+- **Dev:** pintu tiruan sekarang di origin app (`APP_ORIGIN` + `/__dev/door`), bukan origin API di balik
+  proxy Vite — kalau tidak, cookie pintunya tidak terkirim (beda site). Tombol akun demo diperbaiki (kotak
+  email kosong menimpa pilihan tombol), dan `/__dev/door/account/signup` ada.
+
+**Syarat di relay:** `drive.url` harus `https://drive.zeiko.biz.id`. Tanpa itu pintu menolak CORS dari Drive
+(login diam-diam gagal) dan `next` ke Drive ditolak.
+
+Tes: `tests/integration/auth.test.ts` (`zeikoId` di `/api/me`; login lagi mengakhiri sesi lama).
