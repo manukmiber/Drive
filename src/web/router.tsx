@@ -8,8 +8,8 @@ import {
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
 import { NotFound } from './pages/NotFound';
 
-// The app lives at /dashboard on the website's own address (ADR-036); its landing page, prices and
-// description are the website's now. Every page loads on demand, so the first visit only
+// The app lives at the root of its own address, drive.zeiko.biz.id (ADR-038); its landing page,
+// prices and description are the website's (zeiko.biz.id/drive). Every page loads on demand, so the first visit only
 // downloads what it needs (Lighthouse mobile, SPEC §15 Fase 12).
 // `any` is React's own default for ComponentType; the real props come from M[K].
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -98,7 +98,7 @@ const routeTree = rootRoute.addChildren([
     },
   }),
   appRoute.addChildren([
-    // Storage is what /dashboard opens on.
+    // Storage is what the app opens on.
     createRoute({ getParentRoute: () => appRoute, path: '/', component: () => <Drive key="root" /> }),
     createRoute({
       getParentRoute: () => appRoute,
@@ -135,7 +135,7 @@ const routeTree = rootRoute.addChildren([
 ]);
 
 /** Where the app is served (APP_BASE_PATH on the Worker; the build is made for it). */
-export const BASE_PATH = '/dashboard';
+export const BASE_PATH = '/';
 
 export const router = createRouter({ routeTree, basepath: BASE_PATH, defaultPreload: 'intent' });
 

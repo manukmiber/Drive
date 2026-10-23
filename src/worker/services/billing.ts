@@ -174,6 +174,12 @@ export interface SubRow {
 
 const LIVE = `('active', 'grace', 'readonly', 'suspended')`;
 
+/**
+ * The ways Drive is paid (ADR-038): QRIS only, whatever `payment_methods` lists. The operator's
+ * config can switch QRIS off or change its fee, never put crypto back.
+ */
+const DRIVE_METHODS: ReadonlySet<string> = new Set(['qris']);
+
 export async function currentSubscription(ctx: Ctx, poolId: string): Promise<SubRow | null> {
   return ctx.env.DB.prepare(
     `SELECT * FROM subscriptions WHERE pool_id = ?1 AND status IN ${LIVE} ORDER BY created_at DESC LIMIT 1`,
@@ -493,7 +499,9 @@ export async function createTopup(
   if (ctx.adapters.payment.name === 'mock' && ctx.env.APP_ENV === 'production') {
     throw new AppError('PAYMENT_UNAVAILABLE', 'payment gateway not configured');
   }
-  const method = cfg.payment_methods.find((m) => m.code === input.method && m.active);
+  const method = cfg.payment_methods.find(
+    (m) => m.code === input.method && m.active && DRIVE_METHODS.has(m.code),
+  );
   if (!method) throw new AppError('VALIDATION', 'unknown payment method', { field: 'method' });
   const min = Math.max(cfg.min_topup_idr, method.min_idr);
   if (!Number.isInteger(input.amountIdr) || input.amountIdr < min)
@@ -982,7 +990,7 @@ export async function billingSummary(ctx: Ctx, userId: string) {
     pendingPayments: pending.results,
     compressCredits: credits?.n ?? 0,
     paymentMethods: cfg.payment_methods
-      .filter((m) => m.active)
+      .filter((m) => m.active && DRIVE_METHODS.has(m.code))
       .map((m) => ({
         code: m.code,
         label: m.label,

@@ -11,7 +11,6 @@ export const publicAuth = new Hono<AppBindings>().get('/auth', (c) => {
   return c.json({
     doorUrl: dev ? `${origin}/__dev/door` : (c.env.ZEIKO_DOOR_URL ?? null),
     siteUrl: dev ? `${origin}/__dev/door` : (c.env.ZEIKO_SITE_URL ?? null),
-    basePath: c.env.APP_BASE_PATH ?? '/dashboard',
     chatUrl: 'https://chat.zeiko.biz.id',
     // Still used by share emails, abuse reports and advertiser sign-up.
     turnstileSiteKey: c.env.TURNSTILE_SITE_KEY ?? null,

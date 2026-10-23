@@ -127,10 +127,9 @@ export const configSchema = z.object({
       }),
     )
     .default([
-      // Zeiko Accounts (ADR-036): QRIS checked by the operator, crypto through NOWPayments from the
-      // relay's own minimum (drive.cryptoMinIdr).
+      // Zeiko Accounts (ADR-036): QRIS, checked by the operator. Drive takes QRIS only (ADR-038);
+      // another code here is never offered (services/billing.ts::DRIVE_METHODS).
       { code: 'qris', label: 'QRIS', min_idr: 10_000, fee_flat_idr: 0, fee_pct: 0.7, active: true },
-      { code: 'crypto', label: 'Crypto', min_idr: 50_000, fee_flat_idr: 0, fee_pct: 0, active: true },
     ]),
   tax_rate_pct: z.number().nonnegative().default(0),
   billing_reminder_days_before: z.array(nonNeg()).default([3, 1]),

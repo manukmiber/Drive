@@ -27,6 +27,7 @@ const summary = async (s: Session) =>
       status: string;
       periodEnd: number;
     } | null;
+    paymentMethods: Array<{ code: string }>;
   };
 
 async function webhook(
@@ -91,9 +92,11 @@ describe('Saldo & payments (SPEC §12.2–12.3)', () => {
     expect(
       (await s.req('POST', '/api/billing/topups', { amountIdr: 5_000, method: 'qris' })).status,
     ).toBe(400);
+    // Drive takes QRIS only (ADR-038), at any amount crypto would have taken.
     expect(
-      (await s.req('POST', '/api/billing/topups', { amountIdr: 20_000, method: 'crypto' })).status,
-    ).toBe(400); // crypto from 50k
+      (await s.req('POST', '/api/billing/topups', { amountIdr: 60_000, method: 'crypto' })).status,
+    ).toBe(400);
+    expect((await summary(s)).paymentMethods.map((m) => m.code)).toEqual(['qris']);
     const res = await s.req('POST', '/api/billing/topups', { amountIdr: 15_000, method: 'qris' });
     const { paymentId } = (await res.json()) as { paymentId: string };
     await webhook(rt, { providerRef: `mock_${paymentId}`, status: 'paid', amountIdr: 1 });
@@ -370,7 +373,7 @@ describe('paying through Zeiko Accounts (ADR-036)', () => {
       const clock = new FakeClock(T0);
       const rt = await makeRuntime({ clock, vars });
       const s = await signIn(rt, 'lost@example.com');
-      const res = await s.req('POST', '/api/billing/topups', { amountIdr: 60_000, method: 'crypto' });
+      const res = await s.req('POST', '/api/billing/topups', { amountIdr: 60_000, method: 'qris' });
       expect(res.status, await res.clone().text()).toBe(201);
       clock.advance(5 * 60_000);
       await rt.runCron(CRON.hourly);

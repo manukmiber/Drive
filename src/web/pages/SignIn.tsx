@@ -6,7 +6,13 @@ import { Button } from '../components/Button';
 import { Logo } from '../components/Logo';
 import { t } from '../lib/i18n';
 import { meQueryKey } from '../lib/session';
-import { signInSilently, sitePage, zeikoConfig, type SilentResult } from '../lib/zeiko';
+import {
+  SITE_WAY_BACK,
+  signInSilently,
+  sitePage,
+  zeikoConfig,
+  type SilentResult,
+} from '../lib/zeiko';
 
 /** Only same-app paths are accepted as a return target (no open redirect). */
 function nextPath(): string {
@@ -43,7 +49,7 @@ export function SignIn() {
     void (async () => {
       const cfg = await zeikoConfig().catch(() => null);
       setDev(Boolean(cfg?.dev));
-      const back = `${cfg?.basePath ?? '/dashboard'}/masuk?next=${encodeURIComponent(nextPath())}`;
+      const back = `${SITE_WAY_BACK}/masuk?next=${encodeURIComponent(nextPath())}`;
       const [signIn, signUp, account] = await Promise.all([
         sitePage('signin', back),
         sitePage('signup', back),

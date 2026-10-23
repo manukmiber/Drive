@@ -475,3 +475,34 @@ free tier, operasi, maupun pembulatan.
 (dua contoh di halaman harga, pembulatan, free tier milik akun, siklus tagihan, query per hari, laporan lengkap
 dengan Cloudflare tiruan, fallback tanpa token, dan error dari Cloudflare).
 
+
+## ADR-038 — Zeiko Drive pindah ke drive.zeiko.biz.id, dan dibayar dengan QRIS saja
+
+**Konteks:** permintaan pemilik (2026-10-23): "Pindahkan produk Zeiko Drive ke drive.zeiko.biz.id, terus yang
+ini ga bisa pakai crypto, QRIS doang bisanya." Sebelumnya app ada di `zeiko.biz.id/dashboard` dan diteruskan
+oleh Worker situs lewat service binding `DRIVE` (ADR-036), dan Saldo bisa diisi dengan QRIS atau crypto.
+
+**Keputusan:**
+- **App ada di root alamatnya sendiri, `https://drive.zeiko.biz.id`** (`APP_ORIGIN` production, route custom
+  domain di `scripts/gen-wrangler.mjs`). `APP_BASE_PATH` sekarang kosong secara default: SPA, API, link share,
+  dan unduhan ada di satu origin, seperti sebelum ADR-036. Build Vite memakai `base: '/'` (`dist/web`), dan
+  PWA (`manifest.webmanifest`, `sw.js`) memakai scope `/`. Service worker tidak menyentuh halaman milik Worker
+  sendiri (`/api`, `/d`, `/z`, `/p`, `/ad`, `/berhenti`, link share) agar halaman share tidak tersimpan sebagai
+  cangkang app. `uc.zeiko.biz.id` tetap jadi origin pratinjau (subdomain satu tingkat, masih tercakup sertifikat
+  universal Cloudflare; `uc.drive.zeiko.biz.id` tidak tercakup).
+- **`zeiko.biz.id/dashboard/…` tetap menjadi jalan pulang ke Drive.** Halaman akun di situs dan login
+  Google/GitHub di pintu hanya mau mengirim orang ke halaman situs sendiri (`safeNext` / `safe_next`). Jadi
+  halaman masuk Drive memberi situs `next=/dashboard/masuk?next=…` (`SITE_WAY_BACK`), dan Worker situs
+  meneruskan `/dashboard/…` ke `https://drive.zeiko.biz.id/…`. Worker Drive juga meneruskan `/dashboard/…` di
+  alamatnya sendiri ke `/…` (301), untuk link lama dan untuk pintu tiruan di dev. Dengan begitu tidak ada
+  aturan `next` yang perlu dilonggarkan untuk origin lain.
+- **Login tanpa klik tetap jalan:** cookie pintu (`zk_auth`, `SameSite=Lax`) tetap terkirim dari
+  drive.zeiko.biz.id karena masih satu situs (zeiko.biz.id). Pintu (relay) kini juga mengizinkan CORS dari
+  origin `drive.url`, jadi tidak ada lagi syarat "halaman ada di origin situs".
+- **Pembayaran: QRIS saja.** `payment_methods` default hanya berisi QRIS. `services/billing.ts::DRIVE_METHODS`
+  menolak kode lain di `createTopup` dan menyembunyikannya dari ringkasan, walaupun konfigurasi lama di D1
+  masih menyalakan crypto. Konfigurasi operator tetap bisa mematikan QRIS atau mengubah fee-nya, tetapi tidak
+  bisa menyalakan crypto lagi. Pilihan metode di dialog isi saldo hanya muncul kalau ada lebih dari satu metode.
+- **Yang harus diubah operator di relay (layar Zeiko Drive → Setup):** URL Drive menjadi
+  `https://drive.zeiko.biz.id` dan return path menjadi `/paket`. Return path lama `/dashboard/paket` tetap
+  sampai ke halaman yang benar lewat 301 di atas.

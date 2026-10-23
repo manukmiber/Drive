@@ -24,8 +24,16 @@ export const locale = lang === 'en' ? 'en-GB' : 'id-ID';
 if (typeof document !== 'undefined') document.documentElement.lang = lang;
 setDateLocale(locale);
 
+/**
+ * The cookie is the whole of zeiko.biz.id's, so the website and Drive (on its own subdomain since
+ * ADR-038) agree; anywhere else (localhost) it stays on the page's own host.
+ */
+function cookieDomain(host: string): string {
+  return /(^|\.)zeiko\.biz\.id$/.test(host) ? '; Domain=zeiko.biz.id' : '';
+}
+
 /** Remember `next` for this whole site (a year), then redraw everything in it. */
 export function setLang(next: Lang): void {
-  document.cookie = `${LANG_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax; Secure`;
+  document.cookie = `${LANG_COOKIE}=${next}; Path=/; Max-Age=31536000; SameSite=Lax; Secure${cookieDomain(location.hostname)}`;
   location.reload();
 }

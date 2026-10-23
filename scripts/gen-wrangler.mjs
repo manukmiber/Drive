@@ -63,7 +63,6 @@ function bindings(env, nsBase, ids) {
       // secrets (ZEIKO_APP_TOKEN, ZEIKO_OPS_TOKEN) come from the relay's Zeiko Drive screen.
       ADAPTER_PAYMENT: env === 'dev' ? 'mock' : (ids.payment ?? 'zeiko'),
       ADAPTER_ACCOUNTS: env === 'dev' ? 'mock' : 'zeiko',
-      APP_BASE_PATH: '/dashboard',
       ...(env === 'dev'
         ? {}
         : {
@@ -74,6 +73,8 @@ function bindings(env, nsBase, ids) {
       ADAPTER_CSAM: 'mock',
       ADAPTER_MEDIA: env === 'dev' ? 'mock' : 'cloudflare',
       ADAPTER_ARCHIVER: env === 'dev' ? 'mock' : containers ? 'container' : 'none',
+      // The bucket R2's own meters are read for (the relay's storage tab, ADR-037).
+      R2_BUCKET_NAME: `zeiko-${env}`,
     },
     d1_databases: [
       {
@@ -158,8 +159,8 @@ const config = {
   assets: {
     directory: './dist/web',
     binding: 'ASSETS',
-    // The Worker serves the SPA's index for /dashboard/* itself (src/worker/app.ts): the build
-    // lives under dist/web/dashboard, beside nothing else.
+    // The Worker serves the SPA's index itself (src/worker/app.ts), so a path that is the Worker's
+    // own (a share link, a download) is never answered with the app.
     not_found_handling: 'none',
     run_worker_first: true,
   },
@@ -178,8 +179,9 @@ const config = {
       d1Id: 'REPLACE_WITH_STAGING_D1_ID',
       kvId: 'REPLACE_WITH_STAGING_KV_ID',
     }),
+    // Drive's own address (ADR-038); the website keeps zeiko.biz.id.
     production: envBlock('production', 2000, {
-      appOrigin: 'https://zeiko.biz.id',
+      appOrigin: 'https://drive.zeiko.biz.id',
       usercontentOrigin: 'https://uc.zeiko.biz.id',
       d1Id: 'REPLACE_WITH_PRODUCTION_D1_ID',
       kvId: 'REPLACE_WITH_PRODUCTION_KV_ID',
@@ -194,6 +196,7 @@ const header = `// Zeiko Cloud Storage — Wrangler config.
 //   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
 //   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, MAIL_RELAY_TOKEN (ADAPTER_EMAIL=relay only).
 //   ZEIKO_APP_TOKEN, ZEIKO_OPS_TOKEN (minted on the relay's Zeiko Drive screen, ADR-036).
+//   CF_ACCOUNT_ID + CF_ANALYTICS_TOKEN (R2's own meters for the relay's storage tab, ADR-037).
 // REPLACE_WITH_* ids are filled by scripts/cf-setup.mjs (deploy/{env}.json).
 `;
 process.stdout.write(header + JSON.stringify(config, null, 2) + '\n');

@@ -1,10 +1,18 @@
-// Zeiko Accounts from the browser (ADR-036). The page is on the website's own address, so the
-// browser already holds the door's session (its cookie, on the door's host): we ask the door for
-// a one-time ticket and hand it to our Worker, which redeems it server to server. The door's
-// posts need `X-Zeiko: 1` and our origin, which it allows.
+// Zeiko Accounts from the browser (ADR-036, ADR-038). The page is on drive.zeiko.biz.id, a
+// subdomain of the website's, so the browser already holds the door's session (its cookie, on the
+// door's host, sent to it from any page of zeiko.biz.id): we ask the door for a one-time ticket and
+// hand it to our Worker, which redeems it server to server. The door's posts need `X-Zeiko: 1` and
+// our origin, which it allows (Drive's address is on the door's list).
 import { api, postJson } from './api';
 import { lang } from './i18n';
 import type { PublicAuth } from './types';
+
+/**
+ * The website's way back to Drive (ADR-038): its pages, and the door's Google and GitHub sign-in,
+ * only ever send a visitor to one of the website's own pages, and zeiko.biz.id/dashboard/… is the
+ * one that forwards here (the app's old address).
+ */
+export const SITE_WAY_BACK = '/dashboard';
 
 let config: Promise<PublicAuth> | null = null;
 
@@ -19,7 +27,11 @@ interface DoorAnswer {
 }
 
 /** One call to the door's /v1; status 0 when it did not answer within 15 s. */
-export async function door(method: 'GET' | 'POST', path: string, body?: unknown): Promise<DoorAnswer> {
+export async function door(
+  method: 'GET' | 'POST',
+  path: string,
+  body?: unknown,
+): Promise<DoorAnswer> {
   const cfg = await zeikoConfig();
   if (!cfg.doorUrl) return { status: 0, data: null };
   try {

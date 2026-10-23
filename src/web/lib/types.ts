@@ -67,7 +67,6 @@ export interface PublicAuth {
   doorUrl: string | null;
   /** The website: sign-in, sign-up and payment pages. */
   siteUrl: string | null;
-  basePath: string;
   chatUrl: string;
   turnstileSiteKey: string | null;
   dev: boolean;

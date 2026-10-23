@@ -39,6 +39,14 @@ describe('worker skeleton', () => {
     expect(await res.json()).toMatchObject({ error: { code: 'NOT_FOUND' } });
   });
 
+  it('sends the old /dashboard address of the app to its own pages', async () => {
+    const rt = await makeRuntime();
+    const res = await rt.fetch(`${APP}/dashboard/masuk?next=%2Fpaket`);
+    expect(res.status).toBe(301);
+    expect(res.headers.get('location')).toBe('/masuk?next=%2Fpaket');
+    expect((await rt.fetch(`${APP}/dashboard`)).headers.get('location')).toBe('/');
+  });
+
   it('serves nothing but previews on the user-content host', async () => {
     const rt = await makeRuntime();
     for (const path of ['/api/health', '/', '/__dev/mail']) {

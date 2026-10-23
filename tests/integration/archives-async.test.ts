@@ -91,7 +91,7 @@ describe('async archives (SPEC §7.2)', () => {
     };
     expect(notes.items[0]).toMatchObject({
       type: 'archive_ready',
-      url: 'http://localhost:5173/dashboard/unduhan',
+      url: 'http://localhost:5173/unduhan',
     });
 
     clock.advance(25 * 3600_000);

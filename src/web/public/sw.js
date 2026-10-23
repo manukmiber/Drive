@@ -1,9 +1,11 @@
-// Zeiko Drive service worker (scope /dashboard/): app-shell caching + Web Share Target (files
+// Zeiko Drive service worker (scope /): app-shell caching + Web Share Target (files
 // shared from other apps are stashed in IndexedDB, then the app uploads them to My Drive). Never
 // caches API or file bytes.
 const SHELL = 'zk-shell-v2';
-const BASE = '/dashboard';
-const NEVER = /^\/(api|d|z|p|__dev)\//;
+const BASE = '';
+// The Worker's own pages and bytes, never the app: the API, downloads, previews, archives, ad
+// pages, unsubscribe links, shared links (64 letters and digits, then the signature).
+const NEVER = /^\/(api|d|z|p|ad|berhenti|__dev)\/|^\/[0-9A-Za-z]{64}\//;
 
 self.addEventListener('install', (e) => {
   e.waitUntil(

@@ -1,20 +1,21 @@
-// Where the app's own pages are (ADR-036): the SPA lives under APP_BASE_PATH (`/dashboard` on
-// zeiko.biz.id, beside the website); the API, share links and downloads stay at the root.
+// Where the app's own pages are (ADR-038): the SPA is at the root of Drive's own address
+// (drive.zeiko.biz.id), beside the API, share links and downloads. APP_BASE_PATH can still put it
+// under a path; the build must then be made for that path too (vite.config.ts `base`).
 interface PathEnv {
   APP_ORIGIN: string;
   APP_BASE_PATH?: string | undefined;
 }
 
 export function basePath(env: PathEnv): string {
-  return (env.APP_BASE_PATH ?? '/dashboard').replace(/\/+$/, '');
+  return (env.APP_BASE_PATH ?? '').replace(/\/+$/, '');
 }
 
-/** `/drive` → `/dashboard/drive`. */
+/** `/drive` → `/drive` (or `{APP_BASE_PATH}/drive`). */
 export function appPath(env: PathEnv, path: string): string {
   return `${basePath(env)}${path}`;
 }
 
-/** `/drive` → `https://zeiko.biz.id/dashboard/drive`, for emails and links that leave the app. */
+/** `/drive` → `https://drive.zeiko.biz.id/drive`, for emails and links that leave the app. */
 export function appUrl(env: PathEnv, path: string): string {
   return `${env.APP_ORIGIN}${appPath(env, path)}`;
 }

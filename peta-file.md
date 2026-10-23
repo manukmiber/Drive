@@ -14,7 +14,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | Callback pembayaran | `src/worker/routes/payments.ts` (`/api/payments/webhook/zeiko`) | `src/server/drive.rs` (`signature`, `tell`), `src/server/accounts.rs` (`notify_payment`) | — |
 | Rekonsiliasi pembayaran | `src/worker/services/billing.ts` (`reconcilePayments`), `src/worker/cron/tasks.ts` | `GET /apps/v1/payments/{id}` di `drive.rs` | — |
 | Layar Zeiko Drive di dashboard relay | `src/worker/routes/ops.ts`, `src/worker/services/admin.ts` | `src/server/drive.rs` (`dashboard_routes`), `public/js/views/zeikodrive.js`, `public/js/api.js` | — |
-| App di `/dashboard` | `vite.config.ts`, `src/web/router.tsx`, `src/worker/app.ts`, `src/worker/lib/paths.ts`, `scripts/gen-wrangler.mjs`, `src/web/public/{sw.js,manifest.webmanifest}` | `drive.url`, `drive.returnPath` di `src/config.rs` | `src/worker.js`, `src/drive.js` (`isDrivePath`), `wrangler.jsonc` |
+| App di `drive.zeiko.biz.id` (ADR-038; dulu `/dashboard`) | `vite.config.ts`, `src/web/router.tsx`, `src/worker/app.ts`, `src/worker/lib/paths.ts`, `scripts/gen-wrangler.mjs`, `src/web/public/{sw.js,manifest.webmanifest}`, `src/web/lib/zeiko.ts` (`SITE_WAY_BACK`) | `drive.url`, `drive.returnPath` di `src/config.rs` | `src/worker.js`, `src/drive.js` (`isDrivePath`), `wrangler.jsonc` |
 | Produk lain di sidebar | `src/web/components/AppShell.tsx`, `src/web/pages/AiDecision.tsx` | `/v1/account`, `/v1/key` di `src/server/auth.rs` + `site.rs` | — |
 | EN/ID | `src/shared/strings.{id,en}.ts`, `src/web/lib/i18n.ts`, `src/worker/lib/lang.ts`, `src/worker/routes/me.ts` (`locale`), `migrations/0004_*` | — | `public/js/main.js` (cookie `zk_lang`), `public/id/drive.html` |
 | Harga di website | `src/worker/routes/catalog.ts` (`/api/public/catalog`) | — | `src/drive.js` (`renderPlans`), `public/drive.html` |
@@ -38,7 +38,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | `docs/LAUNCH-CHECKLIST.md`, `docs/runbook/{kebocoran-data,rotasi-secret,takedown}.md` | Persiapan rilis dan runbook insiden. |
 | `.dev.vars.example` ★ | Contoh var/secret dev, termasuk blok Zeiko (dikomentari). `.dev.vars` sendiri di-ignore. |
 | `package.json` ★ | Skrip `dev`, `build` (menghapus `dist/web` dulu), `check`, `deploy:*`, `db:migrate:*`. |
-| `vite.config.ts` ★ | `base: '/dashboard/'`, outDir `dist/web/dashboard`, proxy ke API 8790. |
+| `vite.config.ts` ★ | `base: '/'`, outDir `dist/web`, proxy ke API 8790 (termasuk `/dashboard`, jalan pulang lama). |
 | `wrangler.jsonc` | **Hasil generate**: `node scripts/gen-wrangler.mjs > wrangler.jsonc`. Jangan diedit langsung. |
 | `vitest.config.ts`, `playwright.config.ts`, `eslint.config.js`, `drizzle.config.ts`, `tsconfig*.json` | Konfigurasi alat. |
 
@@ -65,7 +65,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | File | Isi |
 |---|---|
 | `entry.ts`, `index.ts` | Entry wrangler: handler fetch/queue/scheduled + kelas Container. |
-| `app.ts` ★ | Router Hono. Mount `/api/ops` sebelum `/api`, fallback SPA `/dashboard/*`, redirect `/` → `/dashboard/`, `POST /dashboard/share-target`. |
+| `app.ts` ★ | Router Hono. Mount `/api/ops` sebelum `/api`, fallback SPA di root, `/dashboard/…` → `/…` (301). |
 | `auth.ts` ★ | Better Auth + plugin `zeikoSignIn` (`/api/auth/zeiko/exchange`); passkey/TOTP untuk faktor kedua staf. |
 | `env.ts` ★ | Tipe binding, var, dan secret (`ZEIKO_*`, `APP_BASE_PATH`). |
 | `context.ts`, `types.ts`, `containers.ts` | Konteks per request, tipe Hono, Container DO. |
@@ -115,9 +115,9 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 ### `src/web/` (SPA React)
 | File | Isi |
 |---|---|
-| `router.tsx` ★ | TanStack Router `basepath: '/dashboard'`; `/` = Drive Saya, `/ai` = AI Decision, `/masuk`, `/paket`, dst. |
+| `router.tsx` ★ | TanStack Router `basepath: '/'`; `/` = Drive Saya, `/ai` = AI Decision, `/masuk`, `/paket`, dst. |
 | `main.tsx` ★, `index.html` ★ | Bootstrap, pendaftaran service worker di `${BASE_URL}sw.js`. |
-| `public/sw.js` ★, `public/manifest.webmanifest` ★ | PWA dengan scope `/dashboard/`, Web Share Target. |
+| `public/sw.js` ★, `public/manifest.webmanifest` ★ | PWA dengan scope `/`, Web Share Target; SW melewati halaman milik Worker. |
 | `lib/zeiko.ts` ★ | `zeikoConfig`, `door()`, `signInSilently`, `sitePage`, `signOutOfDoor`. |
 | `lib/i18n.ts` ★ | `lang`, `t`, `setLang` (cookie `zk_lang` + reload). |
 | `lib/auth-client.ts` ★ | Klien Better Auth (passkey + twoFactor; OTP dihapus). |

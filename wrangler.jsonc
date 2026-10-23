@@ -4,7 +4,8 @@
 // Secrets (wrangler secret put …): BETTER_AUTH_SECRET, DOWNLOAD_SECRET, SHARE_LINK_SECRET,
 //   SHARE_LINK_SECRET_PREV (rotation only), PREVIEW_SECRET, CONTACTS_ENC_KEY, IP_HASH_SECRET,
 //   PAYMENT_WEBHOOK_SECRET, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, TELEGRAM_BOT_TOKEN,
-//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, MAIL_RELAY_TOKEN (ADAPTER_EMAIL=relay only),
+//   TELEGRAM_WEBHOOK_SECRET, TURNSTILE_SECRET_KEY, MAIL_RELAY_TOKEN (ADAPTER_EMAIL=relay only).
+//   ZEIKO_APP_TOKEN, ZEIKO_OPS_TOKEN (minted on the relay's Zeiko Drive screen, ADR-036).
 //   CF_ACCOUNT_ID + CF_ANALYTICS_TOKEN (R2's own meters for the relay's storage tab, ADR-037).
 // REPLACE_WITH_* ids are filled by scripts/cf-setup.mjs (deploy/{env}.json).
 {
@@ -22,7 +23,7 @@
   "assets": {
     "directory": "./dist/web",
     "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
+    "not_found_handling": "none",
     "run_worker_first": true
   },
   "triggers": {
@@ -49,6 +50,7 @@
     "EMAIL_FROM": "no-reply@zeiko.biz.id",
     "ADAPTER_EMAIL": "mock",
     "ADAPTER_PAYMENT": "mock",
+    "ADAPTER_ACCOUNTS": "mock",
     "ADAPTER_SCANNER": "mock",
     "ADAPTER_CSAM": "mock",
     "ADAPTER_MEDIA": "mock",
@@ -238,7 +240,10 @@
         "EMAIL_FROM": "no-reply@zeiko.biz.id",
         "ADAPTER_EMAIL": "relay",
         "MAIL_RELAY_URL": "https://mailer.zeiko.biz.id",
-        "ADAPTER_PAYMENT": "mock",
+        "ADAPTER_PAYMENT": "zeiko",
+        "ADAPTER_ACCOUNTS": "zeiko",
+        "ZEIKO_DOOR_URL": "https://auth.zeiko.biz.id",
+        "ZEIKO_SITE_URL": "https://zeiko.biz.id",
         "ADAPTER_SCANNER": "mock",
         "ADAPTER_CSAM": "mock",
         "ADAPTER_MEDIA": "cloudflare",
@@ -400,7 +405,7 @@
     "production": {
       "routes": [
         {
-          "pattern": "zeiko.biz.id",
+          "pattern": "drive.zeiko.biz.id",
           "custom_domain": true
         },
         {
@@ -413,11 +418,14 @@
       },
       "vars": {
         "APP_ENV": "production",
-        "APP_ORIGIN": "https://zeiko.biz.id",
+        "APP_ORIGIN": "https://drive.zeiko.biz.id",
         "USERCONTENT_ORIGIN": "https://uc.zeiko.biz.id",
         "EMAIL_FROM": "no-reply@zeiko.biz.id",
         "ADAPTER_EMAIL": "cloudflare",
-        "ADAPTER_PAYMENT": "mock",
+        "ADAPTER_PAYMENT": "zeiko",
+        "ADAPTER_ACCOUNTS": "zeiko",
+        "ZEIKO_DOOR_URL": "https://auth.zeiko.biz.id",
+        "ZEIKO_SITE_URL": "https://zeiko.biz.id",
         "ADAPTER_SCANNER": "container",
         "ADAPTER_CSAM": "mock",
         "ADAPTER_MEDIA": "cloudflare",

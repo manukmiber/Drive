@@ -119,32 +119,39 @@ function TopupDialog({
             />
             <span className="mt-1 block">{t.billing.minAmount(formatRupiah(min))}</span>
           </label>
-          <fieldset className="space-y-2">
-            <legend className="text-xs text-[var(--fg-muted)]">{t.billing.method}</legend>
-            {methods.map((m) => (
-              <label
-                key={m.code}
-                className={cn(
-                  'flex items-center gap-3 rounded-xl border p-3 text-sm',
-                  value < m.minIdr ? 'opacity-50' : '',
-                  method === m.code ? 'border-brand-500' : 'border-[var(--border)]',
-                )}
-              >
-                <input
-                  type="radio"
-                  name="method"
-                  value={m.code}
-                  checked={method === m.code}
-                  disabled={value < m.minIdr}
-                  onChange={() => setMethod(m.code)}
-                />
-                <span className="flex-1">{m.label}</span>
-                <span className="text-xs text-[var(--fg-muted)]">
-                  {t.billing.minAmount(formatRupiah(m.minIdr))}
-                </span>
-              </label>
-            ))}
-          </fieldset>
+          {methods.length > 1 && (
+            <fieldset className="space-y-2">
+              <legend className="text-xs text-[var(--fg-muted)]">{t.billing.method}</legend>
+              {methods.map((m) => (
+                <label
+                  key={m.code}
+                  className={cn(
+                    'flex items-center gap-3 rounded-xl border p-3 text-sm',
+                    value < m.minIdr ? 'opacity-50' : '',
+                    method === m.code ? 'border-brand-500' : 'border-[var(--border)]',
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name="method"
+                    value={m.code}
+                    checked={method === m.code}
+                    disabled={value < m.minIdr}
+                    onChange={() => setMethod(m.code)}
+                  />
+                  <span className="flex-1">{m.label}</span>
+                  <span className="text-xs text-[var(--fg-muted)]">
+                    {t.billing.minAmount(formatRupiah(m.minIdr))}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          {methods.length === 1 && (
+            <p className="text-xs text-[var(--fg-muted)]">
+              {t.billing.method}: {methods[0]?.label}
+            </p>
+          )}
           <Button
             className="w-full"
             disabled={value < min || create.isPending}

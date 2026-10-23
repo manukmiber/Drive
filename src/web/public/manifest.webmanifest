@@ -3,22 +3,22 @@
   "short_name": "Zeiko Drive",
   "description": "Simpan, buka, dan bagikan file dari mana saja.",
   "lang": "id",
-  "id": "/dashboard/",
-  "start_url": "/dashboard/",
-  "scope": "/dashboard/",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#4338ca",
   "icons": [
     {
-      "src": "/dashboard/favicon.svg",
+      "src": "/favicon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"
     }
   ],
   "share_target": {
-    "action": "/dashboard/share-target",
+    "action": "/share-target",
     "method": "POST",
     "enctype": "multipart/form-data",
     "params": {
@@ -37,11 +37,11 @@
   "shortcuts": [
     {
       "name": "Terbaru",
-      "url": "/dashboard/terbaru"
+      "url": "/terbaru"
     },
     {
       "name": "Dibagikan",
-      "url": "/dashboard/dibagikan"
+      "url": "/dibagikan"
     }
   ]
 }

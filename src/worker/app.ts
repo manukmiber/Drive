@@ -103,16 +103,25 @@ export function createApp() {
   app.post('/share-target', (c) => c.redirect(appPath(c.env, '/drive'), 303));
 
   // Everything else is the SPA / static assets (run_worker_first, see wrangler.jsonc). The SPA is
-  // at APP_BASE_PATH (ADR-036): on zeiko.biz.id the website owns `/`, and on an address of Drive's
-  // own (staging) `/` goes there.
+  // at the root of Drive's own address (ADR-038), or under APP_BASE_PATH when one is set.
   app.all('*', async (c) => {
     const url = new URL(c.req.url);
     const base = basePath(c.env);
-    if (url.pathname === '/' || url.pathname === base) return c.redirect(`${base}/`, 302);
+    // The app used to be at zeiko.biz.id/dashboard (ADR-036), and the website still sends people
+    // back here through that path: /dashboard/drive is /drive.
+    if (!base && /^\/dashboard(\/|$)/.test(url.pathname)) {
+      const rest = url.pathname.slice('/dashboard'.length) || '/';
+      return c.redirect(`${rest}${url.search}`, 301);
+    }
+    if (base && (url.pathname === '/' || url.pathname === base)) return c.redirect(`${base}/`, 302);
     if (c.req.method === 'POST' && url.pathname === `${base}/share-target`)
       return c.redirect(appPath(c.env, '/drive'), 303);
     let res = await c.env.ASSETS.fetch(c.req.raw);
-    if (res.status === 404 && url.pathname.startsWith(`${base}/`) && !/\.[a-z0-9]+$/i.test(url.pathname)) {
+    if (
+      res.status === 404 &&
+      url.pathname.startsWith(`${base}/`) &&
+      !/\.[a-z0-9]+$/i.test(url.pathname)
+    ) {
       res = await c.env.ASSETS.fetch(new Request(new URL(`${base}/index.html`, url)));
     }
     const type = res.headers.get('content-type') ?? '';

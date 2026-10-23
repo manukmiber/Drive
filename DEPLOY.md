@@ -7,7 +7,7 @@ Ringkasnya: **kamu login, aku yang setup.** Semua resource dibuat oleh satu skri
 | | Kenapa |
 |---|---|
 | Akun Cloudflare dengan **Workers Paid** ($5/bulan) | Pengiriman email OTP ke alamat siapa pun dan Containers (ClamAV) hanya ada di paket ini. |
-| Domain **zeiko.biz.id** aktif di akun itu | App dipasang di `zeiko.biz.id` (production) / `staging.zeiko.biz.id`, plus `uc.` / `uc-staging.` untuk pratinjau file (origin terpisah demi keamanan). |
+| Domain **zeiko.biz.id** aktif di akun itu | App dipasang di `drive.zeiko.biz.id` (production, ADR-038; root `zeiko.biz.id` milik website) / `staging.zeiko.biz.id`, plus `uc.` / `uc-staging.` untuk pratinjau file (origin terpisah demi keamanan). |
 | **Email Service**: domain pengirim `zeiko.biz.id` terverifikasi | Untuk mengirim kode masuk dari `no-reply@zeiko.biz.id`. Ikuti panduan di dashboard → Email. |
 | R2 diaktifkan (dashboard → R2 → Enable) | Tempat file disimpan (bucket privat, tidak pernah publik). |
 
@@ -57,7 +57,10 @@ ditolak dengan alasan "terlalu besar" tanpa memotong kredit. Images dan Media Tr
 diaktifkan sekali di dashboard (Images → Transformations, Stream → Media Transformations).
 
 ### Domain lain
-Kalau root `zeiko.biz.id` sudah dipakai: `--app-origin https://drive.zeiko.biz.id --uc-origin https://uc.zeiko.biz.id`.
+Production sudah memakai `drive.zeiko.biz.id` (ADR-038). Alamat lain bisa diberikan dengan
+`--app-origin https://… --uc-origin https://…`; pakai subdomain satu tingkat saja (sertifikat universal
+Cloudflare tidak mencakup `a.b.zeiko.biz.id`). Setelah alamat berubah, ganti juga URL Drive di relay
+(Zeiko Drive → Setup) supaya callback pembayaran dan layar ops sampai.
 
 ## 4. Setelah deploy
 

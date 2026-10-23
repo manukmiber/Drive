@@ -1,7 +1,7 @@
 // Zeiko Accounts (ADR-036): the sign-in door of the owner's relay (`ZEIKO_DOOR_URL`,
-// https://auth.zeiko.biz.id) knows who a person is and takes their payments in rupiah, by QRIS
-// (checked by the operator) or crypto. Server to server with `ZEIKO_APP_TOKEN`; the relay's
-// payment callbacks are signed with `ZEIKO_OPS_TOKEN`.
+// https://auth.zeiko.biz.id) knows who a person is and takes their payments in rupiah. Drive asks
+// for QRIS only (ADR-038), checked by the operator. Server to server with `ZEIKO_APP_TOKEN`; the
+// relay's payment callbacks are signed with `ZEIKO_OPS_TOKEN`.
 import type { PaymentStatus } from '../../shared/enums';
 import { AppError } from '../lib/errors';
 import { hmacSha256, timingSafeEqual, toHex } from '../lib/crypto';

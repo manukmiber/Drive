@@ -8,12 +8,11 @@ const API = `http://127.0.0.1:${process.env.ZEIKO_API_PORT ?? '8790'}`;
 export default defineConfig({
   root: 'src/web',
   publicDir: 'public',
-  // The app is served at zeiko.biz.id/dashboard beside the website (ADR-036): its files live
-  // under dist/web/dashboard, so the asset paths and the URLs agree.
-  base: '/dashboard/',
+  // The app is served at the root of its own address, drive.zeiko.biz.id (ADR-038).
+  base: '/',
   plugins: [react(), tailwindcss()],
   build: {
-    outDir: '../../dist/web/dashboard',
+    outDir: '../../dist/web',
     emptyOutDir: true,
     sourcemap: true,
   },
@@ -30,6 +29,8 @@ export default defineConfig({
       '/share-target': API,
       '/ad/': API,
       '/__dev': API,
+      // The old address of the app, still the website's way back here: the Worker forwards it.
+      '^/dashboard(/|$)': API,
       // Share links: first path segment is exactly 64 base62 chars (SPEC §6.1).
       '^/[0-9A-Za-z]{64}/': API,
     },

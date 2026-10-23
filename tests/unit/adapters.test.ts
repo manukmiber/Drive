@@ -64,7 +64,7 @@ describe('Zeiko Accounts payments (ADR-036)', () => {
         expiresAt: NOW + 3_600_000,
       }),
     );
-    const p = new ZeikoPaymentProvider('https://door.test/', 'app-tok', 'ops', 'https://d.test/dashboard/paket', () => NOW, fake);
+    const p = new ZeikoPaymentProvider('https://door.test/', 'app-tok', 'ops', 'https://d.test/paket', () => NOW, fake);
     const charge = await p.createCharge({
       paymentId: '01JPAY',
       amountIdr: 25_000,
@@ -89,19 +89,19 @@ describe('Zeiko Accounts payments (ADR-036)', () => {
         amountIdr: 25_000,
         description: 'Isi Saldo',
         method: 'qris',
-        returnUrl: 'https://d.test/dashboard/paket',
+        returnUrl: 'https://d.test/paket',
       },
     });
   });
 
   it('says the door refused in its own words', async () => {
     const { fake } = door(() =>
-      Response.json({ error: { message: 'Crypto is for Rp 50.000 and up.' } }, { status: 400 }),
+      Response.json({ error: { message: 'Paying by QRIS is not open right now.' } }, { status: 409 }),
     );
     const p = new ZeikoPaymentProvider('https://door.test', 't', 'o', 'https://d.test/x', () => NOW, fake);
     await expect(
-      p.createCharge({ paymentId: 'x', amountIdr: 1, method: 'crypto', description: '', customerEmail: '', customerRef: 'z' }),
-    ).rejects.toThrow(/Crypto is for/);
+      p.createCharge({ paymentId: 'x', amountIdr: 1, method: 'qris', description: '', customerEmail: '', customerRef: 'z' }),
+    ).rejects.toThrow(/not open right now/);
   });
 
   it('accepts only a fresh callback signed with the ops key', async () => {

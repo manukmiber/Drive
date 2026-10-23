@@ -1,4 +1,5 @@
 import type { Env } from '../env';
+import { basePath } from '../lib/paths';
 import {
   CloudflareEmailSender,
   MockEmailSender,
@@ -44,7 +45,7 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
       : env.ADAPTER_EMAIL === 'relay' && env.MAIL_RELAY_URL && env.MAIL_RELAY_TOKEN
         ? new RelayEmailSender(env.MAIL_RELAY_URL, env.MAIL_RELAY_TOKEN)
         : new MockEmailSender(env.CONFIG_KV, env.EMAIL_FROM);
-  const base = env.APP_BASE_PATH ?? '/dashboard';
+  const base = basePath(env);
   const payment: PaymentProvider =
     env.ADAPTER_PAYMENT === 'zeiko' && zeikoReady(env) && env.ZEIKO_OPS_TOKEN
       ? new ZeikoPaymentProvider(
