@@ -413,30 +413,33 @@
           "custom_domain": true
         }
       ],
-      "limits": {
-        "cpu_ms": 300000
+      "triggers": {
+        "crons": [
+          "5 * * * *"
+        ]
       },
       "vars": {
         "APP_ENV": "production",
         "APP_ORIGIN": "https://drive.zeiko.biz.id",
         "USERCONTENT_ORIGIN": "https://uc.zeiko.biz.id",
         "EMAIL_FROM": "no-reply@zeiko.biz.id",
-        "ADAPTER_EMAIL": "cloudflare",
+        "ADAPTER_EMAIL": "relay",
+        "MAIL_RELAY_URL": "https://mailer.zeiko.biz.id",
         "ADAPTER_PAYMENT": "zeiko",
         "ADAPTER_ACCOUNTS": "zeiko",
         "ZEIKO_DOOR_URL": "https://auth.zeiko.biz.id",
         "ZEIKO_SITE_URL": "https://zeiko.biz.id",
-        "ADAPTER_SCANNER": "container",
+        "ADAPTER_SCANNER": "mock",
         "ADAPTER_CSAM": "mock",
         "ADAPTER_MEDIA": "cloudflare",
-        "ADAPTER_ARCHIVER": "container",
+        "ADAPTER_ARCHIVER": "none",
         "R2_BUCKET_NAME": "zeiko-production"
       },
       "d1_databases": [
         {
           "binding": "DB",
           "database_name": "zeiko-production",
-          "database_id": "REPLACE_WITH_PRODUCTION_D1_ID",
+          "database_id": "4f80570d-4b92-45b2-b38b-a0ce8858b357",
           "migrations_dir": "migrations"
         }
       ],
@@ -449,7 +452,7 @@
       "kv_namespaces": [
         {
           "binding": "CONFIG_KV",
-          "id": "REPLACE_WITH_PRODUCTION_KV_ID"
+          "id": "da96bcde410f45f28c29c08de2bd6009"
         }
       ],
       "queues": {
@@ -582,50 +585,6 @@
       },
       "media": {
         "binding": "MEDIA"
-      },
-      "send_email": [
-        {
-          "name": "EMAIL",
-          "allowed_sender_addresses": [
-            "no-reply@zeiko.biz.id"
-          ]
-        }
-      ],
-      "containers": [
-        {
-          "class_name": "ArchiverContainer",
-          "image": "./containers/archiver/Dockerfile",
-          "instance_type": "standard-2",
-          "max_instances": 5
-        },
-        {
-          "class_name": "MediaContainer",
-          "image": "./containers/media/Dockerfile",
-          "instance_type": "standard-2",
-          "max_instances": 5
-        },
-        {
-          "class_name": "ScannerContainer",
-          "image": "./containers/scanner/Dockerfile",
-          "instance_type": "standard-1",
-          "max_instances": 10
-        }
-      ],
-      "durable_objects": {
-        "bindings": [
-          {
-            "name": "ARCHIVER",
-            "class_name": "ArchiverContainer"
-          },
-          {
-            "name": "MEDIA_CONTAINER",
-            "class_name": "MediaContainer"
-          },
-          {
-            "name": "SCANNER",
-            "class_name": "ScannerContainer"
-          }
-        ]
       }
     }
   }

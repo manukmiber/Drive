@@ -39,9 +39,11 @@ const GENERATED_SECRETS = [
   'PAYMENT_WEBHOOK_SECRET',
   'TELEGRAM_WEBHOOK_SECRET',
 ];
+// ZEIKO_APP_TOKEN and ZEIKO_OPS_TOKEN are the relay's (Zeiko Drive → Setup → Connect Drive, ADR-036):
+// without the first nobody can sign in, without the second no payment is confirmed.
 const OWNER_SECRETS = [
-  'GOOGLE_CLIENT_ID',
-  'GOOGLE_CLIENT_SECRET',
+  'ZEIKO_APP_TOKEN',
+  'ZEIKO_OPS_TOKEN',
   'TELEGRAM_BOT_TOKEN',
   'TURNSTILE_SECRET_KEY',
 ];
@@ -216,5 +218,5 @@ if (ownerMissing.length) {
 }
 
 console.log(
-  `\nSelesai. App: ${state.appOrigin ?? (env === 'staging' ? 'https://staging.zeiko.biz.id' : 'https://zeiko.biz.id')}\n`,
+  `\nSelesai. App: ${state.appOrigin ?? (env === 'staging' ? 'https://staging.zeiko.biz.id' : 'https://drive.zeiko.biz.id')}\n`,
 );
