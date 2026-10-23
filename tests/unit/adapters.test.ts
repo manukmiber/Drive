@@ -145,3 +145,37 @@ describe('Zeiko Accounts sign-in tickets', () => {
     });
   });
 });
+
+/**
+ * The Workers runtime's `fetch` throws "Illegal invocation" when called with a `this` other than
+ * the global one (Node's does not), so an adapter calling `this.fetcher(…)` fails only in
+ * production. This stand-in behaves like the runtime.
+ */
+function workersFetch(answer: () => Response): typeof fetch {
+  return function (this: unknown) {
+    if (this !== undefined && this !== globalThis) {
+      return Promise.reject(new TypeError('Illegal invocation'));
+    }
+    return Promise.resolve(answer());
+  } as typeof fetch;
+}
+
+describe('adapters call fetch the way the Workers runtime allows', () => {
+  it('redeems a ticket', async () => {
+    const fake = workersFetch(() =>
+      Response.json({
+        account: { id: 'zk_1', email: 'a@b.test', username: 'a', name: 'A', emailVerified: true },
+      }),
+    );
+    const a = await new RelayZeikoAccounts('https://door.test', 'app', fake).redeemTicket('t');
+    expect(a.id).toBe('zk_1');
+  });
+
+  it('sends a mail through the relay mailer', async () => {
+    const fake = workersFetch(() => Response.json({ id: 'm1' }));
+    const sender = new RelayEmailSender('https://mailer.example', 'tok', fake);
+    await expect(
+      sender.send({ to: ['x@y.test'], subject: 's', text: 't', tag: 'share' }),
+    ).resolves.toBeTruthy();
+  });
+});

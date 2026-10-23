@@ -43,14 +43,18 @@ export class CloudflareEmailSender implements EmailSender {
  */
 export class RelayEmailSender implements EmailSender {
   readonly name = 'relay';
+  /** A plain function, never `this.fetcher(…)`: Workers' `fetch` refuses another `this`. */
+  private post: typeof fetch;
   constructor(
     private url: string,
     private token: string,
-    private fetcher: typeof fetch = fetch,
-  ) {}
+    fetcher: typeof fetch = fetch,
+  ) {
+    this.post = (input, init) => fetcher(input, init);
+  }
   async send(msg: OutboundEmail): Promise<{ id: string }> {
     for (const to of msg.to) {
-      const res = await this.fetcher(this.url, {
+      const res = await this.post(this.url, {
         method: 'POST',
         headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
         body: JSON.stringify({

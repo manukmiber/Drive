@@ -33,16 +33,25 @@ interface Answer {
 
 /** The door's `/apps/v1` routes. */
 class Door {
+  /**
+   * Called as a plain function, never as `this.fetcher(…)`: the Workers runtime refuses its global
+   * `fetch` called with another `this` ("Illegal invocation"), which Node lets through, so the
+   * tests never saw it and every sign-in failed in production.
+   */
+  private send: typeof fetch;
+
   constructor(
     private base: string,
     private token: string,
-    private fetcher: typeof fetch,
-  ) {}
+    fetcher: typeof fetch,
+  ) {
+    this.send = (input, init) => fetcher(input, init);
+  }
 
   async call(method: 'GET' | 'POST', path: string, body?: unknown): Promise<Answer> {
     let res: Response;
     try {
-      res = await this.fetcher(`${this.base.replace(/\/+$/, '')}${path}`, {
+      res = await this.send(`${this.base.replace(/\/+$/, '')}${path}`, {
         method,
         headers: {
           authorization: `Bearer ${this.token}`,
