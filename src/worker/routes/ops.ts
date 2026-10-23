@@ -14,6 +14,7 @@ import {
   configView,
   dashboard,
   grantPlan,
+  peopleByZeikoId,
   searchUsers,
   setBonusQuota,
   setUserSuspended,
@@ -78,6 +79,12 @@ export const ops = new Hono<AppBindings>()
   )
   .get('/users', validate('query', z.object({ q: z.string().max(200).default('') })), async (c) =>
     c.json({ items: await searchUsers(c.get('ctx'), c.req.valid('query').q) }),
+  )
+  // The relay's one People list (Zeiko Accounts, ADR-040) asks for Drive's side of a page of people.
+  .post(
+    '/people',
+    validate('json', z.object({ zeikoIds: z.array(z.string().max(128)).max(500) })),
+    async (c) => c.json({ items: await peopleByZeikoId(c.get('ctx'), c.req.valid('json').zeikoIds) }),
   )
   .post(
     '/users/:id/balance',

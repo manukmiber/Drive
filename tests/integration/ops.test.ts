@@ -83,4 +83,26 @@ describe('ops API for the relay', () => {
     expect(me.subscription?.planCode).toBe('plus');
     expect(me.storage.limitBytes).toBe(found.items[0]!.limitBytes);
   });
+
+  it('answers for a page of Zeiko Accounts, by their ids (ADR-040)', async () => {
+    const { rt, ops } = await setup();
+    const a = await signIn(rt, 'ani@example.com');
+    await signIn(rt, 'budi@example.com');
+    await ops('POST', `/users/${a.userId}/plan`, { planCode: 'plus', months: 1, reason: 'uji coba' });
+    // More ids than one statement may bind, most of them nobody's.
+    const ids = [
+      'zk_ani_example_com',
+      ...Array.from({ length: 150 }, (_, i) => `zk_nobody_${i}`),
+      'zk_budi_example_com',
+    ];
+    const res = await ops('POST', '/people', { zeikoIds: ids });
+    expect(res.status).toBe(200);
+    const { items } = (await res.json()) as {
+      items: Record<string, { id: string; planCode: string | null; planName: string | null; balanceIdr: number }>;
+    };
+    expect(Object.keys(items).sort()).toEqual(['zk_ani_example_com', 'zk_budi_example_com']);
+    expect(items.zk_ani_example_com).toMatchObject({ id: a.userId, planCode: 'plus', planName: 'Plus', balanceIdr: 0 });
+    expect(items.zk_budi_example_com?.planCode).toBeNull();
+    expect((await ops('POST', '/people', { zeikoIds: ['x'] }, 'wrong-wrong-wrong-wrong-wrong-wrong')).status).toBe(404);
+  });
 });

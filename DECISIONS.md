@@ -539,3 +539,22 @@ juga memutar lewat `zeiko.biz.id/dashboard/masuk` (ADR-038), yang bergantung pad
 (login diam-diam gagal) dan `next` ke Drive ditolak.
 
 Tes: `tests/integration/auth.test.ts` (`zeikoId` di `/api/me`; login lagi mengakhiri sesi lama).
+
+## ADR-040 — Orang Drive diatur di Zeiko Accounts → People (satu daftar untuk tiga produk)
+
+**Konteks:** permintaan pemilik (2026-10-23): "People di dashboard relay bagian drive itu jadiin satu aja
+dengan Zeiko account biar mudah ngaturnya dan ga kebanyakan akun. Jadi ZeikoAI, ZeikoChat, dan Zeiko Drive
+itu cukup satu akun." Identitasnya memang sudah satu sejak ADR-036 (tiap user Drive ditautkan ke Akun Zeiko
+lewat `accounts.provider_id = 'zeiko'`), tetapi dashboard relay punya dua daftar orang.
+
+**Keputusan:**
+- Ops API baru `POST /api/ops/people {zeikoIds}` (`services/admin.ts::peopleByZeikoId`): untuk setiap id Akun
+  Zeiko yang punya user Drive, kembalikan paket (kode, nama, status, akhir periode), storage (terpakai, batas,
+  bonus), Saldo, dan status user. Id tanpa user Drive tidak disertakan. D1 hanya menerima 100 parameter per
+  statement, jadi id dipecah per 90. Tidak ada apa pun tentang isi file.
+- Dashboard relay: **Zeiko Accounts → People** menampilkan kolom Zeiko Drive dan bagian Drive di laci orang
+  (ubah Saldo, bonus storage, beri paket, suspend) memakai endpoint `/users/:id/*` yang sudah ada, dengan
+  alasan wajib (audit log Drive). Tab People di layar Zeiko Drive dihapus.
+- Kalau Drive tidak menjawab, daftar People relay tetap tampil dan menyebut alasannya.
+
+Tes: `tests/integration/ops.test.ts` (lookup per id Akun Zeiko, lebih dari 100 id, ops key salah = 404).

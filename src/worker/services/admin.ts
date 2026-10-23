@@ -174,6 +174,42 @@ export async function searchUsers(ctx: Ctx, q: string) {
   return results;
 }
 
+/** D1 binds at most 100 values per statement. */
+const IDS_PER_QUERY = 90;
+
+/**
+ * Drive's side of the people the relay lists on Zeiko Accounts (ADR-040): for each Zeiko Account
+ * id that has a Drive user, that user's plan, storage, Saldo and standing. Ids with no Drive user
+ * are left out. Nothing about anybody's files.
+ */
+export async function peopleByZeikoId(ctx: Ctx, zeikoIds: string[]) {
+  const ids = [...new Set(zeikoIds.filter((id) => typeof id === 'string' && id.length <= 128))];
+  const out: Record<string, unknown> = {};
+  for (let i = 0; i < ids.length; i += IDS_PER_QUERY) {
+    const part = ids.slice(i, i + IDS_PER_QUERY);
+    const { results } = await ctx.env.DB.prepare(
+      `SELECT a.account_id AS zeikoId, u.id, u.email, u.name, u.role, u.status, u.created_at AS createdAt,
+              sp.limit_bytes AS limitBytes, sp.used_bytes AS usedBytes, sp.bonus_bytes AS bonusBytes,
+              s.plan_code AS planCode, s.status AS subStatus, s.period_end AS periodEnd, p.name AS planName,
+              COALESCE(w.balance_idr, 0) AS balanceIdr
+       FROM accounts a JOIN users u ON u.id = a.user_id
+       LEFT JOIN storage_pools sp ON sp.owner_type = 'user' AND sp.owner_id = u.id
+       LEFT JOIN subscriptions s ON s.id = (SELECT id FROM subscriptions WHERE pool_id = sp.id
+                                            ORDER BY created_at DESC LIMIT 1)
+       LEFT JOIN plans p ON p.code = s.plan_code
+       LEFT JOIN wallets w ON w.user_id = u.id
+       WHERE a.provider_id = 'zeiko' AND a.account_id IN (${part.map((_, j) => `?${j + 1}`).join(', ')})`,
+    )
+      .bind(...part)
+      .all();
+    for (const row of results as Array<Record<string, unknown>>) {
+      const { zeikoId, ...rest } = row;
+      out[String(zeikoId)] = rest;
+    }
+  }
+  return out;
+}
+
 export async function setUserSuspended(
   ctx: Ctx,
   actorId: string,
