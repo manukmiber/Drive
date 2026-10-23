@@ -22,7 +22,7 @@ import {
 import { nodeInfo } from '../lib/files';
 import type { Catalog } from '../lib/types';
 
-const card = 'rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5';
+const card = 'z-card rounded-2xl p-5';
 const active = (j: CompressJob) => ['uploading', 'queued', 'running'].includes(j.status);
 
 export function Compress() {

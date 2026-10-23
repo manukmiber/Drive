@@ -6,7 +6,7 @@ import { Check, Printer, Wallet } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 import { formatBytes, formatDate, formatDateTime, formatRupiah } from '../../shared/format';
-import { t } from '../lib/i18n';
+import { lang, t } from '../lib/i18n';
 import { Button } from '../components/Button';
 import { StorageMeter } from '../components/StorageMeter';
 import { Dialog } from '../components/ui/Dialog';
@@ -15,7 +15,7 @@ import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { cn } from '../lib/cn';
 import type { BillingSummary, Catalog, Invoice, Plan, Topup } from '../lib/types';
 
-const card = 'rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5';
+const card = 'z-card rounded-2xl p-5';
 const billingKey = ['billing'] as const;
 
 type Then = { kind: 'plan' | 'addon' | 'compress'; code: string };
@@ -183,10 +183,6 @@ function TopupDialog({
       )}
     </Dialog>
   );
-}
-
-function perGb(priceIdr: number, bytes: number): string {
-  return formatRupiah(Math.round(priceIdr / (bytes / 2 ** 30)));
 }
 
 export function Billing() {
@@ -363,21 +359,23 @@ export function Billing() {
                   className={cn(
                     card,
                     'flex flex-col',
-                    isCurrent && 'border-brand-500 ring-1 ring-brand-500',
+                    isCurrent &&
+                      'border-brand-500 shadow-[0_18px_44px_-22px_rgba(99,102,241,0.75)] ring-1 ring-brand-500',
                   )}
                 >
                   <p className="font-medium">{p.name}</p>
-                  <p className="mt-1 text-2xl font-semibold">{formatBytes(p.storageBytes)}</p>
+                  <p className="mt-1 text-3xl font-bold tracking-tight">
+                    {formatBytes(p.storageBytes)}
+                  </p>
                   <p className="text-sm">
                     {formatRupiah(p.priceIdr)}
                     <span className="text-[var(--fg-muted)]">{t.billing.perMonth}</span>
                   </p>
-                  <p className="text-xs text-[var(--fg-muted)]">
-                    {t.billing.perGb(perGb(p.priceIdr, p.storageBytes))}
-                  </p>
                   {p.compressQuota > 0 && (
                     <p className="mt-1 text-xs text-[var(--fg-muted)]">
-                      {p.compressQuota} kompres/bulan
+                      {t.billing.compressPerMonth(
+                        p.compressQuota.toLocaleString(lang === 'id' ? 'id-ID' : 'en-US'),
+                      )}
                     </p>
                   )}
                   <div className="flex-1" />
@@ -417,10 +415,7 @@ export function Billing() {
               <li key={a.code} className="flex items-center gap-3 py-2 text-sm">
                 <span className="flex-1">
                   {a.name} · {formatRupiah(a.priceIdr)}
-                  {t.billing.perMonth}{' '}
-                  <span className="text-xs text-[var(--fg-muted)]">
-                    ({t.billing.perGb(perGb(a.priceIdr, a.storageBytes))})
-                  </span>
+                  {t.billing.perMonth}
                 </span>
                 <Button
                   variant="secondary"

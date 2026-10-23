@@ -7,7 +7,7 @@ import { toast } from '../components/ui/Toast';
 import { t } from '../lib/i18n';
 import { door, sitePage, zeikoConfig } from '../lib/zeiko';
 
-const card = 'rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5';
+const card = 'z-card rounded-2xl p-5';
 const linkBtn =
   'inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium hover:bg-[var(--bg-subtle)]';
 

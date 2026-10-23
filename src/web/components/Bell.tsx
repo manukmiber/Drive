@@ -54,7 +54,7 @@ export function Bell() {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-xl">
+        <div className="absolute right-0 z-50 mt-2 w-[min(92vw,22rem)] overflow-hidden z-card rounded-2xl shadow-xl">
           <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2">
             <p className="text-sm font-medium">{t.nav.notifications}</p>
             {unread > 0 && (

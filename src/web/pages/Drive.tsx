@@ -60,15 +60,25 @@ export function Drive({ folderId }: { folderId?: string }) {
   const items = useMemo(() => q.data?.pages.flatMap((p) => p.items) ?? [], [q.data]);
   const path = q.data?.pages[0]?.path ?? [];
   const folder = q.data?.pages[0]?.folder;
+  // The two roots are named when the space is made, in the language of that moment; show them
+  // in the language the app is in now.
+  const space = me.data?.space;
+  const nameOf = (f: { id: string; name: string }) =>
+    f.id === space?.personalRootId
+      ? t.nav.myDrive
+      : f.id === space?.familyRootId
+        ? t.nav.familyDrive
+        : f.name;
+  const folderName = folder ? nameOf(folder) : '';
 
   useEffect(() => {
-    if (folder) setCurrentFolder({ id: folder.id, name: folder.name });
+    if (folder) setCurrentFolder({ id: folder.id, name: folderName });
     return () => setCurrentFolder(null);
-  }, [folder]);
+  }, [folder, folderName]);
 
   useEffect(() => {
-    if (folder) document.title = `${folder.name} · Zeiko`;
-  }, [folder]);
+    if (folder) document.title = `${folderName} · Zeiko`;
+  }, [folder, folderName]);
 
   // Files shared into the installed PWA from other apps (Web Share Target) → Drive Saya.
   useEffect(() => {
@@ -129,10 +139,10 @@ export function Drive({ folderId }: { folderId?: string }) {
         }
       }}
       className={cn(
-        'rounded-full px-3 py-1 text-xs',
+        'rounded-lg px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors sm:px-3',
         sort === key
-          ? 'bg-brand-100 text-brand-800 dark:bg-brand-800/50 dark:text-brand-100'
-          : 'hover:bg-[var(--bg-subtle)]',
+          ? 'bg-[var(--card)] text-[var(--fg)] shadow-sm ring-1 ring-[var(--border)]'
+          : 'text-[var(--fg-muted)] hover:text-[var(--fg)]',
       )}
       aria-pressed={sort === key}
     >
@@ -158,8 +168,11 @@ export function Drive({ folderId }: { folderId?: string }) {
       }}
       onDrop={onDrop}
     >
-      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--bg)] px-4 py-2">
-        <nav aria-label={t.a11y.location} className="flex min-w-0 flex-1 items-center gap-1 text-lg">
+      <div className="z-glass sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-4 py-2 md:px-6">
+        <nav
+          aria-label={t.a11y.location}
+          className="flex min-w-0 flex-1 items-center gap-1 text-lg"
+        >
           {path.map((c, i) => (
             <span key={c.id} className="flex min-w-0 items-center gap-1">
               {i > 0 && (
@@ -169,13 +182,13 @@ export function Drive({ folderId }: { folderId?: string }) {
                 />
               )}
               {i === path.length - 1 ? (
-                <span className="truncate font-medium">{c.name}</span>
+                <span className="truncate font-semibold tracking-tight">{nameOf(c)}</span>
               ) : i === 0 ? (
                 <Link
                   to={c.id === me.data?.space.familyRootId ? '/keluarga' : '/drive'}
-                  className="truncate rounded px-1 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]"
+                  className="truncate rounded-md px-1.5 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
                 >
-                  {c.name}
+                  {nameOf(c)}
                 </Link>
               ) : (
                 <Link
@@ -189,10 +202,12 @@ export function Drive({ folderId }: { folderId?: string }) {
             </span>
           ))}
         </nav>
-        <div className="flex items-center gap-1">
-          {sortButton('name', t.files.sortName)}
-          {sortButton('updated', t.files.sortDate)}
-          {sortButton('size', t.files.sortSize)}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-0.5 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] p-0.5">
+            {sortButton('name', t.files.sortName)}
+            {sortButton('updated', t.files.sortDate)}
+            {sortButton('size', t.files.sortSize)}
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -200,7 +215,7 @@ export function Drive({ folderId }: { folderId?: string }) {
               setView(v);
               writePref('zk.view', v);
             }}
-            className="ml-1 rounded-full p-2 hover:bg-[var(--bg-subtle)]"
+            className="rounded-xl border border-[var(--border)] p-2 text-[var(--fg-muted)] transition-colors hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
             aria-label={view === 'list' ? t.files.gridView : t.files.listView}
             title={view === 'list' ? t.files.gridView : t.files.listView}
           >
@@ -216,12 +231,14 @@ export function Drive({ folderId }: { folderId?: string }) {
           key={id}
           items={items}
           view={view}
-          label={folder?.name ?? ''}
+          label={folderName}
           onPaste={(clip) => void paste(clip)}
           empty={
-            <div className="m-6 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-[var(--border)] p-10 text-center text-sm text-[var(--fg-muted)]">
-              <UploadCloud className="h-10 w-10 text-brand-500" aria-hidden="true" />
-              {t.files.emptyFolder}
+            <div className="m-4 flex flex-col items-center gap-4 rounded-3xl border border-dashed border-[var(--border-strong)] px-6 py-14 text-center text-sm text-[var(--fg-muted)] [background:radial-gradient(60%_80%_at_50%_0%,var(--glow),transparent_70%)] md:m-6">
+              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-teal-500 text-white shadow-[0_14px_30px_-12px_rgba(79,70,229,0.6)]">
+                <UploadCloud className="h-8 w-8" aria-hidden="true" />
+              </span>
+              <span className="max-w-sm">{t.files.emptyFolder}</span>
             </div>
           }
         />
@@ -238,7 +255,7 @@ export function Drive({ folderId }: { folderId?: string }) {
 
       {dragging && folder && (
         <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand-500 bg-brand-50/80 text-brand-800 dark:bg-brand-800/40 dark:text-brand-100">
-          {t.upload.dropHere(folder.name)}
+          {t.upload.dropHere(folderName)}
         </div>
       )}
     </div>

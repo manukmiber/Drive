@@ -278,7 +278,7 @@ export const en: Strings = {
     upgrade: 'Upgrade',
     downgrade: 'Downgrade',
     perMonth: '/month',
-    perGb: (p: string) => `${p}/GB`,
+    compressPerMonth: (n: string) => `${n} compressions a month`,
     renewsOn: (d: string) => `Renews by itself on ${d}`,
     endsOn: (d: string) => `Ends ${d}`,
     nextPlan: (name: string, d: string) => `Moves to ${name} on ${d}`,

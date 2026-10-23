@@ -48,7 +48,7 @@ export function Report({ share, ad }: { share?: string | undefined; ad?: string 
 
   return (
     <div className="flex min-h-screen items-start justify-center bg-[var(--bg-subtle)] p-4 sm:items-center">
-      <main className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+      <main className="w-full max-w-md z-card rounded-2xl p-6">
         <Logo />
         <h1 className="mt-4 text-lg font-semibold">{t.report.title}</h1>
         {state === 'sent' ? (

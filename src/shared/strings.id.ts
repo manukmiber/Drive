@@ -276,7 +276,7 @@ export const t = {
     upgrade: 'Upgrade',
     downgrade: 'Turunkan',
     perMonth: '/bulan',
-    perGb: (p: string) => `${p}/GB`,
+    compressPerMonth: (n: string) => `${n} kompres/bulan`,
     renewsOn: (d: string) => `Diperpanjang otomatis ${d}`,
     endsOn: (d: string) => `Berakhir ${d}`,
     nextPlan: (name: string, d: string) => `Turun ke ${name} mulai ${d}`,

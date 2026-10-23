@@ -65,7 +65,7 @@ export function SignIn() {
 
   return (
     <div className="flex min-h-full items-center justify-center bg-[var(--bg-subtle)] p-4">
-      <div className="w-full max-w-sm rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6 shadow-sm">
+      <div className="w-full max-w-sm z-card rounded-2xl p-6 shadow-sm">
         <Logo />
         <h1 className="mt-6 text-xl font-semibold">{t.auth.signInTitle}</h1>
         <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.auth.signInSubtitle}</p>

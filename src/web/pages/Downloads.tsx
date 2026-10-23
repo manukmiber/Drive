@@ -24,7 +24,7 @@ export function Downloads() {
       {q.isSuccess && !jobs.length && (
         <p className="text-sm text-[var(--fg-muted)]">{t.archive.empty}</p>
       )}
-      <ul className="divide-y divide-[var(--border)] rounded-2xl border border-[var(--border)] bg-[var(--card)]">
+      <ul className="divide-y divide-[var(--border)] z-card rounded-2xl">
         {jobs.map((j) => (
           <li key={j.id} className="flex items-center gap-3 p-4 text-sm">
             <Archive className="h-5 w-5 shrink-0 text-brand-600" aria-hidden="true" />

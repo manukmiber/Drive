@@ -29,7 +29,7 @@ export function ArchivePanel() {
   return (
     <section
       aria-label={t.archive.pageTitle}
-      className="fixed bottom-4 left-4 z-30 w-72 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-3 text-sm shadow-lg"
+      className="fixed bottom-4 left-4 z-30 w-72 z-card rounded-2xl p-3 text-sm shadow-lg"
     >
       <header className="mb-2 flex items-center justify-between">
         <Link to="/unduhan" className="flex items-center gap-2 font-medium hover:underline">

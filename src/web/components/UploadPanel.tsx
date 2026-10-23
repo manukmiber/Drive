@@ -202,7 +202,7 @@ export function UploadPanel() {
     <>
       <section
         aria-label={t.a11y.upload}
-        className="fixed right-2 bottom-20 z-40 w-[min(96vw,24rem)] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--card)] shadow-xl md:right-6 md:bottom-6"
+        className="fixed right-2 bottom-20 z-40 w-[min(96vw,24rem)] overflow-hidden z-card rounded-2xl shadow-xl md:right-6 md:bottom-6"
       >
         <header className="flex items-center gap-2 bg-[var(--bg-subtle)] px-4 py-3">
           <h2 className="flex-1 text-sm font-medium">

@@ -53,7 +53,7 @@ export function MoveDialog({
               key={id}
               type="button"
               onClick={() => setFolderId(id!)}
-              className={`rounded-full border px-3 py-1 text-xs ${path[0]?.id === id ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-[var(--border)]'}`}
+              className={`rounded-full border px-3 py-1 text-xs ${path[0]?.id === id ? 'border-brand-500 bg-brand-50 dark:bg-brand-800/40 text-brand-800' : 'border-[var(--border)]'}`}
             >
               {label}
             </button>

@@ -348,7 +348,7 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
                 'flex cursor-default flex-col overflow-hidden rounded-2xl border outline-none select-none focus-visible:ring-2 focus-visible:ring-brand-500',
                 sel.includes(node.id)
                   ? 'border-brand-500 bg-brand-50 dark:bg-brand-800/30'
-                  : 'border-[var(--border)] bg-[var(--card)] hover:bg-[var(--bg-subtle)]',
+                  : 'z-card transition-[transform,border-color] hover:-translate-y-0.5 hover:border-[var(--border-strong)]',
               )}
             >
               <div className="flex items-center gap-2 px-3 py-2">

@@ -44,7 +44,7 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
           type="button"
           onClick={open}
           disabled={!folder}
-          className="inline-flex h-12 w-fit items-center gap-3 rounded-2xl bg-[var(--card)] px-5 text-sm font-medium shadow-md ring-1 ring-[var(--border)] hover:bg-[var(--bg-subtle)] disabled:opacity-50"
+          className="z-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold disabled:opacity-50"
         >
           <Plus className="h-5 w-5" aria-hidden="true" />
           {t.nav.newButton}
@@ -55,7 +55,7 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
           onClick={open}
           disabled={!folder}
           aria-label={t.nav.newButton}
-          className="fixed right-4 bottom-20 z-30 flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-700 text-white shadow-lg disabled:opacity-50 md:hidden"
+          className="z-primary fixed right-4 bottom-24 z-30 flex h-14 w-14 items-center justify-center rounded-2xl disabled:opacity-50 md:hidden"
         >
           <Plus className="h-6 w-6" />
         </button>

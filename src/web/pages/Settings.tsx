@@ -13,7 +13,7 @@ import { downloadZip } from '../lib/files';
 import { authClient } from '../lib/auth-client';
 import { meQueryKey, useMe } from '../lib/session';
 
-const card = 'rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5';
+const card = 'z-card rounded-2xl p-5';
 const input =
   'h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 text-sm outline-none focus:border-brand-500';
 
@@ -65,7 +65,10 @@ export function Settings() {
     <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
       <h1 className="text-xl font-semibold">{t.nav.settings}</h1>
       {msg && (
-        <p role="status" className="rounded-xl bg-brand-50 px-4 py-2 text-sm text-brand-800">
+        <p
+          role="status"
+          className="rounded-xl bg-brand-50 dark:bg-brand-800/40 px-4 py-2 text-sm text-brand-800"
+        >
           {msg}
         </p>
       )}

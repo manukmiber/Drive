@@ -33,7 +33,7 @@ import { api, ApiError, postJson } from '../lib/api';
 import { useCatalog } from '../lib/catalog';
 import type { BillingSummary } from '../lib/types';
 
-const card = 'rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5';
+const card = 'z-card rounded-2xl p-5';
 const input =
   'mt-1 h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 text-sm outline-none focus:border-brand-500';
 const label = 'block text-xs text-[var(--fg-muted)]';
@@ -76,7 +76,7 @@ export function Advertiser() {
                 key={k}
                 type="button"
                 onClick={() => setTab(k)}
-                className={`rounded-full border px-4 py-1.5 text-sm ${tab === k ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-[var(--border)]'}`}
+                className={`rounded-full border px-4 py-1.5 text-sm ${tab === k ? 'border-brand-500 bg-brand-50 dark:bg-brand-800/40 text-brand-800' : 'border-[var(--border)]'}`}
               >
                 {t.ads.tabs[k]}
               </button>
@@ -639,7 +639,7 @@ function Book({ data, onDone }: { data: Dashboard; onDone: () => void }) {
                   onClick={() =>
                     setDates(on ? dates.filter((x) => x !== d.date) : [...dates, d.date])
                   }
-                  className={`rounded-xl border p-2 text-left text-xs disabled:opacity-40 ${on ? 'border-brand-500 bg-brand-50 text-brand-800' : 'border-[var(--border)]'}`}
+                  className={`rounded-xl border p-2 text-left text-xs disabled:opacity-40 ${on ? 'border-brand-500 bg-brand-50 dark:bg-brand-800/40 text-brand-800' : 'border-[var(--border)]'}`}
                 >
                   <span className="block font-medium">{fmtDay(d.date)}</span>
                   {t.ads.slotsLeft(d.remaining)}

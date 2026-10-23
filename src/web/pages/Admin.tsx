@@ -11,7 +11,7 @@ import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { cn } from '../lib/cn';
 import { useMe } from '../lib/session';
 
-const card = 'rounded-2xl border border-[var(--border)] bg-[var(--card)] p-4';
+const card = 'z-card rounded-2xl p-4';
 const input = 'h-9 w-full rounded-lg border border-[var(--border)] bg-transparent px-2 text-sm';
 type Tab = 'dashboard' | 'users' | 'reports' | 'ads' | 'scanner' | 'config' | 'catalog' | 'audit';
 

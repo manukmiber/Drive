@@ -124,7 +124,7 @@ export function AdCard({
       {ad.internal ? (
         <Link to="/iklan" className="flex gap-3">
           <Megaphone
-            className="h-10 w-10 shrink-0 rounded-lg bg-brand-50 p-2 text-brand-700"
+            className="h-10 w-10 shrink-0 rounded-lg bg-brand-50 dark:bg-brand-800/40 p-2 text-brand-700"
             aria-hidden="true"
           />
           <span>

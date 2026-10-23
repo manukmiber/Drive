@@ -28,7 +28,7 @@ export function Dialog({
       ref={ref}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
-      className="w-[min(92vw,26rem)] rounded-2xl border border-[var(--border)] bg-[var(--card)] p-0 text-[var(--fg)] backdrop:bg-black/40"
+      className="m-auto w-[min(92vw,26rem)] z-card rounded-2xl p-0 text-[var(--fg)] backdrop:bg-black/40"
     >
       {open && (
         <div className="p-5">

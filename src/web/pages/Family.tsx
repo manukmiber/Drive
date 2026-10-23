@@ -39,7 +39,7 @@ interface Overview {
   };
 }
 
-const card = 'rounded-2xl border border-[var(--border)] bg-[var(--card)] p-5';
+const card = 'z-card rounded-2xl p-5';
 const errText = (e: unknown) => (e instanceof ApiError ? `${e.message}` : t.errors.generic);
 
 function InvitePanel({ onDone }: { onDone: () => void }) {
@@ -175,7 +175,7 @@ function Members({ o }: { o: NonNullable<Overview['family']> }) {
         <ul className="mt-3 divide-y divide-[var(--border)]">
           {o.members.map((m) => (
             <li key={m.id} className="flex flex-wrap items-center gap-3 py-3">
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-800">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-brand-100 dark:bg-brand-800/50 text-sm font-semibold text-brand-800">
                 {(m.name || m.email).slice(0, 1).toUpperCase()}
               </span>
               <div className="min-w-0 flex-1">
@@ -441,7 +441,7 @@ export function JoinFamily({ token }: { token: string }) {
     !d || d.state !== 'valid' || !you || you.inFamily || you.cooldownUntil || !you.fits;
   return (
     <div className="flex min-h-screen items-start justify-center bg-[var(--bg-subtle)] p-4 sm:items-center">
-      <main className="w-full max-w-md rounded-2xl border border-[var(--border)] bg-[var(--card)] p-6">
+      <main className="w-full max-w-md z-card rounded-2xl p-6">
         <Logo />
         {q.isError && <p className="mt-4 text-sm">{t.share.linkNotFound}</p>}
         {d && (

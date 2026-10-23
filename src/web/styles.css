@@ -1,46 +1,87 @@
 @import 'tailwindcss';
 
-@custom-variant dark (&:where(.dark, .dark *));
+/* Dark mode follows the system unless the page pins a theme with .light or .dark on <html>.
+   The colour tokens below do the same, so `dark:` classes and tokens always agree. */
+@custom-variant dark {
+  &:where(.dark, .dark *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not(.light), :root:not(.light) *) {
+      @slot;
+    }
+  }
+}
 
 @theme {
-  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  --font-sans:
+    'InterVariable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
   --color-brand-50: #eef2ff;
   --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-300: #a5b4fc;
+  --color-brand-400: #818cf8;
   --color-brand-500: #6366f1;
   --color-brand-600: #4f46e5;
   --color-brand-700: #4338ca;
   --color-brand-800: #3730a3;
 }
 
+/* The same family of colours as the website (zeiko.biz.id): one indigo, deep neutral surfaces,
+   a light edge along the top of every raised surface. */
 :root {
-  --bg: #ffffff;
-  --bg-subtle: #f6f7fb;
-  --fg: #111827;
-  --fg-muted: #4b5563;
-  --border: #e5e7eb;
+  --bg: #f6f7fb;
+  --bg-subtle: #eef1f7;
+  --fg: #0a1022;
+  --fg-muted: #5b667b;
+  --border: #e1e5ee;
+  --border-strong: #ccd3e0;
   --card: #ffffff;
+  --card-grad: linear-gradient(180deg, #ffffff, #fbfcfe);
+  --glass: rgba(255, 255, 255, 0.74);
+  --hl: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  --glow: rgba(79, 70, 229, 0.12);
+  --accent: #4338ca;
+  --accent-soft: #eef0ff;
+  --shadow-lg: 0 30px 60px -24px rgba(13, 19, 36, 0.3), 0 8px 18px -8px rgba(13, 19, 36, 0.1);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(.light) {
-    --bg: #0f1117;
-    --bg-subtle: #161925;
-    --fg: #e5e7eb;
-    --fg-muted: #9ca3af;
-    --border: #262a36;
-    --card: #161925;
+    --bg: #05070d;
+    --bg-subtle: #111726;
+    --fg: #edf0f8;
+    --fg-muted: #8c97ad;
+    --border: #1b2335;
+    --border-strong: #2b3650;
+    --card: #0c111c;
+    --card-grad: linear-gradient(180deg, #0f1522, #0b101a);
+    --glass: rgba(9, 12, 21, 0.7);
+    --hl: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+    --glow: rgba(139, 149, 255, 0.14);
+    --accent: #a9afff;
+    --accent-soft: #151938;
+    --shadow-lg: 0 34px 70px -26px rgba(0, 0, 0, 0.85);
     color-scheme: dark;
   }
 }
 
 :root.dark {
-  --bg: #0f1117;
-  --bg-subtle: #161925;
-  --fg: #e5e7eb;
-  --fg-muted: #9ca3af;
-  --border: #262a36;
-  --card: #161925;
+  --bg: #05070d;
+  --bg-subtle: #111726;
+  --fg: #edf0f8;
+  --fg-muted: #8c97ad;
+  --border: #1b2335;
+  --border-strong: #2b3650;
+  --card: #0c111c;
+  --card-grad: linear-gradient(180deg, #0f1522, #0b101a);
+  --glass: rgba(9, 12, 21, 0.7);
+  --hl: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --glow: rgba(139, 149, 255, 0.14);
+  --accent: #a9afff;
+  --accent-soft: #151938;
+  --shadow-lg: 0 34px 70px -26px rgba(0, 0, 0, 0.85);
   color-scheme: dark;
 }
 
@@ -54,12 +95,128 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
+  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--color-brand-500) 30%, transparent);
 }
 
 :focus-visible {
   outline: 2px solid var(--color-brand-500);
   outline-offset: 2px;
+}
+
+/* Indigo text was drawn for a white page; on the dark one it sinks. Lift it to the lighter
+   shades there, for every link and label that uses it. */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) :is(.text-brand-700, .text-brand-800) {
+    color: var(--color-brand-300);
+  }
+  :root:not(.light) .border-brand-600 {
+    border-color: color-mix(in srgb, var(--color-brand-400) 60%, transparent);
+  }
+}
+:root.dark :is(.text-brand-700, .text-brand-800) {
+  color: var(--color-brand-300);
+}
+:root.dark .border-brand-600 {
+  border-color: color-mix(in srgb, var(--color-brand-400) 60%, transparent);
+}
+
+/* Thin scrollbars that match the surfaces. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/* ---------------------------------------------------------------- app shell */
+
+/* Component classes sit under the utilities, so a utility on the same element still wins. */
+@layer components {
+  /* A faint indigo light at the top of the app, behind everything. */
+  .z-shell {
+    background:
+      radial-gradient(60% 40% at 85% -10%, var(--glow), transparent 70%),
+      radial-gradient(
+        40% 30% at 0% -5%,
+        color-mix(in srgb, #2dd4bf 7%, transparent),
+        transparent 70%
+      ),
+      var(--bg);
+  }
+
+  .z-side {
+    background: color-mix(in srgb, var(--card) 55%, transparent);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .z-glass {
+    background: var(--glass);
+    backdrop-filter: saturate(1.6) blur(16px);
+    -webkit-backdrop-filter: saturate(1.6) blur(16px);
+  }
+
+  /* Raised surfaces: a card that catches a little light along its top edge. */
+  .z-card {
+    background: var(--card-grad);
+    border: 1px solid var(--border);
+    box-shadow: var(--hl);
+  }
+
+  /* The one primary action of a place. */
+  .z-primary {
+    background: linear-gradient(180deg, #5b54ee, var(--color-brand-700));
+    color: #fff;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.22),
+      0 10px 24px -12px var(--color-brand-600);
+    transition:
+      filter 0.15s,
+      box-shadow 0.15s,
+      transform 0.15s;
+  }
+  .z-primary:hover {
+    filter: brightness(1.08);
+  }
+  .z-primary:active {
+    transform: scale(0.98);
+  }
+}
+
+/* The current place in a list of places. */
+.z-nav {
+  position: relative;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.z-nav.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.z-nav.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, #2dd4bf, var(--color-brand-500));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Long folders: let the browser skip layout/paint for off-screen rows (ADR-024). */
