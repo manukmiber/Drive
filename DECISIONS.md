@@ -679,3 +679,126 @@ Tes: `tests/integration/ads.test.ts` (harga, cek manual tanpa keputusan otomatis
 di email persetujuan, kredit yang langsung membayar, rotasi berbobot tanpa batas, statistik per kota, kedaluwarsa,
 refund takedown), `tests/integration/idor.test.ts`; relay `tests/drive.rs` (`qris` di jawaban pembayaran).
 
+
+## ADR-044 — Zeiko S3: API S3 di Worker bersama, index per akun di D1
+**Konteks:** permintaan pemilik (2026-10-24, diagram "Zeiko drive x Zeiko S3"): "Kerjakan S3 API". Diagramnya:
+S3 → 1 user → **Worker bersama** → "1 user, 1 D1 pengganti index.txt" → "File tetap disimpan di 1 R2 1 folder 1
+akun"; "1 worker dan R2 dapat dipakai untuk ratusan hingga ribuan user"; "Relay nanti dikasih tombol untuk
+menambahkan user dan binding ke worker". ToS dan Kebijakan Privasi baru (ADR-045) menyebut Zeiko S3, Bucket, Access
+Key/Secret Key, dan Bucket publik. SPEC §1/§5.1 sebelumnya melarang akses S3 langsung oleh klien; yang dimaksud di
+sana adalah **kredensial atau presigned URL R2**, dan itu tetap tidak pernah keluar.
+
+**Keputusan:**
+- **Worker yang sama dengan Drive**, di host sendiri `S3_ORIGIN` (`https://s3.zeiko.biz.id`, staging
+  `https://s3-staging.zeiko.biz.id`, dev `http://s3.localhost:8790`). Middleware pertama di `app.ts` meneruskan semua
+  request host itu ke `routes/s3-api.ts`, jadi app, API Drive, dan cookie tidak pernah ada di sana. Satu Worker,
+  satu bucket R2, satu D1 utama untuk semua akun.
+- **Protokol S3 sungguhan:** SigV4 lewat header dan presigned URL (maks 7 hari, selisih jam 15 menit), payload hex
+  SHA-256 (dicek sambil streaming: `DigestStream` di Workers), `UNSIGNED-PAYLOAD`, dan body `aws-chunked`
+  (`lib/aws-chunked.ts`): chunk bertanda tangan dicek satu per satu, chunk tanpa tanda tangan + trailer checksum
+  (default AWS SDK terbaru) diteruskan; checksum trailer tidak dicek karena TLS sudah menjaga isi. Operasi:
+  ListBuckets, Create/Head/DeleteBucket, GetBucketLocation (`auto`), GetBucketVersioning (kosong), Get/PutBucketAcl
+  (`private` / `public-read`), ListObjects v1/v2 (prefix, delimiter, marker/start-after, continuation token,
+  `encoding-type=url` dengan spasi sebagai `+`), Put/Get/Head/DeleteObject (Range, If-Match/None-Match/
+  Modified-Since/Unmodified-Since, `response-*` hanya untuk request bertanda tangan, metadata `x-amz-meta-*` maks
+  2 KB, Content-MD5), DeleteObjects (maks 1.000), CopyObject (maks 5 GiB; ganti metadata pada objek yang sama tanpa
+  menyalin byte), multipart lengkap termasuk UploadPartCopy, ListParts, ListMultipartUploads, Abort. Sisanya
+  (CORS, policy, lifecycle, tagging, versi, ACL objek, GET per partNumber) menjawab `NotImplemented`.
+  Error mengikuti kode dan status Amazon; satu tambahan: `QuotaExceeded` (403) saat penyimpanan akun penuh.
+- **Akun = user Drive** (sudah pernah masuk dengan Akun Zeiko) dengan baris `s3_accounts`. Operator yang
+  menyalakan dan memberi batas penyimpanan, sesuai diagram ("relay … tombol untuk menambahkan user"): ops API
+  `POST /api/ops/s3/accounts {zeikoId | email | userId, limitBytes, reason}`, `GET /api/ops/s3/accounts`,
+  `GET|PATCH /api/ops/s3/accounts/:userId {limitBytes?, suspended?, reason}`,
+  `PUT /api/ops/s3/accounts/:userId/index {binding, reason}`, `POST /api/ops/s3/buckets/:name/block`.
+  Penyimpanan S3 terpisah dari paket Drive; harga paket S3 belum ada (belum diputuskan pemilik).
+- **Index per akun ("1 user, 1 D1")**: `s3_accounts.index_binding` menunjuk binding D1 milik akun itu
+  (`S3_DB_*`). Selama belum ada, index-nya di D1 utama. Tabel index (`s3_objects`, `s3_uploads`,
+  `s3_upload_parts`) dibuat oleh `services/s3-index.ts` saat pertama dipakai dan diberi versi skema (`s3_index_meta`),
+  karena D1 per akun dibuat kosong oleh relay; jadi tabel itu tidak ada di folder `migrations/`. Index hanya bisa
+  dipindah saat akun masih kosong (tidak ada objek atau upload), tanpa menyalin antar database. Batas Cloudflare:
+  Workers Free 10 D1 per akun Cloudflare (semuanya), Paid 50.000; satu Worker bisa diberi sekitar 5.000 binding D1,
+  cocok dengan "ratusan hingga ribuan user". Di Free, praktisnya index tetap di D1 utama.
+- **Binding tetap ada setelah deploy:** binding `S3_DB_*` dicatat di `deploy/{env}.json` (`s3Indexes:
+  [{binding, id, name}]`) dan ikut dibuat `gen-wrangler`. Tombol relay (belum dibuat) nanti harus: membuat D1,
+  menambahkan entrinya ke daftar itu atau ke binding Worker lewat API Cloudflare, lalu memanggil
+  `PUT …/index`. Kalau deploy menghapus binding yang masih dipakai, akun itu dapat `ServiceUnavailable`
+  sampai binding-nya kembali.
+- **Nama bucket global** (`s3_buckets`), mengikuti aturan nama Amazon (path-style, titik boleh), maks
+  `s3_max_buckets_per_account` (100). Bucket hanya bisa dihapus saat kosong; upload multipart yang belum selesai
+  ikut dibatalkan.
+- **Access key** `ZK` + 18 huruf/angka, secret 40 karakter base62, ditampilkan sekali. Secret disimpan
+  terenkripsi AES-GCM dengan secret Worker baru `S3_KEYS_ENC_KEY` (dibuat `cf-setup`), karena SigV4 butuh secret
+  aslinya. Maks `s3_max_keys_per_account` (10). Hasil lookup key disimpan 15 detik per isolate; status akun dibaca
+  ulang di setiap request, jadi pembekuan langsung berlaku dan pencabutan key berlaku paling lama 15 detik.
+  `last_used_at` ditulis paling sering sekali per jam per key (penulisan D1 terbatas di Free).
+- **Penyimpanan per akun** dipesan sebelum byte ditulis dan dicatat setelahnya, seperti Drive (SPEC §4):
+  `reserveBytes` / `commitBytes` / `releaseBytes`. Part multipart dipesan per part; part yang diunggah ulang
+  melepas pesanan lamanya. Cron malam menghitung ulang pemakaian dari index (`reconcileS3`), cron per jam membuang
+  multipart yang lewat `s3_multipart_ttl_hours` (144) dan mengembalikan pesanannya.
+- **Byte di R2** di `s3/{userId}/{blobId}` (satu folder per akun, sesuai diagram); nama hanya di index. Setiap
+  objek punya byte sendiri: menimpa atau menghapus langsung menghapus byte lamanya, dan CopyObject menyalin byte di
+  R2. Tidak ada dedup, juga di dalam satu akun.
+- **Batas R2 dan Workers tetap berlaku:** body request 100 MB di zona Free/Pro (upload lebih besar = multipart),
+  part minimal 5 MiB dan semua part kecuali terakhir sama besar (dicek sebelum R2 menolak, dengan pesan jelas).
+- **Pemindaian:** setiap objek baru masuk Queue `scan` (`s3_scan`) dan memakai rantai scanner yang sama dengan Drive.
+  Pemilik bisa langsung membaca objeknya; orang lain hanya setelah `clean`/`skipped`. Objek berbahaya dihapus,
+  pemakaian dikembalikan, hash masuk blocklist, dan pemilik mendapat notifikasi `file_rejected`.
+- **Bucket publik** (`public-read`): siapa pun boleh GET/HEAD objek yang sudah lolos pemindaian, tanpa listing dan
+  tanpa menulis, dibatasi `RL_DOWNLOAD` per IP. Zeiko bisa mematikan akses publik sebuah bucket (`blocked_at`,
+  ToS §4.2); pemiliknya tidak bisa menyalakannya lagi. Akun yang dibekukan (S3 atau user Drive) kehilangan API dan
+  bucket publik, tetapi isinya tetap ada (ToS §9.1).
+- **Keamanan respons:** semua objek dilayani dengan `X-Content-Type-Options: nosniff` dan
+  `Content-Security-Policy: sandbox; default-src 'none'`. Host S3 satu *site* dengan `auth.zeiko.biz.id`, jadi HTML
+  milik pengguna tidak boleh berjalan sebagai halaman di sana. Akibatnya hosting situs statis dari bucket tidak
+  bisa, dan itu sejalan dengan ToS §3 (bukan CDN gratis).
+- **Hapus akun (UU PDP):** `processAccountDeletions` mencabut key lalu menghapus objek per batch
+  (`purgeS3Account`); sisanya dilanjutkan lewat Queue `cleanup` (`s3_purge`). Ekspor data menyertakan akun S3, id key
+  (tanpa secret), dan daftar bucket.
+- **Pemakaian per request** dicatat ke Analytics Engine (`s3_request`: akun, operasi, status, byte masuk/keluar)
+  tanpa menulis ke D1, sebagai dasar batas request/bandwidth yang disebut ToS §5 bila nanti ada harga paket.
+- **Halaman `/s3` di Drive** (sidebar "Produk Zeiko"): endpoint, region, pemakaian, membuat/mencabut key,
+  membuat/menghapus bucket, publik/privat, contoh aws-cli dan rclone. API-nya `/api/s3/*` (sesi Drive, masuk suite
+  IDOR).
+
+**Konsekuensi:** Workers Free membagi 100 ribu request/hari dengan semua Worker di akun; klien S3 cukup cerewet,
+jadi pemakaian sungguhan sebaiknya menunggu Workers Paid. Tes: `tests/integration/s3.test.ts` memakai AWS SDK v3
+asli (bucket, objek, Range, metadata, aws-chunked, listing + paging + marker + url encoding, multipart + aturan
+part, copy, kuota, DeleteObjects, presigned URL, bucket publik + pemindaian + blokir, EICAR, kunci salah/dicabut,
+akun dibekukan, orang lain, index di D1 sendiri, hapus akun), `tests/unit/s3.test.ts` (SigV4 dibandingkan dengan
+`@smithy/signature-v4`, rantai chunk dihitung terpisah dengan `node:crypto`, prefix, nama bucket, XML),
+`tests/integration/idor.test.ts`.
+
+## ADR-045 — Syarat & Ketentuan dan Kebijakan Privasi dari pemilik, dua bahasa
+**Konteks:** pemilik memberi dua dokumen (bertanggal 25 Oktober 2026), "Syarat & Ketentuan Layanan Zeiko Drive dan
+Zeiko S3" dan "Kebijakan Privasi Zeiko Drive dan Zeiko S3", untuk dimasukkan. Halaman `/kebijakan/*` sebelumnya
+draf buatan sendiri, hanya Bahasa Indonesia (melanggar ADR-036), dan sebagian sudah usang (Saldo, perpanjangan
+otomatis, lokasi dari IP).
+
+**Keputusan:**
+- Teks Indonesia dipakai **kata per kata** (`src/web/legal/{syarat,privasi}.id.ts`, dibuat langsung dari file
+  pemilik). Baris judul dan "@bagas zainul" tidak ditampilkan; tanggal berlaku ditampilkan dari metadata.
+  Terjemahan Inggris (`*.en.ts`) menyebut bahwa teks Indonesia yang berlaku.
+- **Isian yang dikosongkan pemilik** diisi di satu tempat (`src/web/legal/contacts.ts`): dukungan dan privasi
+  `admin@zeiko.biz.id` (alamat operator yang sudah dipakai), penyalahgunaan `abuse@zeiko.biz.id` (sudah di draf lama
+  dan LAUNCH-CHECKLIST), website `https://zeiko.biz.id`, retensi log akses "90 hari" (`log_retention_days`), dan
+  enkripsi saat disimpan "untuk file (Cloudflare R2)" (R2 mengenkripsi objek; untuk D1 tidak ditemukan pernyataan
+  di dokumentasi, jadi tidak diklaim). Semua isian ini perlu dikonfirmasi pemilik.
+- Halaman ditulis dalam subset Markdown kecil (`components/Markdown.tsx`: judul, paragraf, daftar, tabel, tebal,
+  tautan dan email otomatis), dirender sebagai teks React, bukan HTML. Kebijakan Iklan ikut dipindah ke format yang
+  sama dan diterjemahkan. **Kebijakan Konten** digabung: isinya kini ToS Bagian 3, dan `/kebijakan/kebijakan-konten`
+  menampilkan ToS. Label "DRAF, perlu review hukum" tetap (SPEC §14.5) sampai pemilik bilang sudah direview.
+- Tautan ke ToS dan Kebijakan Privasi ada di halaman masuk, sidebar, dan halaman Zeiko S3.
+
+**Yang tidak sesuai dengan kode sekarang (perlu keputusan pemilik, belum diubah):**
+- Kebijakan Privasi §4/§6 menyebut file **diunggah utuh ke VirusTotal** bila belum dikenal, dan gambar/video dikirim
+  ke **Hive dan Thorn**. Kode tidak mengirim isi file ke mana pun: pemindai bawaan (hash + EICAR + blocklist), ClamAV
+  di container sendiri saat Workers Paid, CSAM detector masih mock, dan aturan proyek (`CLAUDE.md`, SPEC §14.2)
+  melarang mengirim isi file ke VirusTotal. Aturan itu tetap berlaku sampai pemilik memutuskan lain; teks
+  kebijakannya (lebih luas dari praktik) tidak diubah.
+- ToS §6–§9 menjelaskan prosedur peringatan 24 jam → suspensi → hapus, peringatan bertingkat untuk Kategori C,
+  dan masa unduh 7 hari setelah akun dihapus. Panel moderasi sekarang punya takedown, karantina, blokir hash, dan
+  bekukan akun, tetapi belum punya alur peringatan bertenggat dan hitungan peringatan per akun.
+- ToS §2 menyebut Access Key/Secret Key dan §5 batas request API per paket: key sudah ada (ADR-044); batas request
+  baru dicatat, belum ditegakkan, karena paket Zeiko S3 belum punya harga.
+- Kebijakan Privasi tidak menyebut kota/kode pos untuk iklan lokal (SPEC §10.3 meminta itu dijelaskan); penjelasannya
+  masih ada di Kebijakan Iklan.

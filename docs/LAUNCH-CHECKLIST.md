@@ -7,6 +7,11 @@ Centang sebelum production dibuka untuk umum (SPEC §14.6).
 - [ ] Review hukum: Syarat & Ketentuan, Kebijakan Privasi, Kebijakan Konten, Kebijakan Iklan
       (`/kebijakan/*`, sekarang berlabel "DRAF, perlu review hukum"). Hapus label setelah disetujui.
 - [ ] Tetapkan alamat kontak abuse resmi (default di draf: `abuse@zeiko.biz.id`) dan pastikan kotak masuknya dipantau.
+- [ ] Konfirmasi isian ToS/Kebijakan Privasi (ADR-045, `src/web/legal/contacts.ts`): dukungan & privasi
+      `admin@zeiko.biz.id`, retensi log akses 90 hari, enkripsi saat disimpan (R2).
+- [ ] Putuskan pemindaian pihak ketiga: Kebijakan Privasi menyebut VirusTotal (unggah file utuh), Hive, dan Thorn,
+      sedangkan kode sekarang tidak mengirim isi file ke mana pun (aturan SPEC §14.2). Samakan teks atau aturannya.
+- [ ] Zeiko S3: harga/batas paket (ToS §5), DNS `s3.zeiko.biz.id`, dan tombol relay untuk menambah akun.
 - [ ] Prosedur takedown: siapa yang piket untuk SLA 4 jam (CSAM/terorisme) dan 24 jam (lainnya).
 - [ ] Runbook kebocoran data: siapa memutuskan, template email pemberitahuan 3×24 jam.
 - [ ] Perjanjian vendor deteksi CSAM (Hive/Thorn Safer/PhotoDNA) bila ingin mengaktifkan `features.csam_scan`.

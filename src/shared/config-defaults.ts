@@ -113,6 +113,15 @@ export const configSchema = z.object({
   scan_max_bytes: nonNeg().default(512 * MIB),
   scan_max_attempts: int().min(1).default(3),
 
+  // ── Zeiko S3 (ADR-044) ──
+  s3_max_buckets_per_account: int().min(1).default(100),
+  s3_max_keys_per_account: int().min(1).default(10),
+  s3_max_open_uploads_per_account: int().min(1).default(1000),
+  /** Unfinished multipart uploads are dropped after this (R2 itself aborts them after 7 days). */
+  s3_multipart_ttl_hours: int().min(1).max(167).default(144),
+  /** D1 queries one listing may spend skipping folders (Workers Free allows 50 per request). */
+  s3_list_max_queries: int().min(2).max(40).default(10),
+
   // ── Billing ──
   /** Unused since ADR-041 (no top-ups); kept so a stored config still reads. */
   min_topup_idr: nonNeg().default(10_000),

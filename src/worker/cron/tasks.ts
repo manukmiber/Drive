@@ -15,11 +15,23 @@ import { expireUploads } from '../services/uploads';
 import { purgeStandalone } from '../services/compress';
 import { expireArchives } from '../services/archives';
 import { runAdsDaily } from '../services/ads';
+import { expireS3Uploads, reconcileS3 } from '../services/s3-objects';
 import { registerCronTask } from '.';
 
 registerCronTask(CRON.hourly, {
   name: 'expire_uploads',
   run: async (ctx) => void (await expireUploads(ctx)),
+});
+
+// Zeiko S3 multipart uploads nobody finished (ADR-044).
+registerCronTask(CRON.hourly, {
+  name: 's3_expire_uploads',
+  run: async (ctx) => void (await expireS3Uploads(ctx)),
+});
+
+registerCronTask(CRON.nightly, {
+  name: 's3_reconcile',
+  run: async (ctx) => void (await reconcileS3(ctx)),
 });
 
 registerCronTask(CRON.hourly, {

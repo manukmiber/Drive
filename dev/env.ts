@@ -38,6 +38,8 @@ export interface DevRuntimeOptions {
   vars?: Record<string, string>;
   queueMode?: 'auto' | 'manual';
   clock?: Clock;
+  /** Extra (empty, in-memory) D1 bindings, e.g. a Zeiko S3 account's own index `S3_DB_A`. */
+  extraD1?: string[];
   /** Rate limits per binding; tests default to effectively unlimited. */
   rateLimits?: Partial<Record<RateLimitName, { limit: number; period: number }>>;
 }
@@ -130,9 +132,14 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
     ]),
   ) as Record<RateLimitName, ShimRateLimit>;
 
+  const extraD1 = Object.fromEntries(
+    (opts.extraD1 ?? []).map((name) => [name, new ShimD1Database(openSqlite(':memory:'))]),
+  );
+
   const env = {
     ...DEV_DEFAULTS,
     ...opts.vars,
+    ...extraD1,
     DB: d1,
     BUCKET: r2,
     CONFIG_KV: kv,

@@ -67,6 +67,46 @@ export function base64UrlDecode(s: string): Uint8Array {
   return out;
 }
 
+const aesKeys = new Map<string, Promise<CryptoKey>>();
+
+/** AES-256-GCM key from a secret holding 32 bytes in base64 or base64url. */
+function aesKey(material: string): Promise<CryptoKey> {
+  let key = aesKeys.get(material);
+  if (!key) {
+    const raw = base64UrlDecode(material.trim().replace(/=+$/, ''));
+    if (raw.length !== 32) throw new Error('encryption key must be 32 bytes (base64)');
+    key = crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    aesKeys.set(material, key);
+  }
+  return key;
+}
+
+/** base64url(iv ‖ ciphertext) */
+export async function aesGcmEncrypt(material: string, plaintext: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(
+    await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      await aesKey(material),
+      enc.encode(plaintext),
+    ),
+  );
+  const out = new Uint8Array(iv.length + ct.length);
+  out.set(iv);
+  out.set(ct, iv.length);
+  return base64UrlEncode(out);
+}
+
+export async function aesGcmDecrypt(material: string, sealed: string): Promise<string> {
+  const bytes = base64UrlDecode(sealed);
+  const pt = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: bytes.subarray(0, 12) },
+    await aesKey(material),
+    bytes.subarray(12),
+  );
+  return new TextDecoder().decode(pt);
+}
+
 /** Salted, rotating hash for IPs (SPEC §14.5): salt changes daily. */
 export async function hashIp(secret: string, ip: string, day: string): Promise<string> {
   return (await hmacBase62(secret, `ip|${day}|${ip}`)).slice(0, 22);

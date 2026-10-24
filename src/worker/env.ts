@@ -41,6 +41,8 @@ export interface Env {
   R2_BUCKET_NAME?: string;
   /** The Cloudflare account the bucket is in, for R2's analytics (ADR-037). */
   CF_ACCOUNT_ID?: string;
+  /** Zeiko S3's own address, e.g. https://s3.zeiko.biz.id (ADR-044). Unset = no S3 API. */
+  S3_ORIGIN?: string;
 
   // ── secrets (wrangler secret / .dev.vars) ──
   BETTER_AUTH_SECRET: string;
@@ -61,6 +63,8 @@ export interface Env {
   ZEIKO_OPS_TOKEN?: string;
   /** API token with Account Analytics: Read, for R2's real usage on the relay's screen (ADR-037). */
   CF_ANALYTICS_TOKEN?: string;
+  /** 32 bytes (base64): seals Zeiko S3 secret keys at rest (ADR-044). */
+  S3_KEYS_ENC_KEY?: string;
 
   // ── bindings ──
   DB: D1Database;
@@ -88,6 +92,9 @@ export interface Env {
   SCANNER?: DurableObjectNamespace;
   MEDIA_CONTAINER?: DurableObjectNamespace;
   ARCHIVER?: DurableObjectNamespace;
+
+  // Zeiko S3 accounts may have an index database of their own: D1 bindings named S3_DB_* (ADR-044),
+  // looked up by name (services/s3-index.ts), so they are not listed here.
 
   /** Test/dev only: injected fake clock. Never set in staging/production. */
   CLOCK?: Clock;

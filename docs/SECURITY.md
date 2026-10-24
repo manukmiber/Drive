@@ -64,6 +64,22 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 | Runbook kebocoran data (3×24 jam)               | ✅     | `docs/runbook/kebocoran-data.md`. **Temuan audit:** sebelumnya belum ada                                                        |
 | Retensi log `log_retention_days`                | ✅     | cron `purge_old_logs`. **Temuan audit:** sebelumnya config ada tapi tidak dipakai. Audit log admin tidak ikut dihapus (ADR-034) |
 
+## Zeiko S3 (ADR-044)
+
+- Host sendiri (`S3_ORIGIN`); app, API Drive, dan cookie tidak pernah dilayani di sana. Tanpa `S3_KEYS_ENC_KEY`
+  host itu menjawab `ServiceUnavailable`.
+- SigV4 (header + presigned, maks 7 hari, selisih jam 15 menit), `host` wajib ditandatangani, perbandingan
+  tanda tangan constant-time, payload hex SHA-256 dicek sambil streaming, chunk `aws-chunked` bertanda tangan dicek
+  per chunk sebelum diteruskan. Secret key disimpan AES-GCM (`S3_KEYS_ENC_KEY`), ditampilkan sekali.
+- Setiap query index di-scope `user_id`; bucket milik orang lain → `AccessDenied`, nama bucket global. Endpoint
+  `/api/s3/*` ada di suite IDOR.
+- Anonim hanya GET/HEAD objek di bucket publik yang tidak diblokir Zeiko, akunnya aktif, dan objeknya sudah lolos
+  pemindaian; tanpa listing; `RL_DOWNLOAD` per IP.
+- Semua objek: `nosniff` + `CSP: sandbox; default-src 'none'` (host S3 satu site dengan pintu Akun Zeiko, jadi
+  HTML pengguna tidak boleh berjalan sebagai halaman). Key R2 tidak pernah keluar; byte di `s3/{userId}/{blobId}`.
+- Batasan: checksum trailer (`x-amz-checksum-*`) dan tanda tangan trailer tidak dicek (isi chunk tetap dicek);
+  pencabutan key berlaku paling lama 15 detik per isolate (status akun dibaca ulang tiap request).
+
 ## Temuan lain yang diperbaiki saat audit
 
 - Pemesanan iklan belum memakai binding `RL_AD_BOOK`. Sudah dipasang.

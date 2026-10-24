@@ -119,3 +119,17 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [ ] Email bilingual menurut `users.locale` (template email masih Bahasa Indonesia).
 - [ ] Staging dengan SSO sungguhan: menunggu relay live diperbarui pemilik, secret `ZEIKO_APP_TOKEN`/`ZEIKO_OPS_TOKEN`,
   dan `https://staging.zeiko.biz.id` di `site.auth.origins`.
+
+## Zeiko S3 + ToS/Kebijakan Privasi (ADR-044, ADR-045, 2026-10-24)
+- [x] API S3 di host `S3_ORIGIN` (SigV4 header + presigned, aws-chunked, objek, listing v1/v2, multipart + copy,
+  bucket publik, `NotImplemented` untuk sisanya), diuji dengan AWS SDK v3 asli.
+- [x] Akun S3 = user Drive + `s3_accounts` (migrasi 0007); ops API untuk tombol relay; batas penyimpanan atomik;
+  cron multipart kedaluwarsa + rekonsiliasi; pemindaian lewat Queue `scan`; hapus akun dan ekspor data ikut S3.
+- [x] Index per akun di D1 sendiri (`S3_DB_*`, `deploy/{env}.json` → `s3Indexes`), default D1 utama.
+- [x] Halaman `/s3` (key, bucket, endpoint, contoh aws-cli/rclone), dua bahasa.
+- [x] ToS dan Kebijakan Privasi pemilik (ID kata per kata + EN), Kebijakan Iklan EN, Kebijakan Konten → ToS §3.
+- [ ] Tombol relay "tambah user + binding ke worker" (diagram: "nanti"): buat D1, catat binding, panggil ops API.
+- [ ] Deploy: `cf-setup` (secret `S3_KEYS_ENC_KEY`), migrasi 0007, custom domain `s3.zeiko.biz.id` /
+  `s3-staging.zeiko.biz.id`: menunggu izin pemilik.
+- [ ] Keputusan pemilik: VirusTotal/Hive/Thorn di Kebijakan Privasi vs aturan proyek; harga & batas paket S3; alamat
+  dukungan/privasi; retensi log; alur peringatan ToS §6–§7.

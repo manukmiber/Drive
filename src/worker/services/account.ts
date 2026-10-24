@@ -79,6 +79,25 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
           userId,
         )
       )[0] ?? null,
+    // Zeiko S3 (ADR-044): the account, key ids (never the secrets) and buckets. Objects are listed
+    // through the S3 API itself.
+    s3: {
+      account:
+        (
+          await q(
+            'SELECT status, limit_bytes, used_bytes, created_at FROM s3_accounts WHERE user_id = ?1',
+            userId,
+          )
+        )[0] ?? null,
+      keys: await q(
+        'SELECT id, label, created_at, last_used_at, revoked_at FROM s3_keys WHERE user_id = ?1',
+        userId,
+      ),
+      buckets: await q(
+        'SELECT name, public, created_at FROM s3_buckets WHERE user_id = ?1',
+        userId,
+      ),
+    },
   };
 }
 
@@ -138,6 +157,10 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
         .all<{ id: string }>();
       for (const n of top) await deleteSubtree(ctx, n.id);
     }
+    // Zeiko S3 goes too: keys at once, objects a batch at a time (ADR-044).
+    const { purgeS3Account } = await import('./s3-objects');
+    if (!(await purgeS3Account(ctx, id)))
+      await ctx.env.CLEANUP_QUEUE.send({ type: 's3_purge', userId: id });
     const now = ctx.now();
     await DB.batch([
       DB.prepare(

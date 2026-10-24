@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { LogIn, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '../components/Button';
@@ -126,6 +126,17 @@ export function SignIn() {
             </Button>
           </div>
         )}
+        <p className="mt-8 text-xs text-[var(--fg-muted)]">
+          {t.legal.agreeBefore}
+          <Link to="/kebijakan/$slug" params={{ slug: 'syarat' }} className="underline">
+            {t.legal.termsLong}
+          </Link>
+          {t.legal.agreeAnd}
+          <Link to="/kebijakan/$slug" params={{ slug: 'privasi' }} className="underline">
+            {t.legal.privacyLong}
+          </Link>
+          .
+        </p>
       </div>
     </div>
   );

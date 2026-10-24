@@ -37,6 +37,8 @@ const GENERATED_SECRETS = [
   'CONTACTS_ENC_KEY',
   'IP_HASH_SECRET',
   'PAYMENT_WEBHOOK_SECRET',
+  // Seals Zeiko S3 secret keys (ADR-044); a new one makes every existing S3 key unusable.
+  'S3_KEYS_ENC_KEY',
   'TELEGRAM_WEBHOOK_SECRET',
 ];
 // ZEIKO_APP_TOKEN and ZEIKO_OPS_TOKEN are the relay's (Zeiko Drive → Setup → Connect Drive, ADR-036):

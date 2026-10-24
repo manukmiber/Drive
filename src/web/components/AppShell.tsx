@@ -4,6 +4,7 @@ import {
   Archive,
   Brain,
   CircleUser,
+  Database,
   Languages,
   MessageCircle,
   Clock,
@@ -170,6 +171,10 @@ export function AppShell() {
             <Brain className="h-4 w-4" />
             {t.products.ai}
           </Link>
+          <Link to="/s3" className={navLink}>
+            <Database className="h-4 w-4" />
+            {t.products.s3}
+          </Link>
           {links.data?.chat && (
             <a href={links.data.chat} className={navLink} rel="noopener">
               <MessageCircle className="h-4 w-4" />
@@ -202,6 +207,14 @@ export function AppShell() {
             <LogOut className="h-4 w-4" />
             {t.nav.signOut}
           </button>
+          <p className="flex gap-3 px-3.5 pt-2 text-[11px] text-[var(--fg-muted)]">
+            <Link to="/kebijakan/$slug" params={{ slug: 'syarat' }} className="hover:underline">
+              {t.legal.terms}
+            </Link>
+            <Link to="/kebijakan/$slug" params={{ slug: 'privasi' }} className="hover:underline">
+              {t.legal.privacy}
+            </Link>
+          </p>
         </div>
       </aside>
 

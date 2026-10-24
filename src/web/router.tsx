@@ -43,6 +43,7 @@ const Compress = page(() => import('./pages/Compress'), 'Compress');
 const Advertiser = page(() => import('./pages/Advertiser'), 'Advertiser');
 const Downloads = page(() => import('./pages/Downloads'), 'Downloads');
 const AiDecision = page(() => import('./pages/AiDecision'), 'AiDecision');
+const S3Page = page(() => import('./pages/S3'), 'S3');
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: AppShell });
@@ -99,13 +100,18 @@ const routeTree = rootRoute.addChildren([
   }),
   appRoute.addChildren([
     // Storage is what the app opens on.
-    createRoute({ getParentRoute: () => appRoute, path: '/', component: () => <Drive key="root" /> }),
+    createRoute({
+      getParentRoute: () => appRoute,
+      path: '/',
+      component: () => <Drive key="root" />,
+    }),
     createRoute({
       getParentRoute: () => appRoute,
       path: '/drive',
       component: () => <Drive key="root" />,
     }),
     createRoute({ getParentRoute: () => appRoute, path: '/ai', component: AiDecision }),
+    createRoute({ getParentRoute: () => appRoute, path: '/s3', component: S3Page }),
     createRoute({
       getParentRoute: () => appRoute,
       path: '/drive/$folderId',

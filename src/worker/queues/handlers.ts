@@ -8,15 +8,18 @@ import { purgePool } from '../services/billing';
 import { deliverNotification } from '../services/notify';
 import { processCompressJob } from '../services/compress';
 import { processArchiveJob } from '../services/archives';
+import { processS3Scan, purgeS3Account } from '../services/s3-objects';
 
-registerQueueHandler('scan', async (ctx, body) => {
-  if (body.type !== 'scan') return;
-  await processScan(ctx, body.blobId);
+registerQueueHandler('scan', async (ctx, body, attempts) => {
+  if (body.type === 'scan') await processScan(ctx, body.blobId);
+  if (body.type === 's3_scan') await processS3Scan(ctx, body, attempts);
 });
 
 registerQueueHandler('cleanup', async (ctx, body) => {
   if (body.type === 'delete_blob') await deleteOrphanBlob(ctx, body.blobId);
   if (body.type === 'purge_pool' && !body.dryRun) await purgePool(ctx, body.poolId);
+  if (body.type === 's3_purge' && !(await purgeS3Account(ctx, body.userId)))
+    await ctx.env.CLEANUP_QUEUE.send({ type: 's3_purge', userId: body.userId });
 });
 
 registerQueueHandler('notify', async (ctx, body) => {

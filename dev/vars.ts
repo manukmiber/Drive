@@ -6,6 +6,8 @@ export const DEV_DEFAULTS: Record<string, string> = {
   APP_ENV: 'dev',
   APP_ORIGIN: 'http://localhost:5173',
   USERCONTENT_ORIGIN: 'http://uc.localhost:8790',
+  // Zeiko S3 (ADR-044): its own host on the API port (curl resolves *.localhost by itself).
+  S3_ORIGIN: 'http://s3.localhost:8790',
   EMAIL_FROM: 'no-reply@zeiko.biz.id',
   ADAPTER_EMAIL: 'mock',
   ADAPTER_PAYMENT: 'mock',
@@ -21,6 +23,7 @@ export const DEV_DEFAULTS: Record<string, string> = {
   CONTACTS_ENC_KEY: 'ZGV2LW9ubHktY29udGFjdHMta2V5LTMyLWJ5dGVzISE=',
   IP_HASH_SECRET: 'dev-only-ip-hash-secret',
   PAYMENT_WEBHOOK_SECRET: 'dev-only-payment-webhook-secret',
+  S3_KEYS_ENC_KEY: 'ZGV2LW9ubHktemVpa28tczMta2V5cy0zMi1ieXRlcyE=',
 };
 
 export function loadDevVars(root: string): Record<string, string> {

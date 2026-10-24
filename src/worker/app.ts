@@ -36,12 +36,20 @@ import { payments } from './routes/payments';
 import { ops } from './routes/ops';
 import { notifications } from './routes/notifications';
 import { family } from './routes/family';
+import { s3 } from './routes/s3';
+import { handleS3, isS3Host } from './routes/s3-api';
+import { createCtx } from './context';
 import type { AppBindings } from './types';
 import { appPath, basePath } from './lib/paths';
 
 export function createApp() {
   const app = new Hono<AppBindings>();
 
+  // Zeiko S3 has a host of its own and speaks S3, not this app's API (ADR-044).
+  app.use('*', async (c, next) => {
+    if (!isS3Host(new URL(c.req.url), c.env)) return next();
+    return handleS3(c.req.raw, createCtx(c.env));
+  });
   app.use('*', userContentGuard, requestContext);
 
   // Webhooks and the relay's ops API authenticate with their own secret (no Origin/CSRF), so
@@ -88,6 +96,7 @@ export function createApp() {
   api.route('/billing', billing);
   api.route('/notifications', notifications);
   api.route('/family', family);
+  api.route('/s3', s3);
   api.route('/', nodes);
   api.all('*', (c) => c.json(errorBody('NOT_FOUND', 'no such endpoint'), 404));
   app.route('/api', api);

@@ -84,5 +84,23 @@ Cloudflare tidak mencakup `a.b.zeiko.biz.id`). Setelah alamat berubah, ganti jug
 | `ZEIKO_APP_TOKEN`, `ZEIKO_OPS_TOKEN` | relay, lewat **Zeiko Drive → Setup → Save and connect Drive**: isi account ID Cloudflare, token API dengan izin **Workers Scripts: Edit**, dan nama Worker (`zeiko-production`); relay membuat kedua secret dan memasangnya langsung ke Worker ini. Worker-nya harus sudah di-deploy. |
 | `CF_ANALYTICS_TOKEN`, `CF_ACCOUNT_ID` | untuk tab R2 storage di relay (ADR-037): token API Cloudflare dengan izin **Account Analytics: Read**. Isi di kolom "R2 analytics token" pada Setup yang sama; relay memasangnya ke Worker ini bersama account id, tanpa menyimpannya. Tanpa keduanya, tab itu memakai hitungan Drive sendiri dan operasi A/B tidak diketahui. |
 
+| `S3_KEYS_ENC_KEY` | otomatis (acak, `cf-setup`): menyegel secret key Zeiko S3 (ADR-044). Mengganti nilainya membuat **semua** key S3 tidak bisa dipakai. |
+
 Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai lamanya dipindah ke
 `SHARE_LINK_SECRET_PREV` dulu.
+
+## Zeiko S3 (ADR-044)
+
+- Host-nya custom domain Worker ini: `s3.zeiko.biz.id` (production) dan `s3-staging.zeiko.biz.id` (staging),
+  ganti lewat `s3Origin` di `deploy/{env}.json`. Subdomain satu tingkat saja (sertifikat universal). Alamat
+  virtual-hosted (`bucket.s3.zeiko.biz.id`) butuh sertifikat wildcard tingkat dua, jadi klien memakai path-style.
+- Sebelum dipakai: `node scripts/cf-setup.mjs <env>` (membuat `S3_KEYS_ENC_KEY` yang belum ada), migrasi `0007`
+  (`npm run db:migrate:<env>`), lalu deploy.
+- Menyalakan akun: `POST /api/ops/s3/accounts {"zeikoId" | "email", "limitBytes", "reason"}` dengan bearer ops
+  (tombol relay nanti). Orangnya harus sudah pernah masuk Drive.
+- **Index sendiri per akun** (opsional, butuh kuota D1: Free 10 database per akun Cloudflare):
+  1. `npx wrangler d1 create zeiko-s3-<env>-<nama>`;
+  2. tambahkan `{"binding": "S3_DB_<NAMA>", "id": "<database_id>", "name": "zeiko-s3-<env>-<nama>"}` ke
+     `s3Indexes` di `deploy/<env>.json`, lalu `node scripts/gen-wrangler.mjs > wrangler.jsonc` dan deploy;
+  3. `PUT /api/ops/s3/accounts/<userId>/index {"binding": "S3_DB_<NAMA>", "reason": "…"}` selagi akunnya kosong.
+  Jangan hapus entri `s3Indexes` yang masih dipakai: deploy tanpa binding itu membuat akunnya `ServiceUnavailable`.

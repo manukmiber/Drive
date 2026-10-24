@@ -62,7 +62,9 @@ export const users = sqliteTable('users', {
   twoFactorEnabled: bool('two_factor_enabled').notNull().default(false),
   deleteRequestedAt: ms('delete_requested_at'),
   /** UI and email language (ADR-036). */
-  locale: text('locale', { enum: ['id', 'en'] }).notNull().default('id'),
+  locale: text('locale', { enum: ['id', 'en'] })
+    .notNull()
+    .default('id'),
   createdAt: date('created_at').notNull(),
   updatedAt: date('updated_at').notNull(),
 });
@@ -700,6 +702,39 @@ export const auditLogs = sqliteTable('audit_logs', {
   targetId: text('target_id'),
   ipHash: text('ip_hash'),
   metaJson: text('meta_json'),
+  createdAt: ms('created_at').notNull(),
+});
+
+// ───────────────────────────── Zeiko S3 (ADR-044, migrations/0007_s3.sql) ─────────────────────────────
+// The object index itself is per account (services/s3-index.ts) and not part of this schema.
+export const s3Accounts = sqliteTable('s3_accounts', {
+  userId: text('user_id').primaryKey(),
+  status: text('status', { enum: ['active', 'suspended', 'deleting'] }).notNull(),
+  limitBytes: integer('limit_bytes').notNull(),
+  usedBytes: integer('used_bytes').notNull(),
+  reservedBytes: integer('reserved_bytes').notNull(),
+  indexBinding: text('index_binding'),
+  sweptAt: ms('swept_at').notNull(),
+  createdBy: text('created_by'),
+  createdAt: ms('created_at').notNull(),
+  updatedAt: ms('updated_at').notNull(),
+});
+
+export const s3Keys = sqliteTable('s3_keys', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  label: text('label').notNull(),
+  secretEnc: text('secret_enc').notNull(),
+  createdAt: ms('created_at').notNull(),
+  lastUsedAt: ms('last_used_at'),
+  revokedAt: ms('revoked_at'),
+});
+
+export const s3Buckets = sqliteTable('s3_buckets', {
+  name: text('name').primaryKey(),
+  userId: text('user_id').notNull(),
+  public: bool('public').notNull(),
+  blockedAt: ms('blocked_at'),
   createdAt: ms('created_at').notNull(),
 });
 

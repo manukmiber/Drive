@@ -76,10 +76,15 @@ describe('IDOR (SPEC §14.1)', () => {
         category: 'lainnya',
       })
     ).json()) as { id: string };
-    await op.req('PUT', `/api/admin/ads/creatives/${creative.id}/image?advertiser=${a.userId}`, undefined, {
-      body: WEBP,
-      headers: { 'content-type': 'image/webp', 'content-length': String(WEBP.length) },
-    });
+    await op.req(
+      'PUT',
+      `/api/admin/ads/creatives/${creative.id}/image?advertiser=${a.userId}`,
+      undefined,
+      {
+        body: WEBP,
+        headers: { 'content-type': 'image/webp', 'content-length': String(WEBP.length) },
+      },
+    );
     const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
     const campaign = (await (
       await op.req('POST', '/api/admin/ads/campaigns', {
@@ -89,7 +94,10 @@ describe('IDOR (SPEC §14.1)', () => {
         days: 1,
       })
     ).json()) as { id: string };
-    await op.req('POST', `/api/admin/ads/${creative.id}/review`, { decision: 'approve', reason: '' });
+    await op.req('POST', `/api/admin/ads/${creative.id}/review`, {
+      decision: 'approve',
+      reason: '',
+    });
     rt.d1.sqlite
       .prepare(`INSERT INTO wallets (user_id, balance_idr, updated_at) VALUES (?, 100000, 0)`)
       .run(b.userId);
@@ -98,6 +106,19 @@ describe('IDOR (SPEC §14.1)', () => {
         `INSERT INTO notifications (id, user_id, type, payload_json, created_at) VALUES ('n1', ?, 'quota', '{}', 0)`,
       )
       .run(a.userId);
+    // Zeiko S3 (ADR-044): both have an account; A has a key and a bucket.
+    for (const id of [a.userId, b.userId])
+      rt.d1.sqlite
+        .prepare(
+          `INSERT INTO s3_accounts (user_id, status, limit_bytes, created_at, updated_at) VALUES (?, 'active', 1000000, 0, 0)`,
+        )
+        .run(id);
+    const s3Key = (
+      (await (await a.req('POST', '/api/s3/keys', { label: 'A' })).json()) as {
+        key: { id: string };
+      }
+    ).key;
+    expect((await a.req('POST', '/api/s3/buckets', { name: 'milik-a' })).status).toBe(201);
     const payment = 'pay_a';
     rt.d1.sqlite
       .prepare(
@@ -127,6 +148,8 @@ describe('IDOR (SPEC §14.1)', () => {
           .prepare('SELECT id, read_at FROM notifications WHERE user_id = ?')
           .all(a.userId),
         rt.d1.sqlite.prepare('SELECT node_id FROM node_stars WHERE user_id = ?').all(b.userId),
+        rt.d1.sqlite.prepare('SELECT id, revoked_at FROM s3_keys ORDER BY id').all(),
+        rt.d1.sqlite.prepare('SELECT name, user_id, public FROM s3_buckets ORDER BY name').all(),
       ]);
     const before = snapshot();
     const body = (bytes: Uint8Array) => ({
@@ -187,6 +210,10 @@ describe('IDOR (SPEC §14.1)', () => {
       ['GET', `/api/admin/ads/advertiser?email=korban@example.com`],
       ['POST', `/api/admin/ads/${creative.id}/suspend`, { severe: true, reason: 'iseng saja' }],
       ['DELETE', `/api/family/members/${a.userId}`],
+      ['DELETE', `/api/s3/keys/${s3Key.id}`],
+      ['PATCH', '/api/s3/buckets/milik-a', { public: true }],
+      ['DELETE', '/api/s3/buckets/milik-a'],
+      ['POST', '/api/s3/buckets', { name: 'milik-a' }],
     ];
 
     const leaks: string[] = [];

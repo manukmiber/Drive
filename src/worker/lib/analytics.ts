@@ -6,7 +6,9 @@ export type AnalyticsEvent =
   | 'archive_download'
   | 'ad_impression'
   | 'ad_click'
-  | 'scan_result';
+  | 'scan_result'
+  /** One Zeiko S3 API request: account, operation, status, bytes in/out (ADR-044). */
+  | 's3_request';
 
 export function track(
   dataset: AnalyticsEngineDataset | undefined,
