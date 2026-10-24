@@ -67,16 +67,18 @@ ${p.expiresText ? `<p style="font-size:13px;color:#6b7280">Berlaku sampai ${esca
   return { subject, text, html };
 }
 
-/** Generic notice: a title, a few paragraphs and an optional button. */
+/** Generic notice: a title, a few paragraphs, an optional picture (a QR) and an optional button. */
 export function noticeEmail(p: {
   title: string;
   paragraphs: string[];
   cta?: { label: string; url: string } | undefined;
+  image?: { src: string; alt: string } | undefined;
 }): { subject: string; text: string; html: string } {
   const text = [...p.paragraphs, p.cta ? `\n${p.cta.label}: ${p.cta.url}` : ''].join('\n\n').trim();
   const html = layout(
     p.title,
     `${p.paragraphs.map((x) => `<p style="font-size:14px;color:#374151">${escapeHtml(x)}</p>`).join('\n')}
+${p.image ? `<p style="text-align:center"><img src="${escapeHtml(p.image.src)}" alt="${escapeHtml(p.image.alt)}" width="260" height="260" style="width:260px;height:260px;image-rendering:pixelated"></p>` : ''}
 ${p.cta ? `<p><a href="${escapeHtml(p.cta.url)}" style="display:inline-block;background:#4338ca;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600">${escapeHtml(p.cta.label)}</a></p>` : ''}`,
   );
   return { subject: p.title, text, html };

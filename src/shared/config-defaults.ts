@@ -169,7 +169,30 @@ export const configSchema = z.object({
   media_binding_max_seconds: int().min(1).default(60),
   standalone_compress_max_bytes: nonNeg().default(2 * GIB),
 
-  // ── Ads ──
+  // ── Ads (ADR-043: campaigns, no slots, a 15-second rotation) ──
+  /** A day in one city; two cities are two of these, up to one bundle. */
+  ad_price_city_idr: nonNeg().default(1_000),
+  /** A day in up to `ad_bundle_cities` cities. */
+  ad_price_bundle_idr: nonNeg().default(3_000),
+  ad_bundle_cities: int().min(1).default(10),
+  /** A day everywhere in Indonesia; no city campaign costs more than this. */
+  ad_price_national_idr: nonNeg().default(10_000),
+  /** Seconds one ad stays in the card before the next one. */
+  ad_rotate_seconds: int().min(5).max(300).default(15),
+  /** Rotation turns an UMKM/small business or student advertiser gets for one of anyone else's. */
+  ad_priority_weight: int().min(1).max(10).default(2),
+  /** How far ahead a campaign may start, and how long it may run. */
+  ad_campaign_lead_days: int().min(0).default(60),
+  ad_campaign_max_days: int().min(1).default(90),
+  ad_candidates_cache_seconds: int().min(1).default(60),
+  ad_moderation_sla_hours: int().min(1).default(24),
+  ad_refund_on_suspend: z.object({ severe: z.boolean(), other: z.boolean() }).default({
+    severe: false,
+    other: true,
+  }),
+  ad_image_max_bytes: nonNeg().default(200 * 1024),
+  /** Unused since ADR-043 (no slots, holds, per-session cap or student discount); kept so a
+   *  stored config still reads. */
   ad_inventory_days_ahead: int().min(1).default(14),
   ad_slots_by_tier: z
     .object({
@@ -182,14 +205,7 @@ export const configSchema = z.object({
     .default({ tier1: 8, tier2: 4, tier3: 4, province: 6, national: 3 }),
   ad_hold_minutes: int().min(1).default(15),
   ad_student_discount_pct: int().min(0).max(100).default(50),
-  ad_candidates_cache_seconds: int().min(1).default(60),
   ad_frequency_cap_per_session: int().min(1).default(3),
-  ad_moderation_sla_hours: int().min(1).default(24),
-  ad_refund_on_suspend: z.object({ severe: z.boolean(), other: z.boolean() }).default({
-    severe: false,
-    other: true,
-  }),
-  ad_image_max_bytes: nonNeg().default(200 * 1024),
 
   // ── Moderation / privacy ──
   takedown_sla_hours: z.object({ urgent: int().min(1), normal: int().min(1) }).default({
@@ -237,10 +253,12 @@ export const PUBLIC_CONFIG_KEYS = [
   'standalone_compress_max_bytes',
   'min_topup_idr',
   'upgrade_ratio_hint_pct',
-  'ad_frequency_cap_per_session',
-  'ad_student_discount_pct',
   'ad_image_max_bytes',
-  'ad_hold_minutes',
+  'ad_rotate_seconds',
+  'ad_price_city_idr',
+  'ad_price_bundle_idr',
+  'ad_bundle_cities',
+  'ad_price_national_idr',
   'tax_rate_pct',
   'features',
 ] as const satisfies readonly ConfigKey[];

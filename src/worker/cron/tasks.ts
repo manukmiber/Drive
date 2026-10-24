@@ -14,7 +14,7 @@ import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
 import { purgeStandalone } from '../services/compress';
 import { expireArchives } from '../services/archives';
-import { releaseExpiredHolds, runAdsDaily } from '../services/ads';
+import { runAdsDaily } from '../services/ads';
 import { registerCronTask } from '.';
 
 registerCronTask(CRON.hourly, {
@@ -32,12 +32,7 @@ registerCronTask(CRON.hourly, {
   run: async (ctx) => void (await expireArchives(ctx)),
 });
 
-registerCronTask(CRON.hourly, {
-  name: 'ad_release_holds',
-  run: async (ctx) => void (await releaseExpiredHolds(ctx)),
-});
-
-// 00:05 WIB: open inventory for H+N, start today's bookings, close yesterday's (SPEC §10.4).
+// 00:05 WIB: paid campaigns start, finished ones complete, unpaid ones expire (ADR-043).
 registerCronTask(CRON.dailyAds, {
   name: 'ads_daily',
   run: async (ctx) => void (await runAdsDaily(ctx)),

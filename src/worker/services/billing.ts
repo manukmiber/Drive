@@ -13,7 +13,7 @@ import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
 import { log } from '../lib/log';
 import { ensurePersonalSpace } from './accounts';
-import { payBookingsFromWallet } from './ads';
+import { payCampaignFromWallet } from './ads';
 import { notificationStmt, notify } from './notify';
 
 type Stmt = D1PreparedStatement;
@@ -499,8 +499,8 @@ export type CheckoutItem =
   | { kind: 'compress'; code: string }
   | { kind: 'renew' };
 
-/** What a payment is for once it lands. `ads` is the operator's ad tool (ADR-041). */
-export type DirectPurpose = CheckoutItem | { kind: 'ads'; bookingIds: string[] };
+/** What a payment is for once it lands. `ad_campaign` is an approved ad campaign (ADR-043). */
+export type DirectPurpose = CheckoutItem | { kind: 'ad_campaign'; campaignId: string };
 
 /** The user's Zeiko Account id (ADR-036), for the payments opened in their name. */
 async function zeikoIdOf(ctx: Ctx, userId: string): Promise<string | undefined> {
@@ -776,9 +776,9 @@ export async function applyPaymentEvent(
   if (p.purpose === 'direct' && p.purpose_ref) {
     const then = JSON.parse(p.purpose_ref) as DirectPurpose;
     try {
-      if (then.kind === 'ads') {
-        await payBookingsFromWallet(ctx, p.user_id, then.bookingIds);
-        summary = 'Iklanmu sudah dibayar.';
+      if (then.kind === 'ad_campaign') {
+        await payCampaignFromWallet(ctx, p.user_id, then.campaignId);
+        summary = 'Iklanmu sudah dibayar dan tayang sesuai jadwal.';
       } else summary = await doneSummary(ctx, await performItem(ctx, p.user_id, then), then);
     } catch (e) {
       failed = true;

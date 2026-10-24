@@ -7,6 +7,8 @@ import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core'
 import {
   AD_AREA_LEVELS,
   AD_BOOKING_STATUSES,
+  AD_CAMPAIGN_SCOPES,
+  AD_CAMPAIGN_STATUSES,
   AD_CREATIVE_STATUSES,
   AD_CTA_TYPES,
   AD_PLACEMENTS,
@@ -593,6 +595,50 @@ export const adBookings = sqliteTable('ad_bookings', {
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
 });
+
+// ADR-043 (migrations/0006_ad_campaigns.sql): campaigns replace the per-day slot bookings above.
+export const adCampaigns = sqliteTable('ad_campaigns', {
+  id: text('id').primaryKey(),
+  advertiserId: text('advertiser_id').notNull(),
+  creativeId: text('creative_id').notNull(),
+  scope: text('scope', { enum: AD_CAMPAIGN_SCOPES }).notNull(),
+  startDate: text('start_date').notNull(),
+  endDate: text('end_date').notNull(),
+  days: integer('days').notNull(),
+  pricePerDayIdr: integer('price_per_day_idr').notNull(),
+  totalIdr: integer('total_idr').notNull(),
+  status: text('status', { enum: AD_CAMPAIGN_STATUSES }).notNull(),
+  reason: text('reason'),
+  paymentId: text('payment_id'),
+  payAmountIdr: integer('pay_amount_idr'),
+  payQris: text('pay_qris'),
+  payUrl: text('pay_url'),
+  createdBy: text('created_by').notNull(),
+  paidAt: ms('paid_at'),
+  createdAt: ms('created_at').notNull(),
+  updatedAt: ms('updated_at').notNull(),
+});
+
+export const adCampaignAreas = sqliteTable(
+  'ad_campaign_areas',
+  {
+    campaignId: text('campaign_id').notNull(),
+    areaCode: text('area_code').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.campaignId, t.areaCode] })],
+);
+
+export const adCampaignStats = sqliteTable(
+  'ad_campaign_stats',
+  {
+    campaignId: text('campaign_id').notNull(),
+    date: text('date').notNull(),
+    areaCode: text('area_code').notNull(),
+    impressions: integer('impressions').notNull().default(0),
+    clicks: integer('clicks').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.campaignId, t.date, t.areaCode] })],
+);
 
 // ───────────────────────────── Moderation & compliance ─────────────────────────────
 export const abuseReports = sqliteTable('abuse_reports', {

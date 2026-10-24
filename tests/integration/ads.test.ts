@@ -5,12 +5,9 @@ import { CRON } from '../../src/shared/constants';
 import { addDaysWib, wibDate } from '../../src/shared/time';
 import { createCtx } from '../../src/worker/context';
 import { bannedTopic } from '../../src/shared/ad-policy';
-import {
-  areaForCity,
-  ctaUrl,
-  resolveAreaChain,
-  reviewCreative,
-} from '../../src/worker/services/ads';
+import { adCampaignPricePerDay } from '../../src/shared/ad-policy';
+import { CONFIG_DEFAULTS } from '../../src/shared/config-defaults';
+import { areaForCity, ctaUrl, resolveAreaChain } from '../../src/worker/services/ads';
 import { invalidateConfigMemo } from '../../src/worker/services/config';
 import { APP, makeRuntime } from '../helpers/runtime';
 import { signIn, staffSignIn, type Session } from '../helpers/session';
@@ -67,80 +64,98 @@ function fund(rt: DevRuntime, userId: string, idr: number) {
 const viewerIn = (rt: DevRuntime, city: string) =>
   signIn(rt, `${city.toLowerCase().replace(/\W+/g, '')}@example.com`, { city });
 
-async function advertiserWithCreative(
+interface Placed {
+  advertiser: Session;
+  creativeId: string;
+  campaignId: string;
+  campaignStatus: string;
+}
+
+/**
+ * What the operator does with an advertiser's email (ADR-043): the advertiser (who has signed in to
+ * Drive once), their creative with its picture, and a campaign.
+ */
+async function placeAd(
   rt: DevRuntime,
-  email = 'umkm@example.com',
-  title = 'Bakso Pak Kumis',
-) {
-  // The advertiser tool is the operator's now (ADR-041): people ask by email.
-  const s = await staffSignIn(rt, email);
-  expect(
-    (
-      await s.req('PUT', '/api/advertiser', {
-        businessName: 'Warung Kumis',
-        kind: 'umkm',
-        phone: '0812 3456 7890',
-      })
-    ).status,
-  ).toBe(200);
-  const cr = await s.req('POST', '/api/advertiser/creatives', {
-    title,
+  op: Session,
+  p: {
+    email?: string;
+    kind?: 'umkm' | 'mahasiswa' | 'lainnya';
+    title?: string;
+    scope?: 'cities' | 'national';
+    areaCodes?: string[];
+    startDate?: string;
+    days?: number;
+  } = {},
+): Promise<Placed> {
+  const email = p.email ?? 'umkm@example.com';
+  const advertiser = await signIn(rt, email);
+  const saved = await op.req('PUT', '/api/admin/ads/advertiser', {
+    email,
+    businessName: 'Warung Kumis',
+    kind: p.kind ?? 'umkm',
+    phone: '0812 3456 7890',
+  });
+  expect(saved.status).toBe(200);
+  const cr = await op.req('POST', '/api/admin/ads/creatives', {
+    advertiserId: advertiser.userId,
+    title: p.title ?? 'Bakso Pak Kumis',
     body: 'Bakso urat porsi jumbo, buka sampai malam.',
     ctaType: 'whatsapp',
     ctaValue: '081234567890',
     category: 'kuliner',
   });
   expect(cr.status).toBe(201);
-  const creative = (await cr.json()) as { id: string };
+  const creativeId = ((await cr.json()) as { id: string }).id;
   const img = webp();
-  const up = await s.req('PUT', `/api/advertiser/creatives/${creative.id}/image`, undefined, {
-    body: img,
-    headers: { 'content-type': 'image/webp', 'content-length': String(img.length) },
-  });
+  const up = await op.req(
+    'PUT',
+    `/api/admin/ads/creatives/${creativeId}/image?advertiser=${advertiser.userId}`,
+    undefined,
+    { body: img, headers: { 'content-type': 'image/webp', 'content-length': String(img.length) } },
+  );
   expect(up.status).toBe(200);
-  const sub = (await (
-    await s.req('POST', `/api/advertiser/creatives/${creative.id}/submit`)
-  ).json()) as { status: string };
-  return { s, creativeId: creative.id, status: sub.status };
+  const k = await op.req('POST', '/api/admin/ads/campaigns', {
+    creativeId,
+    scope: p.scope ?? 'cities',
+    areaCodes: p.areaCodes ?? ['35.73'],
+    startDate: p.startDate ?? TODAY,
+    days: p.days ?? 2,
+  });
+  expect(k.status).toBe(201);
+  const campaign = (await k.json()) as { id: string; status: string };
+  return { advertiser, creativeId, campaignId: campaign.id, campaignStatus: campaign.status };
 }
 
-async function approve(rt: DevRuntime, creativeId: string) {
-  const admin = await signIn(rt, 'mod@example.com');
-  await reviewCreative(createCtx(rt.env), admin.userId, creativeId, 'approve', '');
+async function review(rt: DevRuntime, creativeId: string, decision: 'approve' | 'reject', reason = '') {
+  const mod = await staffSignIn(rt, 'mod@example.com', 'moderator');
+  const res = await mod.req('POST', `/api/admin/ads/${creativeId}/review`, { decision, reason });
+  expect(res.status).toBe(204);
 }
 
-async function book(
-  s: Session,
-  creativeId: string,
-  areaCode: string,
-  dates: string[],
-  placement = 'explorer_sidebar',
-) {
-  return s.req('POST', '/api/advertiser/bookings', { creativeId, areaCode, placement, dates });
-}
-
-async function adFor(
-  rt: DevRuntime,
-  headers: Record<string, string>,
-  s?: Session,
-  placement = 'explorer_sidebar',
-) {
+async function rotationFor(rt: DevRuntime, s?: Session, placement = 'explorer_sidebar') {
   const res = s
-    ? await s.req('GET', `/api/ads?placement=${placement}`, undefined, { headers })
-    : await rt.fetch(new Request(`${APP}/api/ads?placement=${placement}`, { headers }));
+    ? await s.req('GET', `/api/ads?placement=${placement}`)
+    : await rt.fetch(new Request(`${APP}/api/ads?placement=${placement}`));
   expect(res.status).toBe(200);
-  return (
-    (await res.json()) as {
-      ad: null | {
-        bookingId: string | null;
-        label: string;
-        token: string | null;
-        internal: boolean;
-        clickUrl: string;
-      };
-    }
-  ).ad;
+  return (await res.json()) as {
+    rotateSeconds: number;
+    ads: Array<{
+      campaignId: string | null;
+      creativeId: string | null;
+      title: string;
+      label: string;
+      token: string | null;
+      area: string | null;
+      internal: boolean;
+      clickUrl: string;
+    }>;
+  };
 }
+
+const status = (rt: DevRuntime, id: string) =>
+  (rt.d1.sqlite.prepare('SELECT status FROM ad_campaigns WHERE id = ?').get(id) as { status: string })
+    .status;
 
 describe('ad area targeting (SPEC §10.3)', () => {
   it('maps Cloudflare names to Kemendagri areas with a fallback chain', async () => {
@@ -221,191 +236,172 @@ describe('ad area targeting (SPEC §10.3)', () => {
   });
 });
 
-describe('ads placed by the operator (SPEC §10.4–10.7, ADR-041)', () => {
-  it('the advertiser tool is for admins only', async () => {
+describe('ad prices (ADR-043)', () => {
+  it('charges per city up to a bundle, a bundle per ten cities, never more than nationwide', () => {
+    const per = (n: number) => adCampaignPricePerDay(CONFIG_DEFAULTS, 'cities', n);
+    expect([1, 2, 3, 10, 11, 12, 13, 20, 21, 40].map(per)).toEqual([
+      1_000, 2_000, 3_000, 3_000, 4_000, 5_000, 6_000, 6_000, 7_000, 10_000,
+    ]);
+    expect(adCampaignPricePerDay(CONFIG_DEFAULTS, 'national', 0)).toBe(10_000);
+  });
+});
+
+describe('ads entered by the operator and checked by hand (ADR-043)', () => {
+  it('is the operator’s to enter; a word filter only flags; approving opens payment', async () => {
     const { rt } = await setup();
     const user = await signIn(rt, 'warung@example.com');
-    expect((await user.req('GET', '/api/advertiser')).status).toBe(403);
+    expect((await user.req('GET', '/api/admin/ads/advertiser?email=warung@example.com')).status).toBe(403);
+    expect((await user.req('GET', '/api/advertiser')).status).toBe(200); // their own page, empty
+
+    const op = await staffSignIn(rt, 'ops@example.com');
+    const unknown = await op.req('GET', '/api/admin/ads/advertiser?email=nobody@example.com');
+    expect(unknown.status).toBe(404);
+    expect(((await unknown.json()) as { error: { message: string } }).error.message).toBe('NO_DRIVE_USER');
+
+    // Every ad waits for a person, a suspicious one included: nothing is decided automatically.
+    const bad = await placeAd(rt, op, { email: 'lain@example.com', kind: 'lainnya', title: 'Slot gacor maxwin' });
+    const good = await placeAd(rt, op, { days: 3, areaCodes: ['35.73', '32.73'] });
+    expect([bad.campaignStatus, good.campaignStatus]).toEqual(['pending', 'pending']);
+    const queue = (await (await op.req('GET', '/api/admin/ads?status=pending')).json()) as {
+      items: Array<{ id: string; flag: string | null; advertiserKind: string; waitingCampaigns: number }>;
+    };
+    // UMKM, small businesses and students first, though this one came later.
+    expect(queue.items.map((x) => x.id)).toEqual([good.creativeId, bad.creativeId]);
+    expect(queue.items[1]).toMatchObject({ flag: 'judi/slot/togel', waitingCampaigns: 1 });
+    expect(queue.items[0]!.flag).toBeNull();
+
+    // Nothing is bought on the website, and no QRIS goes out before the check.
     expect(
-      (
-        await user.req('PUT', '/api/advertiser', {
-          businessName: 'Warung',
-          kind: 'umkm',
-          phone: '081234567890',
-        })
-      ).status,
-    ).toBe(403);
+      (await good.advertiser.req('POST', `/api/advertiser/campaigns/${good.campaignId}/checkout`, {})).status,
+    ).toBe(404);
+    expect(rt.d1.sqlite.prepare('SELECT payment_id FROM ad_campaigns WHERE id = ?').get(good.campaignId)).toEqual({
+      payment_id: null,
+    });
+
+    await review(rt, bad.creativeId, 'reject', 'Judi');
+    await review(rt, good.creativeId, 'approve');
+    expect(status(rt, bad.campaignId)).toBe('rejected');
+    expect(status(rt, good.campaignId)).toBe('awaiting_payment');
+    const notice = rt.d1.sqlite
+      .prepare(`SELECT payload_json FROM notifications WHERE user_id = ? AND type = 'ad_status'`)
+      .all(good.advertiser.userId) as Array<{ payload_json: string }>;
+    // Approval mails the QRIS itself (ADR-043): the amount, and a QR image Drive serves.
+    const sent = notice.map((n) => JSON.parse(n.payload_json) as Record<string, unknown>);
+    const mail = sent.find((n) => n.status === 'awaiting_payment')!;
+    expect(mail).toMatchObject({ amountIdr: 6_000, startDate: TODAY });
+    const qr = new URL(String(mail.qrUrl));
+    const png = await rt.fetch(new Request(`${APP}${qr.pathname}${qr.search}`));
+    expect(png.status).toBe(200);
+    expect(png.headers.get('content-type')).toBe('image/png');
+    expect([...new Uint8Array(await png.arrayBuffer()).slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+    expect((await rt.fetch(new Request(`${APP}${qr.pathname}?t=forged`))).status).toBe(404);
+
+    const dash = (await (await good.advertiser.req('GET', '/api/advertiser')).json()) as {
+      campaigns: Array<{ status: string; pricePerDayIdr: number; totalIdr: number; payIdr: number; areas: unknown[] }>;
+    };
+    expect(dash.campaigns[0]).toMatchObject({
+      status: 'awaiting_payment',
+      pricePerDayIdr: 2_000,
+      totalIdr: 6_000,
+      payIdr: 6_000,
+    });
+    expect(dash.campaigns[0]!.areas).toHaveLength(2);
+
+    // An approved creative's next campaign waits for payment straight away; one never paid by its
+    // first day expires that night.
+    const again = await op.req('POST', '/api/admin/ads/campaigns', {
+      creativeId: good.creativeId,
+      scope: 'national',
+      startDate: TODAY,
+      days: 1,
+    });
+    const k2 = (await again.json()) as { id: string; status: string; total_idr: number; payment_id: string | null };
+    expect(k2).toMatchObject({ status: 'awaiting_payment', total_idr: 10_000 });
+    expect(k2.payment_id).not.toBeNull();
+    expect(
+      (await op.req('POST', '/api/admin/ads/campaigns', { creativeId: good.creativeId, scope: 'cities', areaCodes: ['35'], startDate: TODAY, days: 1 })).status,
+    ).toBe(400); // a province is not a city
   });
 
-  it('moderates, books, pays from credit, serves by account city, and counts impressions/clicks', async () => {
+  it('rotates every live ad for the viewer’s city and every national one, and counts per city', async () => {
     const { rt, clock } = await setup();
-    const bad = await advertiserWithCreative(rt, 'judi@example.com', 'Slot gacor maxwin');
-    expect(bad.status).toBe('rejected');
+    const op = await staffSignIn(rt, 'ops@example.com');
+    const city = await placeAd(rt, op, { days: 1 });
+    const nation = await placeAd(rt, op, {
+      email: 'besar@example.com',
+      kind: 'lainnya',
+      title: 'Toko Besar',
+      scope: 'national',
+      days: 2,
+    });
+    // Credit that covers it pays at approval; nothing to send.
+    for (const x of [city, nation]) {
+      fund(rt, x.advertiser.userId, 50_000);
+      await review(rt, x.creativeId, 'approve');
+      expect(status(rt, x.campaignId)).toBe('live');
+    }
 
-    const { s, creativeId, status } = await advertiserWithCreative(rt);
-    expect(status).toBe('pending');
-    expect((await book(s, creativeId, '35.73', [TODAY])).status).toBe(409); // not approved yet
-    await approve(rt, creativeId);
+    // Malang sees both, the UMKM one twice as often; no slot limit; 15 seconds each.
+    const malang = await rotationFor(rt, await viewerIn(rt, 'Malang'));
+    expect(malang.rotateSeconds).toBe(15);
+    const counts = malang.ads.reduce<Record<string, number>>(
+      (m, a) => ((m[a.title] = (m[a.title] ?? 0) + 1), m),
+      {},
+    );
+    expect(counts).toEqual({ 'Bakso Pak Kumis': 2, 'Toko Besar': 1 });
+    const kumis = malang.ads.find((a) => a.title === 'Bakso Pak Kumis')!;
+    expect(kumis).toMatchObject({ label: 'Iklan · Kota Malang', area: '35.73' });
+    // Surabaya, and a visitor with no account, only get the national one.
+    expect((await rotationFor(rt, await viewerIn(rt, 'Surabaya'))).ads.map((a) => a.title)).toEqual(['Toko Besar']);
+    const anon = await rotationFor(rt);
+    expect(anon.ads.map((a) => a.label)).toEqual(['Iklan · Indonesia']);
 
-    const avail = (await (
-      await s.req('GET', '/api/advertiser/availability?area=35.73&placement=explorer_sidebar')
-    ).json()) as {
-      priceIdr: number;
-      days: Array<{ date: string; remaining: number }>;
-    };
-    expect(avail.priceIdr).toBe(10_000);
-    expect(avail.days).toHaveLength(15);
-    expect(avail.days[0]).toEqual({ date: TODAY, remaining: 8, total: 8 });
-
-    const tomorrow = addDaysWib(TODAY, 1);
-    const held = (await (await book(s, creativeId, '35.73', [TODAY, tomorrow])).json()) as {
-      bookingIds: string[];
-      totalIdr: number;
-    };
-    expect(held.totalIdr).toBe(20_000);
-    fund(rt, s.userId, 50_000);
-    const paid = (await (
-      await s.req('POST', '/api/advertiser/bookings/checkout', {
-        bookingIds: held.bookingIds,
-        method: 'qris',
-      })
-    ).json()) as {
-      paid: boolean;
-      invoiceId: string;
-    };
-    expect(paid.paid).toBe(true);
-    const statuses = rt.d1.sqlite
-      .prepare('SELECT date, status FROM ad_bookings WHERE creative_id = ? ORDER BY date')
-      .all(creativeId);
-    expect(statuses).toEqual([
-      { date: TODAY, status: 'live' },
-      { date: tomorrow, status: 'paid' },
-    ]);
-
-    // Someone in Malang sees it; Surabaya (no booking in Jatim) gets the internal ad, and so does a
-    // visitor with no account: an IP address is never a location (ADR-041).
-    const ad = await adFor(rt, {}, await viewerIn(rt, 'Malang'));
-    expect(ad).toMatchObject({ internal: false, label: 'Iklan · Kota Malang' });
-    expect((await adFor(rt, {}, await viewerIn(rt, 'Surabaya')))!.internal).toBe(true);
-    const ipOnly = await adFor(rt, { 'x-dev-geo-city': 'Malang', 'x-dev-geo-region': 'East Java' });
-    expect(ipOnly).toMatchObject({ internal: true, ctaLabel: 'Hubungi kami' });
-
-    // Impression needs the signed token; click redirects to the CTA and counts.
-    const beacon = (b: string, t: string) =>
+    // An impression needs its token; a click redirects to the CTA; both land per day and city.
+    const beacon = (c: string, a: string, t: string) =>
       rt.fetch(
         new Request(`${APP}/ad/i`, {
           method: 'POST',
-          body: JSON.stringify({ b, t }),
+          body: JSON.stringify({ c, a, t }),
           headers: { 'content-type': 'application/json' },
         }),
       );
-    expect((await beacon(ad!.bookingId!, 'forged')).status).toBe(204);
-    expect((await beacon(ad!.bookingId!, ad!.token!)).status).toBe(204);
-    const click = await rt.fetch(new Request(`${APP}${ad!.clickUrl}`, { redirect: 'manual' }));
+    expect((await beacon(kumis.campaignId!, '35.73', 'forged')).status).toBe(204);
+    expect((await beacon(kumis.campaignId!, '32.73', kumis.token!)).status).toBe(204); // wrong city
+    expect((await beacon(kumis.campaignId!, '35.73', kumis.token!)).status).toBe(204);
+    const click = await rt.fetch(new Request(`${APP}${kumis.clickUrl}`, { redirect: 'manual' }));
     expect(click.status).toBe(302);
     expect(click.headers.get('location')).toBe('https://wa.me/6281234567890');
-    expect(
-      rt.d1.sqlite
-        .prepare('SELECT impressions, clicks FROM ad_bookings WHERE id = ?')
-        .get(ad!.bookingId),
-    ).toEqual({
-      impressions: 1,
-      clicks: 1,
-    });
-
-    const dash = (await (await s.req('GET', '/api/advertiser')).json()) as {
-      bookings: Array<{ ctr: number; date: string }>;
+    expect(rt.d1.sqlite.prepare('SELECT date, area_code, impressions, clicks FROM ad_campaign_stats WHERE campaign_id = ?').all(city.campaignId)).toEqual([
+      { date: TODAY, area_code: '35.73', impressions: 1, clicks: 1 },
+    ]);
+    const dash = (await (await city.advertiser.req('GET', '/api/advertiser')).json()) as {
+      campaigns: Array<{ impressions: number; clicks: number; ctr: number; byDay: unknown[]; byArea: Array<{ name: string }> }>;
     };
-    expect(dash.bookings.find((b) => b.date === TODAY)!.ctr).toBe(1);
+    expect(dash.campaigns[0]).toMatchObject({ impressions: 1, clicks: 1, ctr: 1 });
+    expect(dash.campaigns[0]!.byArea[0]!.name).toBe('Kota Malang');
 
-    // 00:05 WIB the next day: tomorrow's booking goes live, today's completes.
+    // 00:05 WIB the next day: the one-day campaign completes, the national one keeps running.
     clock.set(Date.UTC(2026, 9, 10, 17, 6));
     await rt.runCron(CRON.dailyAds);
-    expect(
-      rt.d1.sqlite
-        .prepare('SELECT date, status FROM ad_bookings WHERE creative_id = ? ORDER BY date')
-        .all(creativeId),
-    ).toEqual([
-      { date: TODAY, status: 'completed' },
-      { date: tomorrow, status: 'live' },
-    ]);
+    expect([status(rt, city.campaignId), status(rt, nation.campaignId)]).toEqual(['completed', 'live']);
+    expect((await rotationFor(rt, await viewerIn(rt, 'Malang'))).ads.map((a) => a.title)).toEqual(['Toko Besar']);
   });
 
-  it('falls back to the province, and never overbooks a slot', async () => {
-    const { rt, clock } = await setup({
-      ad_slots_by_tier: { tier1: 1, tier2: 1, tier3: 1, province: 1, national: 1 },
-    });
-    const a = await advertiserWithCreative(rt, 'a@example.com');
-    const b = await advertiserWithCreative(rt, 'b@example.com');
-    await approve(rt, a.creativeId);
-    await approve(rt, b.creativeId);
-    const date = addDaysWib(TODAY, 3);
-    const results = await Promise.all([
-      book(a.s, a.creativeId, '35', [date]),
-      book(b.s, b.creativeId, '35', [date]),
-      book(a.s, a.creativeId, '35', [date]),
-      book(b.s, b.creativeId, '35', [date]),
-    ]);
-    const codes = results.map((r) => r.status).sort();
-    expect(codes).toEqual([201, 409, 409, 409]);
-    expect(
-      rt.d1.sqlite
-        .prepare(
-          `SELECT booked_slots FROM ad_inventory WHERE date = ? AND area_code = '35' AND placement = 'explorer_sidebar'`,
-        )
-        .get(date),
-    ).toEqual({
-      booked_slots: 1,
-    });
-    const loser = results.find((r) => r.status === 409)!;
-    expect(
-      ((await loser.json()) as { error: { message: string; data: { dates: string[] } } }).error,
-    ).toMatchObject({
-      message: 'SOLD_OUT',
-      data: { dates: [date] },
-    });
-
-    // Unpaid hold expires → slot is free again.
-    clock.advance(16 * 60_000);
-    await rt.runCron(CRON.hourly);
-    expect((await book(b.s, b.creativeId, '35', [date])).status).toBe(201);
-
-    // A province booking for today serves a Malang visitor (city → province fallback).
-    fund(rt, a.s.userId, 100_000);
-    const h = (await (await book(a.s, a.creativeId, '35', [TODAY])).json()) as {
-      bookingIds: string[];
-    };
-    await a.s.req('POST', '/api/advertiser/bookings/checkout', {
-      bookingIds: h.bookingIds,
-      method: 'qris',
-    });
-    expect(await adFor(rt, {}, await viewerIn(rt, 'Malang'))).toMatchObject({
-      internal: false,
-      label: 'Iklan · Jawa Timur',
-    });
-  });
-
-  it('pays by QRIS and suspends with a refund as credit', async () => {
-    const { rt } = await setup();
-    const { s, creativeId } = await advertiserWithCreative(rt);
-    await approve(rt, creativeId);
-    const h = (await (
-      await book(s, creativeId, '35.73', [TODAY, addDaysWib(TODAY, 1)])
-    ).json()) as { bookingIds: string[] };
-    const co = (await (
-      await s.req('POST', '/api/advertiser/bookings/checkout', {
-        bookingIds: h.bookingIds,
-        method: 'qris',
-      })
-    ).json()) as {
-      paid: boolean;
-      topup: { paymentId: string; amountIdr: number };
-    };
-    expect(co.paid).toBe(false);
+  it('pays by QRIS, expires what was never paid, and refunds the days a takedown leaves', async () => {
+    const { rt, clock } = await setup();
+    const op = await staffSignIn(rt, 'ops@example.com');
+    const placed = await placeAd(rt, op, { days: 3 });
+    const late = await placeAd(rt, op, { email: 'telat@example.com', startDate: addDaysWib(TODAY, 1), days: 1 });
+    await review(rt, placed.creativeId, 'approve');
+    await review(rt, late.creativeId, 'approve');
+    // The QRIS from the approval email is paid; the gateway's word starts the campaign.
+    const co = rt.d1.sqlite
+      .prepare('SELECT payment_id, pay_amount_idr FROM ad_campaigns WHERE id = ?')
+      .get(placed.campaignId) as { payment_id: string; pay_amount_idr: number };
     const signed = await MockPaymentProvider.signedBody(rt.env.PAYMENT_WEBHOOK_SECRET, {
-      providerRef: `mock_${co.topup.paymentId}`,
+      providerRef: `mock_${co.payment_id}`,
       status: 'paid',
-      amountIdr: co.topup.amountIdr,
+      amountIdr: co.pay_amount_idr,
     } as never);
     const hook = await rt.fetch(
       new Request(`${APP}/api/payments/webhook/mock`, {
@@ -416,46 +412,55 @@ describe('ads placed by the operator (SPEC §10.4–10.7, ADR-041)', () => {
     );
     expect(hook.status).toBe(200);
     await rt.settle();
-    expect(
-      rt.d1.sqlite
-        .prepare(`SELECT COUNT(*) AS n FROM ad_bookings WHERE status IN ('live', 'paid')`)
-        .get(),
-    ).toEqual({ n: 2 });
+    expect(status(rt, placed.campaignId)).toBe('live');
 
-    const mod = await signIn(rt, 'mod2@example.com');
-    rt.d1.sqlite
-      .prepare(`UPDATE users SET role = 'moderator', two_factor_enabled = 1 WHERE id = ?`)
-      .run(mod.userId);
-    const res = await mod.req('POST', `/api/admin/ads/${creativeId}/suspend`, {
+    // Tomorrow 00:05 WIB the other one should have been paid by now; it is not, so it expires.
+    clock.set(Date.UTC(2026, 9, 11, 17, 6));
+    await rt.runCron(CRON.dailyAds);
+    expect(status(rt, late.campaignId)).toBe('expired');
+    const tooLate = await op.req('POST', `/api/admin/ads/campaigns/${late.campaignId}/send-payment`, {});
+    expect(tooLate.status).toBe(409);
+
+    // Day 3 of 3 (12 Okt): a takedown gives back nothing shown yet, which is no days at all.
+    const mod = await staffSignIn(rt, 'mod2@example.com', 'moderator');
+    const res = await mod.req('POST', `/api/admin/ads/${placed.creativeId}/suspend`, {
       severe: false,
       reason: 'Klaim menyesatkan',
     });
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { refundedIdr: number }).refundedIdr).toBe(20_000);
-    expect((await adFor(rt, {}, await viewerIn(rt, 'Malang')))!.internal).toBe(true);
-    expect(
-      rt.d1.sqlite.prepare('SELECT balance_idr FROM wallets WHERE user_id = ?').get(s.userId),
-    ).toEqual({ balance_idr: 20_000 });
-    const audit = rt.d1.sqlite
-      .prepare(`SELECT action FROM audit_logs WHERE target_id = ?`)
-      .all(creativeId);
+    expect(((await res.json()) as { refundedIdr: number }).refundedIdr).toBe(0);
+    expect(status(rt, placed.campaignId)).toBe('suspended');
+    expect((await rotationFor(rt, await viewerIn(rt, 'Malang'))).ads[0]!.internal).toBe(true);
+    const audit = rt.d1.sqlite.prepare(`SELECT action FROM audit_logs WHERE target_id = ?`).all(placed.creativeId);
     expect(audit).toContainEqual({ action: 'ad.suspend' });
+  });
+
+  it('a takedown before the last day refunds the days not shown as credit', async () => {
+    const { rt } = await setup();
+    const op = await staffSignIn(rt, 'ops@example.com');
+    const placed = await placeAd(rt, op, { days: 3 });
+    fund(rt, placed.advertiser.userId, 3_000);
+    await review(rt, placed.creativeId, 'approve');
+    expect(status(rt, placed.campaignId)).toBe('live');
+    const mod = await staffSignIn(rt, 'mod2@example.com', 'moderator');
+    const res = await mod.req('POST', `/api/admin/ads/${placed.creativeId}/suspend`, {
+      severe: false,
+      reason: 'Klaim menyesatkan',
+    });
+    expect(((await res.json()) as { refundedIdr: number }).refundedIdr).toBe(2_000); // tomorrow and the day after
+    expect(
+      rt.d1.sqlite.prepare('SELECT balance_idr FROM wallets WHERE user_id = ?').get(placed.advertiser.userId),
+    ).toEqual({ balance_idr: 2_000 });
   });
 });
 
 describe('where ads never appear (SPEC §10.1)', () => {
   it('keeps download paths ad-free, respects plans.show_ads and the feature flag', async () => {
     const { rt } = await setup();
-    const { s: adv, creativeId } = await advertiserWithCreative(rt);
-    await approve(rt, creativeId);
-    fund(rt, adv.userId, 100_000);
-    const h = (await (await book(adv, creativeId, 'ID', [TODAY], 'share_page')).json()) as {
-      bookingIds: string[];
-    };
-    await adv.req('POST', '/api/advertiser/bookings/checkout', {
-      bookingIds: h.bookingIds,
-      method: 'qris',
-    });
+    const op = await staffSignIn(rt, 'ops@example.com');
+    const placed = await placeAd(rt, op, { scope: 'national', days: 1 });
+    fund(rt, placed.advertiser.userId, 100_000);
+    await review(rt, placed.creativeId, 'approve');
 
     const owner = await signIn(rt, 'owner@example.com');
     await grantPlan(rt, owner.userId, 'plus');
@@ -481,12 +486,12 @@ describe('where ads never appear (SPEC §10.1)', () => {
 
     // Plans with show_ads = 0 hide ads for their users (and on their share pages).
     rt.d1.sqlite.prepare(`UPDATE plans SET show_ads = 0 WHERE code = 'plus'`).run();
-    expect(await adFor(rt, {}, owner)).toBeNull();
+    expect((await rotationFor(rt, owner)).ads).toEqual([]);
     expect(
       await (await rt.fetch(new Request(locked.share.url, { headers: ua }))).text(),
     ).not.toContain('Iklan ·');
 
     setConfig(rt, 'features', { ...(await createCtx(rt.env).config()).features, ads: false });
-    expect(await adFor(rt, {})).toBeNull();
+    expect((await rotationFor(rt)).ads).toEqual([]);
   });
 });

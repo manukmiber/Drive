@@ -2,6 +2,7 @@
 // `notify` queue by email — the only channel out of the app (ADR-041). Message bodies are rendered at
 // delivery time.
 import { formatBytes, formatDateTime, formatRupiah } from '../../shared/format';
+import { AD_CONTACT } from '../../shared/constants';
 import type { Ctx } from '../context';
 import { ulid } from '../lib/ids';
 import { AppError } from '../lib/errors';
@@ -50,7 +51,12 @@ export async function notify(
   return id;
 }
 
-type Rendered = { title: string; paragraphs: string[]; cta?: { label: string; url: string } };
+type Rendered = {
+  title: string;
+  paragraphs: string[];
+  cta?: { label: string; url: string };
+  image?: { src: string; alt: string };
+};
 
 function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | null {
   const app = appUrl(ctx.env, '');
@@ -130,26 +136,55 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
       };
     case 'ad_status': {
       const status = String(p.status);
+      const title = String(p.title);
       const titles: Record<string, string> = {
-        approved: `Iklan "${String(p.title)}" disetujui`,
-        rejected: `Iklan "${String(p.title)}" belum bisa tayang`,
-        suspended: `Iklan "${String(p.title)}" dihentikan`,
+        approved: `Iklan "${title}" disetujui`,
+        awaiting_payment: `Iklan "${title}" disetujui, tinggal dibayar`,
+        paid: `Iklan "${title}" disetujui dan sudah dibayar`,
+        rejected: `Iklan "${title}" belum bisa tayang`,
+        suspended: `Iklan "${title}" dihentikan`,
       };
+      // Paying is by email (ADR-043): the QRIS is in this message, nothing to open on the website.
+      if (status === 'awaiting_payment') {
+        const amount = formatRupiah(Number(p.amountIdr));
+        const qr = typeof p.qrUrl === 'string' ? p.qrUrl : null;
+        const payUrl = typeof p.payUrl === 'string' ? p.payUrl : null;
+        return {
+          title: titles.awaiting_payment!,
+          paragraphs: qr
+            ? [
+                `Iklanmu sudah kami cek dan aman untuk tayang. Scan QRIS di bawah ini dari aplikasi bank atau e-wallet dan bayar tepat ${amount}, paling lambat ${String(p.startDate)}.`,
+                'Nominalnya punya kode unik supaya pembayaranmu mudah kami kenali. Setelah kami terima, iklanmu tayang sesuai jadwal; tidak perlu membuka website.',
+                ...(Number(p.creditUsedIdr) > 0
+                  ? [`Kreditmu ${formatRupiah(Number(p.creditUsedIdr))} sudah dipotong dari tagihan ini.`]
+                  : []),
+                'Kalau belum dibayar sampai hari itu lewat, pesanan ini batal dengan sendirinya.',
+              ]
+            : [
+                `Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya ${amount}; QRIS-nya kami kirim lewat email sebentar lagi.`,
+                `Ada pertanyaan? Balas email ini atau tulis ke ${AD_CONTACT}.`,
+              ],
+          ...(qr ? { image: { src: qr, alt: `QRIS ${amount}` } } : {}),
+          ...(payUrl && !qr ? { cta: { label: 'Bayar', url: payUrl } } : {}),
+        };
+      }
       const paragraphs =
-        status === 'approved'
-          ? ['Materi iklanmu lolos moderasi. Sekarang kamu bisa pilih daerah dan tanggal tayang.']
-          : [
-              `Alasan: ${String(p.reason || 'melanggar Kebijakan Iklan')}.`,
-              Number(p.refundedIdr) > 0
-                ? `Sisa hari tayang dikembalikan sebagai kredit ${formatRupiah(Number(p.refundedIdr))}, dipotong otomatis dari pembayaran berikutnya.`
-                : status === 'rejected'
-                  ? 'Perbaiki materinya lalu kirim ulang untuk dimoderasi.'
-                  : 'Sisa hari tayang tidak dikembalikan karena pelanggaran berat.',
-            ];
+        status === 'paid'
+          ? ['Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya sudah dibayar dari kreditmu, jadi iklanmu tayang sesuai jadwal.']
+          : status === 'approved'
+            ? ['Materi iklanmu sudah kami cek dan aman untuk tayang.']
+            : [
+                `Alasan: ${String(p.reason || 'melanggar Kebijakan Iklan')}.`,
+                Number(p.refundedIdr) > 0
+                  ? `Sisa hari tayang dikembalikan sebagai kredit ${formatRupiah(Number(p.refundedIdr))}, dipotong otomatis dari pembayaran berikutnya.`
+                  : status === 'rejected'
+                    ? `Balas email kami atau kirim ulang ke ${AD_CONTACT} dengan materi yang sudah diperbaiki.`
+                    : 'Sisa hari tayang tidak dikembalikan karena pelanggaran berat.',
+              ];
       return {
         title: titles[status] ?? 'Status iklan berubah',
         paragraphs,
-        cta: { label: 'Buka dashboard iklan', url: `${app}/iklan` },
+        cta: { label: 'Lihat statistik iklan', url: `${app}/iklan` },
       };
     }
     case 'compress_done': {

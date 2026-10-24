@@ -179,7 +179,8 @@ export class ZeikoPaymentProvider implements PaymentProvider {
     return {
       providerRef: String(d.id),
       checkoutUrl: typeof d.payUrl === 'string' ? d.payUrl : null,
-      qrString: null,
+      // The QRIS text with the rupiah in it (a relay from 2026-10-24 on), for a QR in an email.
+      qrString: typeof d.qris === 'string' ? d.qris : null,
       expiresAt: typeof d.expiresAt === 'number' ? d.expiresAt : this.now() + 60 * 60_000,
       ...(typeof d.amountIdr === 'number' ? { amountIdr: d.amountIdr } : {}),
     };

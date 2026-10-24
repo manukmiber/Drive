@@ -1,30 +1,31 @@
-// One small, static, clearly labelled ad (SPEC §10.1). Never rendered on upload/download UI.
-// Impression = ≥ 50 % visible for ≥ 1 s; frequency cap per session; "Sembunyikan" per creative.
+// One small, clearly labelled ad (SPEC §10.1). Never rendered on upload/download UI.
+// ADR-043: the card plays a rotation, one ad every `rotateSeconds`; it only swaps the content (no
+// animation) and holds still while the tab is hidden. An impression is the ad shown ≥ 50 % for
+// ≥ 1 s; "Sembunyikan" hides a creative for good on this browser.
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { EyeOff, Flag, Megaphone } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { t } from '../lib/i18n';
-import { getAd, type Placement } from '../lib/ads';
+import { getRotation, type Placement } from '../lib/ads';
 import { useCatalog } from '../lib/catalog';
 
 const HIDDEN_KEY = 'zk.ads.hidden';
-const SEEN_KEY = 'zk.ads.seen';
 
-function readJson<T>(store: () => Storage, key: string, fallback: T): T {
+function readHidden(): string[] {
   try {
-    const v = store().getItem(key);
-    return v ? (JSON.parse(v) as T) : fallback;
+    const v = localStorage.getItem(HIDDEN_KEY);
+    return v ? (JSON.parse(v) as string[]) : [];
   } catch {
-    return fallback;
+    return [];
   }
 }
 
-function writeJson(store: () => Storage, key: string, value: unknown): void {
+function writeHidden(value: string[]): void {
   try {
-    store().setItem(key, JSON.stringify(value));
+    localStorage.setItem(HIDDEN_KEY, JSON.stringify(value));
   } catch {
-    // Private mode / blocked storage: ads just aren't capped or hidden across reloads.
+    // Private mode / blocked storage: the ad is hidden until the page reloads.
   }
 }
 
@@ -37,38 +38,42 @@ export function AdCard({
 }) {
   const catalog = useCatalog();
   const enabled = catalog.data?.config.features.ads !== false;
-  const cap = Number(catalog.data?.config.ad_frequency_cap_per_session ?? 3);
-  const [hidden, setHidden] = useState<string[]>(() =>
-    readJson(() => localStorage, HIDDEN_KEY, []),
-  );
+  const [hidden, setHidden] = useState<string[]>(readHidden);
   const q = useQuery({
-    queryKey: ['ad', placement, hidden],
-    queryFn: () => getAd(placement, hidden),
+    queryKey: ['ads', placement, hidden],
+    queryFn: () => getRotation(placement, hidden),
     enabled,
     staleTime: 5 * 60_000,
   });
-  const ad = q.data?.ad ?? null;
+  const ads = q.data?.ads ?? [];
+  const seconds = q.data?.rotateSeconds ?? 15;
+  const [turn, setTurn] = useState(0);
+  const ad = ads.length ? ads[turn % ads.length]! : null;
   const ref = useRef<HTMLElement>(null);
-  const seen = readJson<Record<string, number>>(() => sessionStorage, SEEN_KEY, {});
-  const capped = Boolean(ad?.bookingId && (seen[ad.bookingId] ?? 0) >= cap);
+
+  // Next ad every `seconds`, only while the page is in front; at the end, ask for a fresh rotation.
+  const { refetch } = q;
+  useEffect(() => {
+    if (ads.length < 2) return;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') setTurn((n) => n + 1);
+    }, seconds * 1000);
+    return () => clearInterval(id);
+  }, [ads.length, seconds]);
+  useEffect(() => {
+    if (ads.length > 1 && turn > 0 && turn % ads.length === 0) void refetch();
+  }, [turn, ads.length, refetch]);
 
   useEffect(() => {
     const el = ref.current;
-    if (!el || !ad?.bookingId || !ad.token || capped) return;
+    if (!el || !ad?.campaignId || !ad.token || !ad.area) return;
+    const body = JSON.stringify({ c: ad.campaignId, a: ad.area, t: ad.token });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const obs = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting) {
+        if (entry?.isIntersecting && document.visibilityState === 'visible') {
           timer = setTimeout(() => {
-            const counts = readJson<Record<string, number>>(() => sessionStorage, SEEN_KEY, {});
-            counts[ad.bookingId!] = (counts[ad.bookingId!] ?? 0) + 1;
-            writeJson(() => sessionStorage, SEEN_KEY, counts);
-            navigator.sendBeacon?.(
-              '/ad/i',
-              new Blob([JSON.stringify({ b: ad.bookingId, t: ad.token })], {
-                type: 'application/json',
-              }),
-            );
+            navigator.sendBeacon?.('/ad/i', new Blob([body], { type: 'application/json' }));
             obs.disconnect();
           }, 1000);
         } else if (timer) clearTimeout(timer);
@@ -80,15 +85,17 @@ export function AdCard({
       obs.disconnect();
       if (timer) clearTimeout(timer);
     };
-  }, [ad?.bookingId, ad?.token, capped]);
+    // A new turn is a new showing, even of the same ad.
+  }, [ad?.campaignId, ad?.token, ad?.area, turn]);
 
-  if (!enabled || !ad || capped) return null;
+  if (!enabled || !ad) return null;
 
   const hide = () => {
     if (!ad.creativeId) return;
     const next = [...hidden, ad.creativeId].slice(-20);
-    writeJson(() => localStorage, HIDDEN_KEY, next);
+    writeHidden(next);
     setHidden(next);
+    setTurn(0);
   };
 
   return (

@@ -455,6 +455,12 @@ Tampilkan total ukuran, jumlah file, dan catatan bahwa media yang sudah terkompr
 
 ## 10. Fitur 6: Iklan lokal non-intrusif
 
+> **Diganti sebagian oleh ADR-043 (2026-10-24).** Tidak ada slot harian, hold, atau swalayan: pengiklan email
+> admin, operator memasukkan kampanye (kota atau Nasional), setiap materi dicek manual, dan setelah disetujui
+> QRIS-nya dikirim ke email pengiklan (website hanya statistik). Kuota tidak terbatas; kartu iklan berganti tiap 15 detik, UMKM/usaha kecil/mahasiswa
+> dicek lebih dulu dan tampil lebih sering. Harga per hari: 1 kota Rp1.000, sampai 10 kota Rp3.000, Nasional
+> Rp10.000 (config). Bagian 10.4–10.7 di bawah adalah rancangan awal; yang berlaku ada di ADR-043.
+
 ### 10.1 Aturan non-intrusif (wajib)
 - Maks 1 iklan per layar, berukuran kecil, berlabel jelas "Iklan · {nama daerah}".
 - Hanya statis (gambar + teks). Tanpa pop-up, interstisial, autoplay video/suara, animasi berkedip, atau overlay.

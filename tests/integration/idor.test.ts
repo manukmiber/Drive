@@ -1,10 +1,8 @@
 // SPEC §14.1 "Test IDOR untuk setiap endpoint": a second account replays every ID-taking endpoint
 // against the first account's objects. Each call must fail (4xx) and nothing may change.
 import { describe, expect, it } from 'vitest';
-import { createCtx } from '../../src/worker/context';
-import { reviewCreative } from '../../src/worker/services/ads';
 import { APP, makeRuntime } from '../helpers/runtime';
-import { staffSignIn } from '../helpers/session';
+import { signIn, staffSignIn } from '../helpers/session';
 import { createFolder, grantPlan, rootOf, uploadText } from '../helpers/files';
 
 const WEBP = (() => {
@@ -21,9 +19,10 @@ const WEBP = (() => {
 describe('IDOR (SPEC §14.1)', () => {
   it("rejects every endpoint replayed against another user's IDs", async () => {
     const rt = await makeRuntime();
-    // Admins both: the advertiser tool is the operator's (ADR-041), and still per person.
-    const a = await staffSignIn(rt, 'korban@example.com');
-    const b = await staffSignIn(rt, 'penyerang@example.com');
+    // Two ordinary people; the operator enters A's ad (ADR-043) and B tries to reach it.
+    const a = await signIn(rt, 'korban@example.com');
+    const b = await signIn(rt, 'penyerang@example.com');
+    const op = await staffSignIn(rt, 'ops@example.com');
     await grantPlan(rt, a.userId);
     await grantPlan(rt, b.userId);
     const aRoot = await rootOf(a);
@@ -61,13 +60,15 @@ describe('IDOR (SPEC §14.1)', () => {
         mime: 'image/jpeg',
       })
     ).json()) as { jobId: string };
-    await a.req('PUT', '/api/advertiser', {
+    await op.req('PUT', '/api/admin/ads/advertiser', {
+      email: 'korban@example.com',
       businessName: 'Toko A',
       kind: 'umkm',
       phone: '081234567890',
     });
     const creative = (await (
-      await a.req('POST', '/api/advertiser/creatives', {
+      await op.req('POST', '/api/admin/ads/creatives', {
+        advertiserId: a.userId,
         title: 'Toko A',
         body: 'Promo',
         ctaType: 'web',
@@ -75,21 +76,20 @@ describe('IDOR (SPEC §14.1)', () => {
         category: 'lainnya',
       })
     ).json()) as { id: string };
-    await a.req('PUT', `/api/advertiser/creatives/${creative.id}/image`, undefined, {
+    await op.req('PUT', `/api/admin/ads/creatives/${creative.id}/image?advertiser=${a.userId}`, undefined, {
       body: WEBP,
       headers: { 'content-type': 'image/webp', 'content-length': String(WEBP.length) },
     });
-    await a.req('POST', `/api/advertiser/creatives/${creative.id}/submit`);
-    await reviewCreative(createCtx(rt.env), b.userId, creative.id, 'approve', '');
     const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
-    const booking = (await (
-      await a.req('POST', '/api/advertiser/bookings', {
+    const campaign = (await (
+      await op.req('POST', '/api/admin/ads/campaigns', {
         creativeId: creative.id,
-        areaCode: 'ID',
-        placement: 'explorer_sidebar',
-        dates: [today],
+        scope: 'national',
+        startDate: today,
+        days: 1,
       })
-    ).json()) as { bookingIds: string[] };
+    ).json()) as { id: string };
+    await op.req('POST', `/api/admin/ads/${creative.id}/review`, { decision: 'approve', reason: '' });
     rt.d1.sqlite
       .prepare(`INSERT INTO wallets (user_id, balance_idr, updated_at) VALUES (?, 100000, 0)`)
       .run(b.userId);
@@ -122,7 +122,7 @@ describe('IDOR (SPEC §14.1)', () => {
         rt.d1.sqlite
           .prepare('SELECT id, title, status, image_key FROM ad_creatives ORDER BY id')
           .all(),
-        rt.d1.sqlite.prepare('SELECT id, status FROM ad_bookings ORDER BY id').all(),
+        rt.d1.sqlite.prepare('SELECT id, status FROM ad_campaigns ORDER BY id').all(),
         rt.d1.sqlite
           .prepare('SELECT id, read_at FROM notifications WHERE user_id = ?')
           .all(a.userId),
@@ -182,47 +182,12 @@ describe('IDOR (SPEC §14.1)', () => {
       ['GET', `/api/compress/standalone/${job.jobId}/result`],
       ['POST', '/api/archives', { nodeIds: [folder.id] }],
       ['POST', '/api/archives/estimate', { nodeIds: [folder.id] }],
-      [
-        'PATCH',
-        `/api/advertiser/creatives/${creative.id}`,
-        {
-          title: 'x',
-          body: 'y',
-          ctaType: 'web',
-          ctaValue: 'https://evil.example',
-          category: 'lainnya',
-        },
-      ],
-      [
-        'PUT',
-        `/api/advertiser/creatives/${creative.id}/image`,
-        undefined,
-        {
-          body: WEBP,
-          headers: { 'content-type': 'image/webp', 'content-length': String(WEBP.length) },
-        },
-      ],
-      ['POST', `/api/advertiser/creatives/${creative.id}/submit`],
       ['GET', `/api/advertiser/creatives/${creative.id}/image`],
-      [
-        'POST',
-        '/api/advertiser/bookings',
-        { creativeId: creative.id, areaCode: 'ID', placement: 'explorer_sidebar', dates: [today] },
-      ],
-      [
-        'POST',
-        '/api/advertiser/bookings/checkout',
-        { bookingIds: booking.bookingIds, method: 'qris' },
-      ],
-      ['POST', '/api/advertiser/bookings/cancel', { bookingIds: booking.bookingIds }],
+      ['POST', `/api/admin/ads/campaigns/${campaign.id}/send-payment`, {}],
+      ['GET', `/api/admin/ads/advertiser?email=korban@example.com`],
+      ['POST', `/api/admin/ads/${creative.id}/suspend`, { severe: true, reason: 'iseng saja' }],
       ['DELETE', `/api/family/members/${a.userId}`],
     ];
-    // B must be an advertiser for the advertiser endpoints to get past "not an advertiser".
-    await b.req('PUT', '/api/advertiser', {
-      businessName: 'Toko B',
-      kind: 'umkm',
-      phone: '081298765432',
-    });
 
     const leaks: string[] = [];
     for (const [method, path, json, init] of attempts) {

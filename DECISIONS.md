@@ -614,3 +614,68 @@ cara mengirim email tanpa menunggu notifikasi sungguhan, dan tanpa token adapter
   `mock`), jadi `mock` berarti tidak ada yang keluar dari Worker. Penolakan relay diteruskan apa adanya
   (dipotong 300 karakter): endpoint ini hanya untuk operator.
 - Setiap percobaan, berhasil atau gagal, dicatat di audit log sebagai `email.test` dengan alamat tujuannya.
+
+## ADR-043 — Aturan dan harga iklan: kampanye tanpa batas slot, rotasi 15 detik, cek manual
+**Konteks:** aturan pemilik (2026-10-24): (1) tidak boleh SARA, judi, scam, membahayakan, dll.; (2) UMKM, small
+business, mahasiswa didulukan; (3) semua iklan dicek manual, tidak otomatis; (4) satu pengiklan boleh di berbagai
+tempat atau paket nasional; (5) kuota tidak terbatas, satu iklan tampil 15 detik lalu diganti iklan lain;
+(6) pengiklan dapat dashboard sendiri (dilihat, diklik, dll.). Harga: 1 kota Rp1.000/hari, 10 kota Rp3.000/hari,
+Nasional Rp10.000/hari. Pilihan pemilik saat ditanya: **pesan tetap lewat email ke admin** ("no automation, jadi
+pengiklan wajib email kita dan kita cek apakah aman untuk ditampilkan"); **bayar setelah disetujui**; "didulukan"
+berarti **dicek lebih dulu dan lebih sering tampil**; 2–9 kota **Rp1.000/kota, maksimal Rp3.000**. Lalu
+(2026-10-24): "iklan itu dipesan via Email, bukan via website" — dan **bayarnya juga lewat email**: QRIS dikirim
+di email persetujuan, website hanya untuk statistik.
+
+**Keputusan:**
+- **Kampanye menggantikan slot harian.** `ad_campaigns` (migrasi 0006): satu materi, `scope` `cities` atau
+  `national`, area di `ad_campaign_areas` (kota/kabupaten, atau satu baris `ID`), tanggal mulai + jumlah hari,
+  harga per hari dan total yang **dibekukan saat dibuat**. Tidak ada inventori, slot, hold 15 menit, atau batas
+  per sesi lagi; `ad_inventory`, `ad_bookings`, `ad_prices` tetap di skema dan tidak dibaca (production belum punya
+  satu pun baris iklan saat ini diputuskan). Provinsi tidak bisa dipilih.
+- **Harga** (config, `adCampaignPricePerDay` di `shared/ad-policy.ts`, dipakai server dan form admin): Nasional
+  `ad_price_national_idr`; kota: tiap `ad_bundle_cities` (10) kota penuh `ad_price_bundle_idr`, sisanya
+  `ad_price_city_idr` per kota tapi tidak lebih dari satu paket, dan semuanya tidak lebih dari Nasional. 1 kota
+  Rp1.000, 2 Rp2.000, 3–10 Rp3.000, 12 Rp5.000, 40+ Rp10.000. Pajak (`tax_rate_pct`) ditambahkan saat bayar.
+- **Alur:** pengiklan email admin → admin (Admin → Iklan → Pasang iklan) mencari Akun Zeiko-nya lewat email (harus
+  sudah pernah masuk Drive, karena dashboard-nya di /iklan), mengisi data pengiklan, materi + gambar, dan kampanye →
+  materi baru selalu **`pending`** dan masuk Antrean cek → staf menyetujui/menolak → kampanye yang menunggu cek itu
+  jadi `awaiting_payment` atau `rejected`.
+- **Bayar lewat email** (`sendCampaignPayment`): saat itu juga Drive membuka QRIS atas nama pengiklan untuk
+  totalnya dikurangi kredit (`purpose {kind: 'ad_campaign'}`) dan mengirim email berisi **gambar QR-nya**, nominal
+  persis (dengan kode unik), dan batas bayar. Gambarnya `GET /ad/qr/{id}.png?t=…` (token HMAC, hanya selama
+  menunggu pembayaran): klien email tidak menampilkan SVG atau `data:` URI, jadi Drive menggambar PNG sendiri
+  (`lib/qr-png.ts`: matriks dari paket `qrcode`, dikompres `CompressionStream`). Teks QRIS-nya dari relay
+  (`qris` di `/apps/v1/payments`, sejak 2026-10-24); relay yang lebih lama tidak mengirimnya, dan emailnya hanya
+  berisi nominal dan tombol ke halaman bayar. Pengiklan scan dari email; operator mengonfirmasi QRIS-nya di
+  Zeiko Accounts → QRIS seperti QRIS lain (alarm tidak berbunyi karena tidak ada yang menekan "Sudah bayar"; QRIS
+  yang sudah ditutup tetap bisa dicairkan) → relay memberi tahu Drive → `paid`, atau `live` kalau mulainya hari
+  ini. Kredit yang menutup semuanya langsung membayar saat disetujui. Kalau QRIS tidak bisa dibuka, pengiklan
+  diberi tahu QRIS menyusul dan operator mendapat `admin_alert`; **Kirim ulang QRIS** di Admin → Iklan →
+  Kampanye mengirim lagi QRIS yang masih terbuka atau membuka yang baru. Tidak ada tombol bayar di website.
+  Belum dibayar sampai hari mulainya lewat → `expired` (cron 00:05 WIB). Catatan: kode unik QRIS hanya dijamin
+  beda di antara QRIS terbuka satu hari terakhir, jadi pembayaran yang sangat telat perlu dicocokkan operator. Materi yang sudah disetujui bisa dipakai lagi: kampanye barunya
+  langsung menunggu pembayaran. Mengubah materi mengirimnya ke cek lagi, beserta kampanye yang menunggu pembayaran.
+- **Tidak ada keputusan otomatis.** `bannedTopic` hanya memberi tanda untuk pemeriksa ("perlu diperhatikan") dan
+  tidak pernah menolak. `submitCreative` dan filter otomatisnya dihapus.
+- **Didulukan:** Antrean cek mengurutkan UMKM/usaha kecil dan mahasiswa (`advertisers.kind` ≠ `lainnya`) lebih dulu;
+  di rotasi mereka mendapat `ad_priority_weight` (2) giliran untuk tiap 1 giliran pengiklan lain. Diskon mahasiswa
+  dan verifikasi `.ac.id` dihapus: harganya sudah rata, dan statusnya dicek admin.
+- **Penayangan:** semua kampanye live untuk kota penonton + semua kampanye nasional, tanpa batas.
+  `GET /api/ads` mengirim `{ads, rotateSeconds}`: urutan rotasi (smooth weighted round robin, maks 40 giliran,
+  dimulai dari posisi acak). Kartu berganti tiap `ad_rotate_seconds` (15): ganti isi saja tanpa animasi, diam saat
+  tab tersembunyi, dan minta urutan baru di akhir. Halaman share (tanpa JS) menampilkan satu iklan pilihan berbobot.
+- **Statistik** per kampanye per hari per kota penonton (`ad_campaign_stats`): dilihat (≥ 50% terlihat ≥ 1 detik,
+  token HMAC mengikat kampanye + tanggal + kota) dan diklik (`/ad/c/{id}?a=kota`). Tetap tanpa ID pengguna.
+- **Dashboard pengiklan** di /iklan (aturan 6) untuk siapa pun yang punya kampanye: status, kota, tanggal, harga,
+  pengingat bahwa QRIS-nya ada di email, dilihat/diklik/CTR, per hari dan per kota. Halaman yang sama menampilkan aturan dan harga untuk
+  semua orang (dibaca dari config).
+- **Penghentian:** kampanye `paid`/`live` dari materi itu `suspended`; hari yang belum tayang (mulai besok)
+  dikembalikan sebagai kredit sesuai `ad_refund_on_suspend`; yang masih menunggu dibatalkan.
+- Route: pengiklan `GET /api/advertiser` (baca saja); operator `/api/admin/ads/{advertiser,creatives,campaigns}`
+  dan `campaigns/:id/send-payment` (admin saja, karena membuka tagihan), cek dan takedown untuk admin dan
+  moderator; publik `/ad/qr/:id.png`.
+
+Tes: `tests/integration/ads.test.ts` (harga, cek manual tanpa keputusan otomatis, urutan antrean, QRIS + gambar QR
+di email persetujuan, kredit yang langsung membayar, rotasi berbobot tanpa batas, statistik per kota, kedaluwarsa,
+refund takedown), `tests/integration/idor.test.ts`; relay `tests/drive.rs` (`qris` di jawaban pembayaran).
+

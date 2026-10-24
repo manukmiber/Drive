@@ -5,11 +5,11 @@ import { useEffect, useState } from 'react';
 import { formatBytes, formatDateTime, formatRupiah } from '../../shared/format';
 import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
-import { PromptDialog } from '../components/ui/Dialog';
 import { toast } from '../components/ui/Toast';
 import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { cn } from '../lib/cn';
 import { useMe } from '../lib/session';
+import { AdsTab } from './AdminAds';
 
 const card = 'z-card rounded-2xl p-4';
 const input = 'h-9 w-full rounded-lg border border-[var(--border)] bg-transparent px-2 text-sm';
@@ -438,128 +438,6 @@ function ReportsTab() {
   );
 }
 
-type AdReviewRow = {
-  id: string;
-  title: string;
-  body: string;
-  hasImage: boolean;
-  ctaType: string;
-  ctaValue: string;
-  category: string;
-  status: string;
-  rejectReason: string | null;
-  businessName: string;
-  advertiserKind: string;
-  openReports: number;
-};
-
-function AdsTab() {
-  const qc = useQueryClient();
-  const [status, setStatus] = useState('pending');
-  const [severe, setSevere] = useState(false);
-  const q = useQuery({
-    queryKey: ['admin', 'ads', status],
-    queryFn: () => api<{ items: AdReviewRow[] }>(`/api/admin/ads?status=${status}`),
-  });
-  const act = useMutation({
-    mutationFn: ({
-      id,
-      kind,
-      reason,
-    }: {
-      id: string;
-      kind: 'approve' | 'reject' | 'suspend';
-      reason: string;
-    }) =>
-      kind === 'suspend'
-        ? postJson(`/api/admin/ads/${id}/suspend`, { severe, reason })
-        : postJson(`/api/admin/ads/${id}/review`, { decision: kind, reason }),
-    onSuccess: async () => {
-      toast(t.admin.saved);
-      await qc.invalidateQueries({ queryKey: ['admin', 'ads'] });
-    },
-    onError: () => toast(t.errors.generic, { tone: 'error' }),
-  });
-  const [asking, setAsking] = useState<{ id: string; kind: 'reject' | 'suspend' } | null>(null);
-  const ask = (id: string, kind: 'approve' | 'reject' | 'suspend') =>
-    kind === 'approve' ? act.mutate({ id, kind, reason: '' }) : setAsking({ id, kind });
-  return (
-    <div className="space-y-3">
-      <h2 className="font-medium">{t.ads.adminTitle}</h2>
-      <PromptDialog
-        open={Boolean(asking)}
-        title={t.ads.reasonPrompt}
-        initial=""
-        confirmLabel={asking?.kind === 'suspend' ? t.ads.suspend : t.ads.reject}
-        onCancel={() => setAsking(null)}
-        onSubmit={(reason) => {
-          const a = asking!;
-          setAsking(null);
-          if (reason.trim()) act.mutate({ id: a.id, kind: a.kind, reason: reason.trim() });
-        }}
-      />
-      <select
-        className={cn(input, 'w-48')}
-        value={status}
-        onChange={(e) => setStatus(e.target.value)}
-      >
-        {['pending', 'approved', 'rejected', 'suspended'].map((s) => (
-          <option key={s} value={s}>
-            {t.ads.statuses[s]}
-          </option>
-        ))}
-      </select>
-      {status === 'approved' && (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={severe} onChange={(e) => setSevere(e.target.checked)} />
-          {t.ads.severe}
-        </label>
-      )}
-      {(q.data?.items ?? []).map((a) => (
-        <div key={a.id} className="flex gap-3 rounded-xl border border-[var(--border)] p-3 text-sm">
-          {a.hasImage && (
-            <img
-              src={`/api/admin/ads/${a.id}/image`}
-              alt=""
-              className="h-20 w-20 shrink-0 rounded-lg object-cover"
-            />
-          )}
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">{a.title}</p>
-            <p className="text-[var(--fg-muted)]">{a.body}</p>
-            <p className="mt-1 text-xs text-[var(--fg-muted)]">
-              {a.businessName} ({t.ads.kinds[a.advertiserKind]}) · {t.ads.categories[a.category]} ·{' '}
-              {t.ads.ctaTypes[a.ctaType]}: <code className="break-all">{a.ctaValue}</code>
-              {a.openReports > 0 && (
-                <b className="ml-2 text-red-700">{t.ads.openReports(a.openReports)}</b>
-              )}
-            </p>
-            {a.rejectReason && <p className="text-xs text-red-700">{a.rejectReason}</p>}
-          </div>
-          <div className="flex shrink-0 flex-col gap-1">
-            {a.status === 'pending' && (
-              <>
-                <Button onClick={() => ask(a.id, 'approve')}>{t.ads.approve}</Button>
-                <Button variant="ghost" onClick={() => ask(a.id, 'reject')}>
-                  {t.ads.reject}
-                </Button>
-              </>
-            )}
-            {a.status === 'approved' && (
-              <Button variant="ghost" onClick={() => ask(a.id, 'suspend')}>
-                {t.ads.suspend}
-              </Button>
-            )}
-          </div>
-        </div>
-      ))}
-      {q.isSuccess && !q.data.items.length && (
-        <p className="text-sm text-[var(--fg-muted)]">{t.common.empty}</p>
-      )}
-    </div>
-  );
-}
-
 function ScannerTab() {
   const q = useQuery({
     queryKey: ['admin', 'scanner'],
@@ -857,7 +735,7 @@ export function Admin() {
       {active === 'dashboard' && <DashboardTab />}
       {active === 'users' && <UsersTab isAdmin={isAdmin} />}
       {active === 'reports' && <ReportsTab />}
-      {active === 'ads' && <AdsTab />}
+      {active === 'ads' && <AdsTab isAdmin={isAdmin} />}
       {active === 'scanner' && <ScannerTab />}
       {active === 'config' && <ConfigTab />}
       {active === 'catalog' && <CatalogTab />}

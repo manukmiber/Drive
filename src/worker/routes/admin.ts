@@ -5,11 +5,23 @@ import { z } from 'zod';
 import { validate } from '../lib/validate';
 import { AppError } from '../lib/errors';
 import { requireStaff } from '../middleware/auth';
+import { AD_CATEGORIES, AD_CTA_TYPES } from '../../shared/ad-policy';
+import { AD_CAMPAIGN_SCOPES, AD_CAMPAIGN_STATUSES } from '../../shared/enums';
+import { contentLength } from '../lib/http';
 import {
+  advertiserForOperator,
+  cancelCampaign,
+  createCampaign,
+  driveUserByEmail,
+  listCampaigns,
   listCreativesForReview,
   reviewCreative,
+  sendCampaignPayment,
   reviewCreativeImage,
+  saveCreative,
+  setCreativeImage,
   suspendCreative,
+  upsertAdvertiser,
 } from '../services/ads';
 import {
   adjustBalance,
@@ -36,6 +48,13 @@ import {
 import type { AppBindings } from '../types';
 
 const reason = z.string().max(500);
+const creativeBody = z.object({
+  title: z.string().max(200),
+  body: z.string().max(500),
+  ctaType: z.enum(AD_CTA_TYPES),
+  ctaValue: z.string().min(1).max(500),
+  category: z.enum(AD_CATEGORIES),
+});
 const adminOnly = requireStaff(['admin']);
 
 export const admin = new Hono<AppBindings>()
@@ -78,6 +97,93 @@ export const admin = new Hono<AppBindings>()
         b.decision,
         b.reason,
       );
+      return c.body(null, 204);
+    },
+  )
+  // Entering an ad an advertiser asked for by email (ADR-043): admins only, since it opens a bill.
+  .get(
+    '/ads/advertiser',
+    adminOnly,
+    validate('query', z.object({ email: z.string().trim().email().max(254) })),
+    async (c) => c.json(await advertiserForOperator(c.get('ctx'), c.req.valid('query').email)),
+  )
+  .put(
+    '/ads/advertiser',
+    adminOnly,
+    validate(
+      'json',
+      z.object({
+        email: z.string().trim().email().max(254),
+        businessName: z.string().min(1).max(80),
+        kind: z.enum(['umkm', 'mahasiswa', 'lainnya']),
+        phone: z.string().min(8).max(20),
+      }),
+    ),
+    async (c) => {
+      const b = c.req.valid('json');
+      const ctx = c.get('ctx');
+      const user = await driveUserByEmail(ctx, b.email);
+      await upsertAdvertiser(ctx, user.id, b);
+      return c.json(await advertiserForOperator(ctx, b.email));
+    },
+  )
+  .post(
+    '/ads/creatives',
+    adminOnly,
+    validate('json', creativeBody.extend({ advertiserId: z.string().max(80) })),
+    async (c) => {
+      const { advertiserId, ...input } = c.req.valid('json');
+      return c.json(await saveCreative(c.get('ctx'), advertiserId, input), 201);
+    },
+  )
+  .patch(
+    '/ads/creatives/:id',
+    adminOnly,
+    validate('json', creativeBody.extend({ advertiserId: z.string().max(80) })),
+    async (c) => {
+      const { advertiserId, ...input } = c.req.valid('json');
+      return c.json(await saveCreative(c.get('ctx'), advertiserId, input, c.req.param('id')));
+    },
+  )
+  .put('/ads/creatives/:id/image', adminOnly, async (c) => {
+    const len = contentLength(c.req.header('content-length'));
+    const max = (await c.get('ctx').config()).ad_image_max_bytes;
+    if (len === null || len > max) throw new AppError('FILE_TOO_LARGE', 'ad image too large', { max });
+    const advertiserId = c.req.query('advertiser') ?? '';
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    return c.json(await setCreativeImage(c.get('ctx'), advertiserId, c.req.param('id'), bytes));
+  })
+  .get(
+    '/ads/campaigns',
+    validate('query', z.object({ status: z.enum(AD_CAMPAIGN_STATUSES).optional() })),
+    async (c) => c.json({ items: await listCampaigns(c.get('ctx'), c.req.valid('query').status) }),
+  )
+  .post(
+    '/ads/campaigns',
+    adminOnly,
+    validate(
+      'json',
+      z.object({
+        creativeId: z.string().max(40),
+        scope: z.enum(AD_CAMPAIGN_SCOPES),
+        areaCodes: z.array(z.string().max(13)).max(600).default([]),
+        startDate: z.string().max(10),
+        days: z.number().int(),
+      }),
+    ),
+    async (c) =>
+      c.json(await createCampaign(c.get('ctx'), c.get('user')!.id, c.req.valid('json')), 201),
+  )
+  // Sends the payment email again: the QRIS still open, or a new one (ADR-043).
+  .post('/ads/campaigns/:id/send-payment', adminOnly, async (c) =>
+    c.json(await sendCampaignPayment(c.get('ctx'), c.req.param('id'))),
+  )
+  .post(
+    '/ads/campaigns/:id/cancel',
+    adminOnly,
+    validate('json', z.object({ reason: reason.min(3) })),
+    async (c) => {
+      await cancelCampaign(c.get('ctx'), c.get('user')!.id, c.req.param('id'), c.req.valid('json').reason);
       return c.body(null, 204);
     },
   )

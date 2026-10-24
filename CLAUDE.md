@@ -27,7 +27,9 @@ aman, dan browser hanya menganggap `localhost` aman tanpa HTTPS. Di production a
 **drive.zeiko.biz.id** (ADR-038; `/dashboard/…` hanya jalan pulang dari website); landing, harga, dan
 deskripsi produk ada di website (`proxychat`, zeiko.biz.id/drive). Drive dibayar dengan **QRIS saja**, per
 pembelian, tanpa Saldo dan tanpa perpanjangan otomatis; notifikasi lewat email + lonceng; lokasi iklan dari
-kota di Akun Zeiko; pasang iklan lewat admin@zeiko.biz.id (ADR-041). Login lewat Akun Zeiko:
+kota di Akun Zeiko; iklan dipesan dan dibayar lewat email: operator memasukkan kampanyenya di Admin → Iklan,
+cek manual, dan begitu disetujui QRIS-nya dikirim ke email pengiklan (/iklan hanya statistik); tanpa batas slot,
+rotasi 15 detik (ADR-041, ADR-043). Login lewat Akun Zeiko:
 di dev, "Masuk dengan Akun Zeiko" membuka pintu tiruan `/__dev/door/account/signin` untuk memilih akun
 demo `demo@zeiko.local` (Plus), `admin@zeiko.local` (admin, Max), atau `baru@zeiko.local` (tanpa paket).
 

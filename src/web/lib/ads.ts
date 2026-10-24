@@ -1,10 +1,10 @@
-// Ads API (SPEC §10). The viewer side never sends user IDs with ad events.
+// Ads API (SPEC §10, ADR-043). The viewer side never sends user IDs with ad events.
 import { api, postJson, sendJson } from './api';
 
 export type Placement = 'explorer_sidebar' | 'share_page';
 
 export interface Ad {
-  bookingId: string | null;
+  campaignId: string | null;
   creativeId: string | null;
   title: string;
   body: string;
@@ -13,7 +13,47 @@ export interface Ad {
   clickUrl: string;
   label: string;
   token: string | null;
+  area: string | null;
   internal: boolean;
+}
+
+export interface Rotation {
+  ads: Ad[];
+  rotateSeconds: number;
+}
+
+export interface AreaRef {
+  code: string;
+  name: string;
+}
+
+export interface Stat {
+  impressions: number;
+  clicks: number;
+  ctr: number;
+}
+
+export interface MyCampaign extends Stat {
+  id: string;
+  creativeId: string;
+  title: string;
+  scope: 'cities' | 'national';
+  areas: AreaRef[];
+  startDate: string;
+  endDate: string;
+  days: number;
+  pricePerDayIdr: number;
+  totalIdr: number;
+  payIdr: number;
+  status: string;
+  reason: string | null;
+  byDay: Array<Stat & { date: string }>;
+  byArea: Array<Stat & AreaRef>;
+}
+
+export interface Dashboard {
+  advertiser: null | { businessName: string; kind: 'umkm' | 'mahasiswa' | 'lainnya' };
+  campaigns: MyCampaign[];
 }
 
 export interface Creative {
@@ -29,34 +69,6 @@ export interface Creative {
   updatedAt: number;
 }
 
-export interface Booking {
-  id: string;
-  creativeId: string;
-  title: string;
-  areaCode: string;
-  areaName: string;
-  placement: Placement;
-  date: string;
-  priceIdr: number;
-  status: string;
-  holdExpiresAt: number | null;
-  impressions: number;
-  clicks: number;
-  ctr: number;
-}
-
-export interface Dashboard {
-  advertiser: null | {
-    businessName: string;
-    kind: 'umkm' | 'mahasiswa' | 'lainnya';
-    phone: string;
-    studentVerified: boolean;
-    studentEmail: string | null;
-  };
-  creatives: Creative[];
-  bookings: Booking[];
-}
-
 export interface Area {
   code: string;
   name: string;
@@ -64,15 +76,8 @@ export interface Area {
   province: string | null;
 }
 
-export interface Availability {
-  area: { code: string; name: string; level: string };
-  placement: Placement;
-  priceIdr: number;
-  days: Array<{ date: string; remaining: number; total: number }>;
-}
-
-export const getAd = (placement: Placement, exclude: string[]) =>
-  api<{ ad: Ad | null }>(
+export const getRotation = (placement: Placement, exclude: string[]) =>
+  api<Rotation>(
     `/api/ads?${new URLSearchParams({ placement, ...(exclude.length ? { exclude: exclude.join(',') } : {}) })}`,
   );
 
@@ -80,59 +85,45 @@ export const searchAreas = (q: string) =>
   api<{ areas: Area[] }>(`/api/ads/areas?${new URLSearchParams({ q })}`);
 
 export const dashboard = () => api<Dashboard>('/api/advertiser');
+
+// ── The operator's side (/api/admin/ads, ADR-043) ──
+
+export interface OperatorAdvertiser {
+  user: { id: string; email: string; name: string | null };
+  advertiser: null | { businessName: string; kind: string; phone: string };
+  creatives: Creative[];
+}
+
+export type CreativeInput = Pick<Creative, 'title' | 'body' | 'ctaType' | 'ctaValue' | 'category'>;
+
+export const findAdvertiser = (email: string) =>
+  api<OperatorAdvertiser>(`/api/admin/ads/advertiser?${new URLSearchParams({ email })}`);
+
 export const saveAdvertiser = (b: {
+  email: string;
   businessName: string;
   kind: string;
   phone: string;
-  turnstileToken?: string | null;
-}) => sendJson<Dashboard>('PUT', '/api/advertiser', b);
+}) => sendJson<OperatorAdvertiser>('PUT', '/api/admin/ads/advertiser', b);
 
-export type CreativeInput = Pick<Creative, 'title' | 'body' | 'ctaType' | 'ctaValue' | 'category'>;
-export const saveCreative = (input: CreativeInput, id?: string) =>
+export const saveCreative = (advertiserId: string, input: CreativeInput, id?: string) =>
   id
-    ? sendJson<Creative>('PATCH', `/api/advertiser/creatives/${id}`, input)
-    : postJson<Creative>('/api/advertiser/creatives', input);
+    ? sendJson<Creative>('PATCH', `/api/admin/ads/creatives/${id}`, { ...input, advertiserId })
+    : postJson<Creative>('/api/admin/ads/creatives', { ...input, advertiserId });
 
-export const uploadCreativeImage = (id: string, blob: Blob) =>
-  api<Creative>(`/api/advertiser/creatives/${id}/image`, {
-    method: 'PUT',
-    body: blob,
-    headers: { 'content-type': 'image/webp' },
-  });
-
-export const submitCreative = (id: string) =>
-  postJson<Creative>(`/api/advertiser/creatives/${id}/submit`, {});
-
-export const availability = (area: string, placement: Placement) =>
-  api<Availability>(`/api/advertiser/availability?${new URLSearchParams({ area, placement })}`);
-
-export const holdBookings = (b: {
-  creativeId: string;
-  areaCode: string;
-  placement: Placement;
-  dates: string[];
-}) =>
-  postJson<{ bookingIds: string[]; totalIdr: number; holdExpiresAt: number }>(
-    '/api/advertiser/bookings',
-    b,
+export const uploadCreativeImage = (advertiserId: string, id: string, blob: Blob) =>
+  api<Creative>(
+    `/api/admin/ads/creatives/${id}/image?${new URLSearchParams({ advertiser: advertiserId })}`,
+    { method: 'PUT', body: blob, headers: { 'content-type': 'image/webp' } },
   );
 
-export const checkout = (bookingIds: string[], method: string) =>
-  postJson<
-    | { paid: true; invoiceId: string }
-    | {
-        paid: false;
-        topup: {
-          paymentId: string;
-          amountIdr: number;
-          qrString: string | null;
-          checkoutUrl: string | null;
-        };
-      }
-  >('/api/advertiser/bookings/checkout', { bookingIds, method });
-
-export const cancelHolds = (bookingIds: string[]) =>
-  postJson<void>('/api/advertiser/bookings/cancel', { bookingIds });
+export const createCampaign = (b: {
+  creativeId: string;
+  scope: 'cities' | 'national';
+  areaCodes: string[];
+  startDate: string;
+  days: number;
+}) => postJson<{ id: string; status: string }>('/api/admin/ads/campaigns', b);
 
 /**
  * Square-crops and encodes to WebP in the browser, lowering quality/size until it fits `maxBytes`

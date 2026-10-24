@@ -1,4 +1,5 @@
-// Ad content policy (SPEC §10.8): shown on /kebijakan/iklan and used by the automatic filter.
+// Ad content policy (SPEC §10.8): shown on /kebijakan/iklan. Every ad is checked by a person (ADR-043);
+// `bannedTopic` only flags words for that check and never decides.
 export const AD_PLACEMENTS = ['explorer_sidebar', 'share_page'] as const;
 export type AdPlacement = (typeof AD_PLACEMENTS)[number];
 
@@ -165,4 +166,32 @@ export function bannedTopic(...texts: string[]): string | null {
     if (rule.patterns.some((p) => variants.some((v) => p.test(v)))) return rule.topic;
   }
   return null;
+}
+
+/** The prices `adCampaignPricePerDay` reads (app config, ADR-043). */
+export interface AdPrices {
+  ad_price_city_idr: number;
+  ad_price_bundle_idr: number;
+  ad_bundle_cities: number;
+  ad_price_national_idr: number;
+}
+
+/**
+ * What one day of a campaign costs (ADR-043). National is its own price. Cities: every full bundle
+ * of `ad_bundle_cities` costs the bundle price, the rest cost a city each but never more than a
+ * bundle, and no set of cities costs more than national. With the defaults: 1 city Rp1.000,
+ * 2 Rp2.000, 3–10 Rp3.000, 12 Rp5.000, 40 or more Rp10.000.
+ */
+export function adCampaignPricePerDay(
+  p: AdPrices,
+  scope: 'cities' | 'national',
+  cities: number,
+): number {
+  if (scope === 'national') return p.ad_price_national_idr;
+  const n = Math.max(0, Math.floor(cities));
+  const bundle = Math.max(1, p.ad_bundle_cities);
+  const full = Math.floor(n / bundle);
+  const rest = n % bundle;
+  const price = full * p.ad_price_bundle_idr + Math.min(rest * p.ad_price_city_idr, p.ad_price_bundle_idr);
+  return Math.min(price, p.ad_price_national_idr);
 }

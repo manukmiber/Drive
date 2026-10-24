@@ -1,47 +1,34 @@
-// Ads (SPEC §10): GET /api/ads (serving), /api/ads/areas, /api/advertiser/* (the operator's tool for
-// placing a client's ad — ADR-041: people ask by email), and the cookie-less public endpoints /ad/i
-// (impression beacon), /ad/c/:id (click), /ad/img/:id (image).
+// Ads (SPEC §10, ADR-043): GET /api/ads (the rotation), /api/ads/areas, /api/advertiser (an
+// advertiser's own dashboard: their campaigns and numbers; ordering and paying are by email), and
+// the cookie-less public endpoints /ad/i (impression beacon), /ad/c/:id (click), /ad/img/:id
+// (image), /ad/qr/:id.png (the QRIS in a payment email). The operator's side (entering an ad, the
+// manual check, takedowns) is under /api/admin/ads.
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
-import {
-  AD_CATEGORIES,
-  AD_CTA_TYPES,
-  AD_PLACEMENTS,
-  type AdPlacement,
-} from '../../shared/ad-policy';
+import { AD_PLACEMENTS, type AdPlacement } from '../../shared/ad-policy';
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
-import { contentLength } from '../lib/http';
 import { validate } from '../lib/validate';
-import { requireStaff } from '../middleware/auth';
-import { verifyTurnstile } from '../lib/turnstile';
-import { clientIp, enforceRateLimit, rateLimit } from '../middleware/ratelimit';
+import { requireUser } from '../middleware/auth';
+import { clientIp, enforceRateLimit } from '../middleware/ratelimit';
 import {
   adsAllowedForUser,
   advertiserDashboard,
-  availability,
-  cancelHeld,
-  checkoutBookings,
+  campaignQris,
   creativeImage,
-  getAdvertiser,
-  holdBookings,
   ownCreativeImage,
   recordClick,
   recordImpression,
-  requestStudentOtp,
   resolveAreaChain,
-  saveCreative,
   searchAreas,
   serveAd,
-  setCreativeImage,
-  submitCreative,
-  upsertAdvertiser,
-  verifyStudentOtp,
+  serveRotation,
   type AdDto,
 } from '../services/ads';
 import { escapeHtml } from '../services/email-templates';
 import type { AppBindings } from '../types';
 import { appPath } from '../lib/paths';
+import { qrPng } from '../lib/qr-png';
 
 async function userCity(ctx: Ctx, userId: string | undefined): Promise<string | null> {
   if (!userId) return null;
@@ -51,31 +38,27 @@ async function userCity(ctx: Ctx, userId: string | undefined): Promise<string | 
   return r?.ad_city_code ?? null;
 }
 
-export async function pickAd(
-  c: Context<AppBindings>,
-  placement: AdPlacement,
-  planUserId: string | null,
-  exclude: string[] = [],
-): Promise<AdDto | null> {
+/** Only the city on the viewer's Zeiko Account (ADR-041); no account or no city: national ads. */
+async function viewerChain(c: Context<AppBindings>): Promise<string[]> {
   const ctx = c.get('ctx');
-  if (!(await adsAllowedForUser(ctx, planUserId))) return null;
-  // Only the city on the viewer's Zeiko Account (ADR-041); no account or no city: national ads.
-  const chain = await resolveAreaChain(ctx, { userCity: await userCity(ctx, c.get('user')?.id) });
-  return serveAd(ctx, placement, chain, exclude);
+  return resolveAreaChain(ctx, { userCity: await userCity(ctx, c.get('user')?.id) });
 }
 
 /**
  * Static ad card for the server-rendered share pages (password, link dead). No script runs there,
- * so the impression is counted when the page is rendered (ADR-032).
+ * so there is no rotation: one ad, and its impression is counted when the page is rendered (ADR-032).
  */
 export async function shareAdHtml(
   c: Context<AppBindings>,
   creatorId: string | null,
 ): Promise<string> {
   try {
-    const ad = await pickAd(c, 'share_page', creatorId);
+    const ctx = c.get('ctx');
+    if (!(await adsAllowedForUser(ctx, creatorId))) return '';
+    const ad: AdDto | null = await serveAd(ctx, 'share_page', await viewerChain(c));
     if (!ad) return '';
-    if (ad.bookingId && ad.token) await recordImpression(c.get('ctx'), ad.bookingId, ad.token);
+    if (ad.campaignId && ad.area && ad.token)
+      await recordImpression(ctx, ad.campaignId, ad.area, ad.token);
     const href = ad.internal ? new URL(ad.clickUrl, c.env.APP_ORIGIN).toString() : ad.clickUrl;
     return `<aside class="ad" aria-label="${escapeHtml(ad.label)}"><span class="adl">${escapeHtml(ad.label)}</span>
 <a href="${escapeHtml(href)}" target="_blank" rel="sponsored noopener noreferrer">${ad.imageUrl ? `<img src="${escapeHtml(ad.imageUrl)}" width="56" height="56" alt="">` : ''}<span><b>${escapeHtml(ad.title)}</b><br>${escapeHtml(ad.body)}</span></a>
@@ -86,13 +69,6 @@ ${ad.creativeId ? `<a class="adr" href="${escapeHtml(appPath(c.env, `/lapor?ad=$
 }
 
 const placement = z.enum(AD_PLACEMENTS);
-const creativeBody = z.object({
-  title: z.string().max(200),
-  body: z.string().max(500),
-  ctaType: z.enum(AD_CTA_TYPES),
-  ctaValue: z.string().min(1).max(500),
-  category: z.enum(AD_CATEGORIES),
-});
 
 export const adsApi = new Hono<AppBindings>()
   .get(
@@ -100,66 +76,23 @@ export const adsApi = new Hono<AppBindings>()
     validate('query', z.object({ placement, exclude: z.string().max(400).optional() })),
     async (c) => {
       const q = c.req.valid('query');
-      const exclude = q.exclude ? q.exclude.split(',').slice(0, 20) : [];
-      const ad = await pickAd(c, q.placement, c.get('user')?.id ?? null, exclude);
+      const ctx = c.get('ctx');
       c.header('Cache-Control', 'private, no-store');
-      return c.json({ ad });
+      if (!(await adsAllowedForUser(ctx, c.get('user')?.id ?? null)))
+        return c.json({ ads: [], rotateSeconds: 0 });
+      const exclude = q.exclude ? q.exclude.split(',').slice(0, 20) : [];
+      const placed: AdPlacement = q.placement;
+      return c.json(await serveRotation(ctx, placed, await viewerChain(c), exclude));
     },
   )
   .get('/areas', validate('query', z.object({ q: z.string().max(60).default('') })), async (c) =>
     c.json({ areas: await searchAreas(c.get('ctx'), c.req.valid('query').q) }),
   );
 
+/** The advertiser's own page (rule 6, ADR-043): their campaigns and their numbers. */
 export const advertiser = new Hono<AppBindings>()
-  .use('*', requireStaff(['admin']))
+  .use('*', requireUser)
   .get('/', async (c) => c.json(await advertiserDashboard(c.get('ctx'), c.get('user')!.id)))
-  .put(
-    '/',
-    validate(
-      'json',
-      z.object({
-        businessName: z.string().min(1).max(80),
-        kind: z.enum(['umkm', 'mahasiswa', 'lainnya']),
-        phone: z.string().min(8).max(20),
-        turnstileToken: z.string().max(4096).nullable().optional(),
-      }),
-    ),
-    async (c) => {
-      const { turnstileToken, ...body } = c.req.valid('json');
-      const ctx = c.get('ctx');
-      if (!(await getAdvertiser(ctx, c.get('user')!.id)))
-        await verifyTurnstile(ctx, turnstileToken, clientIp(c.req.raw));
-      await upsertAdvertiser(ctx, c.get('user')!.id, body);
-      return c.json(await advertiserDashboard(c.get('ctx'), c.get('user')!.id));
-    },
-  )
-  .post('/student/otp', validate('json', z.object({ email: z.string().max(254) })), async (c) => {
-    await requestStudentOtp(c.get('ctx'), c.get('user')!.id, c.req.valid('json').email);
-    return c.json({ ok: true });
-  })
-  .post('/student/verify', validate('json', z.object({ code: z.string().max(10) })), async (c) => {
-    const ok = await verifyStudentOtp(c.get('ctx'), c.get('user')!.id, c.req.valid('json').code);
-    if (!ok) throw new AppError('VALIDATION', 'OTP_WRONG', { field: 'code' });
-    return c.json({ ok });
-  })
-  .post('/creatives', validate('json', creativeBody), async (c) =>
-    c.json(await saveCreative(c.get('ctx'), c.get('user')!.id, c.req.valid('json')), 201),
-  )
-  .patch('/creatives/:id', validate('json', creativeBody), async (c) =>
-    c.json(
-      await saveCreative(c.get('ctx'), c.get('user')!.id, c.req.valid('json'), c.req.param('id')),
-    ),
-  )
-  .put('/creatives/:id/image', async (c) => {
-    const len = contentLength(c.req.header('content-length'));
-    const max = (await c.get('ctx').config()).ad_image_max_bytes;
-    if (len === null || len > max)
-      throw new AppError('FILE_TOO_LARGE', 'ad image too large', { max });
-    const bytes = new Uint8Array(await c.req.arrayBuffer());
-    return c.json(
-      await setCreativeImage(c.get('ctx'), c.get('user')!.id, c.req.param('id'), bytes),
-    );
-  })
   .get('/creatives/:id/image', async (c) => {
     const obj = await ownCreativeImage(c.get('ctx'), c.get('user')!.id, c.req.param('id'));
     if (!obj) throw new AppError('NOT_FOUND', 'no image');
@@ -170,75 +103,54 @@ export const advertiser = new Hono<AppBindings>()
         'x-content-type-options': 'nosniff',
       },
     });
-  })
-  .post('/creatives/:id/submit', async (c) =>
-    c.json(await submitCreative(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),
-  )
-  .get(
-    '/availability',
-    validate('query', z.object({ area: z.string().min(2).max(13), placement })),
-    async (c) => {
-      const q = c.req.valid('query');
-      return c.json(await availability(c.get('ctx'), c.get('user')!.id, q.area, q.placement));
-    },
-  )
-  .post(
-    '/bookings',
-    rateLimit('RL_AD_BOOK', 'ad-book'),
-    validate(
-      'json',
-      z.object({
-        creativeId: z.string().max(40),
-        areaCode: z.string().min(2).max(13),
-        placement,
-        dates: z.array(z.string().max(10)).min(1).max(60),
-      }),
-    ),
-    async (c) =>
-      c.json(await holdBookings(c.get('ctx'), c.get('user')!.id, c.req.valid('json')), 201),
-  )
-  .post(
-    '/bookings/checkout',
-    validate(
-      'json',
-      z.object({
-        bookingIds: z.array(z.string().max(40)).min(1).max(100),
-        method: z.string().max(30),
-      }),
-    ),
-    async (c) => {
-      const { bookingIds, method } = c.req.valid('json');
-      return c.json(await checkoutBookings(c.get('ctx'), c.get('user')!, bookingIds, method));
-    },
-  )
-  .post(
-    '/bookings/cancel',
-    validate('json', z.object({ bookingIds: z.array(z.string().max(40)).min(1).max(100) })),
-    async (c) => {
-      await cancelHeld(c.get('ctx'), c.get('user')!.id, c.req.valid('json').bookingIds);
-      return c.body(null, 204);
-    },
-  );
+  });
 
 /** Public, cookie-less ad endpoints (outside /api: no session, no CSRF, no user IDs). */
 export const adPublic = new Hono<AppBindings>()
   .post('/i', async (c) => {
     await enforceRateLimit(c.env, 'RL_DOWNLOAD', `ad:${clientIp(c.req.raw)}`);
-    const body = (await c.req.json().catch(() => null)) as { b?: unknown; t?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as {
+      c?: unknown;
+      a?: unknown;
+      t?: unknown;
+    } | null;
     if (
       body &&
-      typeof body.b === 'string' &&
+      typeof body.c === 'string' &&
+      typeof body.a === 'string' &&
       typeof body.t === 'string' &&
-      body.b.length <= 40 &&
+      body.c.length <= 40 &&
+      body.a.length <= 13 &&
       body.t.length <= 40
     ) {
-      await recordImpression(c.get('ctx'), body.b, body.t);
+      await recordImpression(c.get('ctx'), body.c, body.a, body.t);
     }
     return c.body(null, 204);
   })
   .get('/c/:id', async (c) =>
-    c.redirect(await recordClick(c.get('ctx'), c.req.param('id').slice(0, 40)), 302),
+    c.redirect(
+      await recordClick(
+        c.get('ctx'),
+        c.req.param('id').slice(0, 40),
+        (c.req.query('a') ?? 'ID').slice(0, 13),
+      ),
+      302,
+    ),
   )
+  // The QR in an ad's payment email (ADR-043). Mail clients fetch it once, through their proxy.
+  .get('/qr/:file', async (c) => {
+    const id = c.req.param('file').replace(/\.png$/, '').slice(0, 40);
+    const text = await campaignQris(c.get('ctx'), id, (c.req.query('t') ?? '').slice(0, 40));
+    if (!text) return c.body(null, 404);
+    return new Response(await qrPng(text), {
+      headers: {
+        'content-type': 'image/png',
+        'cache-control': 'private, max-age=86400',
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; sandbox",
+      },
+    });
+  })
   .get('/img/:id', async (c) => {
     const obj = await creativeImage(c.get('ctx'), c.req.param('id').slice(0, 40));
     if (!obj) return c.body(null, 404);

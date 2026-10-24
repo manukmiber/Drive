@@ -115,39 +115,47 @@ export const LEGAL: Record<string, LegalDoc> = {
   },
   'kebijakan-iklan': {
     title: 'Kebijakan Iklan',
-    updated: '2026-10-21',
+    updated: '2026-10-24',
     sections: [
       {
         h: 'Format',
         p: [
           'Iklan lokal berupa kartu kecil yang diberi label "Iklan", tidak pernah muncul di jalur upload atau download, tanpa suara, tanpa pop-up.',
+          'Jumlah iklan tidak dibatasi. Di kartu itu iklan bergantian: tiap iklan tampil beberapa detik (lihat halaman Iklan), lalu berganti ke iklan lain.',
         ],
       },
       {
         h: 'Konten yang dilarang',
         p: [
-          'Judi, slot, dan togel; pinjol ilegal atau tidak terdaftar OJK; investasi atau robot trading bodong; skema ponzi/MLM; kripto spekulatif.',
+          'SARA dan politik; judi, slot, dan togel; penipuan dan phishing; apa pun yang membahayakan orang.',
+          'Pinjol ilegal atau tidak terdaftar OJK; investasi atau robot trading bodong; skema ponzi/MLM; kripto spekulatif.',
           'Obat keras/terlarang dan klaim kesehatan menyesatkan; rokok, vape, dan alkohol; konten dewasa; senjata; barang palsu atau bajakan; joki tugas/ujian.',
-          'Politik dan SARA; penipuan dan phishing.',
         ],
       },
       {
-        h: 'Moderasi',
+        h: 'Cara memasang',
         p: [
-          'Setiap materi diperiksa otomatis (kata terlarang, link berbahaya, link pendek) lalu disetujui manual oleh tim Zeiko, paling lambat 1×24 jam. Materi yang disetujui bisa dipakai lagi untuk pemesanan berikutnya.',
-          'Iklan yang melanggar saat tayang dihentikan. Untuk pelanggaran berat sisa hari tidak dikembalikan; untuk kasus lain sisa hari dikembalikan ke Saldo Zeiko.',
+          'Kirim email ke admin@zeiko.biz.id berisi usahamu, materi iklan, kota atau Nasional, dan tanggal tayang. Kamu perlu sudah pernah masuk ke Zeiko Drive dengan Akun Zeiko, karena statistik iklanmu ada di sana.',
+          'Setiap iklan dicek manual oleh tim Zeiko, tidak otomatis. UMKM, usaha kecil, dan mahasiswa dicek lebih dulu dan tampil lebih sering dalam pergantian iklan.',
+          'Setelah disetujui, kami mengirim QRIS-nya ke emailmu. Bayar dari email itu paling lambat di hari mulai tayang; yang belum dibayar sampai hari itu lewat batal dengan sendirinya.',
+        ],
+      },
+      {
+        h: 'Harga',
+        p: [
+          'Harga dihitung per hari: per kota, per paket beberapa kota, atau Nasional. Angkanya ada di halaman Iklan di Zeiko Drive, dan harga yang kamu bayar adalah harga saat iklanmu dimasukkan. Satu pengiklan boleh tayang di beberapa kota sekaligus.',
+        ],
+      },
+      {
+        h: 'Penghentian',
+        p: [
+          'Iklan yang ternyata melanggar saat tayang dihentikan. Untuk pelanggaran berat sisa hari tidak dikembalikan; untuk kasus lain sisa hari dikembalikan sebagai kredit yang dipotong dari pembayaran berikutnya.',
         ],
       },
       {
         h: 'Penargetan & data',
         p: [
-          'Iklan hanya ditargetkan per daerah (kota/kabupaten, provinsi, atau nasional). Tidak ada cookie atau pelacak pihak ketiga, dan pengiklan tidak menerima data pribadi pengguna, hanya jumlah tayangan dan klik per hari.',
-        ],
-      },
-      {
-        h: 'Pemesanan',
-        p: [
-          'Slot dibuka setiap hari untuk 14 hari ke depan dan berlaku siapa cepat dia dapat. Slot ditahan 15 menit saat checkout dan dilepas kalau belum dibayar.',
+          'Iklan hanya ditargetkan per kota/kabupaten atau nasional, memakai kota di Akun Zeiko penonton. Tidak ada cookie atau pelacak pihak ketiga, dan pengiklan tidak menerima data pribadi pengguna, hanya berapa kali iklannya dilihat dan diklik, per hari dan per kota.',
         ],
       },
     ],

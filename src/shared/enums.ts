@@ -115,6 +115,23 @@ export const AD_BOOKING_STATUSES = [
 ] as const;
 export type AdBookingStatus = (typeof AD_BOOKING_STATUSES)[number];
 
+/** ADR-043: a campaign the operator entered, checked by hand and the advertiser paid for. */
+export const AD_CAMPAIGN_STATUSES = [
+  'pending',
+  'awaiting_payment',
+  'paid',
+  'live',
+  'completed',
+  'rejected',
+  'expired',
+  'cancelled',
+  'suspended',
+] as const;
+export type AdCampaignStatus = (typeof AD_CAMPAIGN_STATUSES)[number];
+
+export const AD_CAMPAIGN_SCOPES = ['cities', 'national'] as const;
+export type AdCampaignScope = (typeof AD_CAMPAIGN_SCOPES)[number];
+
 export const REPORT_TARGETS = ['share', 'node', 'blob', 'ad', 'user'] as const;
 export type ReportTarget = (typeof REPORT_TARGETS)[number];
 
