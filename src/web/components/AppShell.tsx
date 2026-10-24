@@ -239,7 +239,7 @@ export function AppShell() {
           </div>
         </header>
         <BillingBanner />
-        <main className="min-h-0 flex-1 overflow-auto pb-16 md:pb-0">
+        <main className="min-h-0 flex-1 overflow-auto pb-16 md:pb-24">
           <Outlet />
         </main>
       </div>

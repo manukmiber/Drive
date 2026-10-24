@@ -50,15 +50,29 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
           {t.nav.newButton}
         </button>
       ) : (
-        <button
-          type="button"
-          onClick={open}
-          disabled={!folder}
-          aria-label={t.nav.newButton}
-          className="z-primary fixed right-4 bottom-24 z-30 flex h-14 w-14 items-center justify-center rounded-2xl disabled:opacity-50 md:hidden"
-        >
-          <Plus className="h-6 w-6" />
-        </button>
+        <>
+          <button
+            type="button"
+            onClick={open}
+            disabled={!folder}
+            aria-label={t.nav.newButton}
+            className="z-primary fixed right-4 bottom-24 z-30 flex h-14 w-14 items-center justify-center rounded-2xl disabled:opacity-50 md:hidden"
+          >
+            <Plus className="h-6 w-6" />
+          </button>
+          {/* Wide screens have "New" in the sidebar; this one only uploads, straight to the picker. */}
+          {folder && (
+            <button
+              type="button"
+              onClick={() => fileInput.current?.click()}
+              aria-label={t.nav.uploadFile}
+              title={t.nav.uploadFile}
+              className="z-primary fixed right-6 bottom-6 z-30 hidden h-14 w-14 items-center justify-center rounded-2xl shadow-lg md:flex"
+            >
+              <Plus className="h-6 w-6" aria-hidden="true" />
+            </button>
+          )}
+        </>
       )}
       {menu && (
         <Menu
