@@ -22,7 +22,7 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
     note: 'Isi file tidak termasuk di sini; unduh lewat "Unduh semua file (ZIP)".',
     account: (
       await q(
-        'SELECT id, email, name, role, status, ad_city_code, created_at, updated_at FROM users WHERE id = ?1',
+        'SELECT id, email, name, role, status, ad_city_code, ad_city, ad_postal_code, created_at, updated_at FROM users WHERE id = ?1',
         userId,
       )
     )[0],
@@ -153,7 +153,7 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
       DB.prepare('DELETE FROM telegram_links WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM notifications WHERE user_id = ?1').bind(id),
       DB.prepare(
-        `UPDATE users SET email = 'deleted+' || id || '@deleted.invalid', name = '', avatar_url = NULL, ad_city_code = NULL,
+        `UPDATE users SET email = 'deleted+' || id || '@deleted.invalid', name = '', avatar_url = NULL, ad_city_code = NULL, ad_city = NULL, ad_postal_code = NULL,
            status = 'deleted', updated_at = ?2 WHERE id = ?1`,
       ).bind(id, now),
       DB.prepare(

@@ -131,10 +131,21 @@ describe('Zeiko Accounts sign-in tickets', () => {
     let seen: { url: string; auth: string | null; body: string } | null = null;
     const fake = (async (url: string, init: RequestInit) => {
       seen = { url, auth: new Headers(init.headers).get('authorization'), body: String(init.body) };
-      return Response.json({ account: { id: 'zk_1', email: 'a@x.test', username: 'a', name: '', emailVerified: true } });
+      return Response.json({
+        account: { id: 'zk_1', email: 'a@x.test', username: 'a', name: '', emailVerified: true, city: ' Malang ', postalCode: '65111' },
+      });
     }) as unknown as typeof fetch;
     const a = await new RelayZeikoAccounts('https://door.test', 'app', fake).redeemTicket('tkt');
-    expect(a).toEqual({ id: 'zk_1', email: 'a@x.test', username: 'a', name: '', emailVerified: true });
+    // The city and postal code are where local ads come from (ADR-041).
+    expect(a).toEqual({
+      id: 'zk_1',
+      email: 'a@x.test',
+      username: 'a',
+      name: '',
+      emailVerified: true,
+      city: 'Malang',
+      postalCode: '65111',
+    });
     expect(seen).toEqual({ url: 'https://door.test/apps/v1/tickets/redeem', auth: 'Bearer app', body: '{"ticket":"tkt"}' });
   });
 

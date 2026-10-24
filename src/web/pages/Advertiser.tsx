@@ -1,10 +1,12 @@
-// /iklan — self-serve local ads (SPEC §10.5): register, creatives, booking calendar, stats.
+// /iklan — advertising is arranged with the operator by email (ADR-041). Admins also get the tools
+// to place a client's ad (SPEC §10.5): register, creatives, booking calendar, stats.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ImagePlus, Megaphone, Plus } from 'lucide-react';
+import { ImagePlus, Mail, Megaphone, Plus } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
 import { AD_BODY_MAX, AD_CATEGORIES, AD_CTA_TYPES, AD_TITLE_MAX } from '../../shared/ad-policy';
+import { AD_CONTACT } from '../../shared/constants';
 import { formatPercent, formatRupiah } from '../../shared/format';
 import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
@@ -29,9 +31,9 @@ import {
   type Dashboard,
   type Placement,
 } from '../lib/ads';
-import { api, ApiError, postJson } from '../lib/api';
+import { ApiError, postJson } from '../lib/api';
 import { useCatalog } from '../lib/catalog';
-import type { BillingSummary } from '../lib/types';
+import { useMe } from '../lib/session';
 
 const card = 'z-card rounded-2xl p-5';
 const input =
@@ -47,25 +49,45 @@ function adError(e: unknown): string {
 }
 
 export function Advertiser() {
+  const me = useMe();
+  const admin = me.data?.user.role === 'admin';
+  return (
+    <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
+      <section className={card}>
+        <h1 className="flex items-center gap-2 text-xl font-semibold">
+          <Megaphone className="h-5 w-5 text-brand-600" />
+          {t.ads.contactTitle}
+        </h1>
+        <p className="mt-2 text-sm text-[var(--fg-muted)]">{t.ads.contactBody}</p>
+        <a
+          href={`mailto:${AD_CONTACT}?subject=${encodeURIComponent(t.ads.contactTitle)}`}
+          className="z-primary mt-4 inline-flex h-10 items-center gap-2 rounded-xl px-5 text-sm font-semibold"
+        >
+          <Mail className="h-4 w-4" aria-hidden="true" /> {t.ads.contactButton(AD_CONTACT)}
+        </a>
+        <p className="mt-3">
+          <Link
+            to="/kebijakan/$slug"
+            params={{ slug: 'kebijakan-iklan' }}
+            className="text-sm text-brand-700 hover:underline"
+          >
+            {t.ads.policyLink}
+          </Link>
+        </p>
+      </section>
+      {admin && <AdminTools />}
+    </div>
+  );
+}
+
+/** The operator places a client's ad with the old self-serve tools (ADR-041). */
+function AdminTools() {
   const q = useQuery({ queryKey: KEY, queryFn: dashboard });
   const [tab, setTab] = useState<'creatives' | 'book' | 'stats'>('creatives');
   const d = q.data;
   return (
-    <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
-      <header>
-        <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <Megaphone className="h-5 w-5 text-brand-600" />
-          {t.ads.title}
-        </h1>
-        <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.ads.subtitle}</p>
-        <Link
-          to="/kebijakan/$slug"
-          params={{ slug: 'kebijakan-iklan' }}
-          className="mt-1 inline-block text-sm text-brand-700 hover:underline"
-        >
-          {t.ads.policyLink}
-        </Link>
-      </header>
+    <>
+      <h2 className="pt-2 font-medium">{t.ads.adminTools}</h2>
       {d && !d.advertiser && <Profile data={d} />}
       {d?.advertiser && (
         <>
@@ -87,7 +109,7 @@ export function Advertiser() {
           {tab === 'stats' && <Stats data={d} />}
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -508,14 +530,9 @@ function Book({ data, onDone }: { data: Dashboard; onDone: () => void }) {
   const [area, setArea] = useState<Area | null>(null);
   const [placement, setPlacement] = useState<Placement>('explorer_sidebar');
   const [dates, setDates] = useState<string[]>([]);
-  const [method, setMethod] = useState('saldo');
   const [qr, setQr] = useState<{ ids: string[]; img: string | null; url: string | null } | null>(
     null,
   );
-  const billing = useQuery({
-    queryKey: ['billing'],
-    queryFn: () => api<BillingSummary>('/api/billing'),
-  });
   const catalog = useCatalog();
   const avail = useQuery({
     queryKey: ['ad-avail', area?.code, placement],
@@ -549,7 +566,7 @@ function Book({ data, onDone }: { data: Dashboard; onDone: () => void }) {
     mutationFn: async () => {
       const h = await holdBookings({ creativeId, areaCode: area!.code, placement, dates });
       try {
-        return { ids: h.bookingIds, r: await checkout(h.bookingIds, method) };
+        return { ids: h.bookingIds, r: await checkout(h.bookingIds, 'qris') };
       } catch (e) {
         await cancelHolds(h.bookingIds).catch(() => undefined);
         throw e;
@@ -648,19 +665,6 @@ function Book({ data, onDone }: { data: Dashboard; onDone: () => void }) {
             })}
           </div>
           <div className="flex flex-wrap items-end gap-3">
-            <label className={label}>
-              {t.ads.payWith}
-              <select className={input} value={method} onChange={(e) => setMethod(e.target.value)}>
-                <option value="saldo">
-                  {t.ads.paySaldo(formatRupiah(billing.data?.balanceIdr ?? 0))}
-                </option>
-                {billing.data?.paymentMethods.map((m) => (
-                  <option key={m.code} value={m.code}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-            </label>
             <p className="pb-2 font-medium">
               {t.ads.total(dates.length, formatRupiah(total + Math.round((total * tax) / 100)))}
             </p>
@@ -741,11 +745,6 @@ function Stats({ data }: { data: Dashboard }) {
           ))}
         </tbody>
       </table>
-      <p className="mt-3 text-xs text-[var(--fg-muted)]">
-        <Link to="/paket" className="text-brand-700 hover:underline">
-          {t.ads.invoicesHint}
-        </Link>
-      </p>
     </section>
   );
 }

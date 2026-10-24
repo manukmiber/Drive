@@ -47,3 +47,7 @@ export const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 export const MINUTE_MS = 60_000;
 export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
+
+/** The operator's address: alerts go there, and so do people who want to advertise (ADR-041). */
+export const OPERATOR_EMAIL = 'admin@zeiko.biz.id';
+export const AD_CONTACT = OPERATOR_EMAIL;

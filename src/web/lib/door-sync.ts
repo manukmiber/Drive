@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { authClient } from './auth-client';
 import { meQueryKey } from './session';
-import { doorAccount } from './zeiko';
+import { doorAccount, signInSilently } from './zeiko';
 
 /** At most one look at the door per this many ms (opening the app, coming back to the tab). */
 const EVERY_MS = 15_000;
@@ -14,9 +14,16 @@ const EVERY_MS = 15_000;
  * does not answer, Drive carries on as it is (ADR-036).
  *
  * `zeikoId` is the signed-in user's Zeiko Account (`/api/me`), or undefined while nobody is.
+ * `place` is the city and postal code Drive holds for them: when the account says otherwise
+ * (changed on the website), a fresh ticket carries the new one over (ADR-041).
  */
-export function useDoorSync(zeikoId: string | null | undefined): void {
+export function useDoorSync(
+  zeikoId: string | null | undefined,
+  place?: { city: string | null; postalCode: string | null },
+): void {
   const qc = useQueryClient();
+  const city = place?.city ?? '';
+  const postalCode = place?.postalCode ?? '';
   useEffect(() => {
     if (zeikoId === undefined) return;
     let busy = false;
@@ -28,7 +35,16 @@ export function useDoorSync(zeikoId: string | null | undefined): void {
       last = Date.now();
       try {
         const account = await doorAccount();
-        if (gone || account === undefined || (account && account.id === zeikoId)) return;
+        if (gone || account === undefined) return;
+        if (account && account.id === zeikoId) {
+          const moved =
+            (account.city ?? '') !== city || (account.postalCode ?? '') !== postalCode;
+          if (moved && (await signInSilently()) === 'signed-in' && !gone) {
+            await qc.invalidateQueries({ queryKey: meQueryKey });
+            await qc.invalidateQueries({ queryKey: ['ad'] });
+          }
+          return;
+        }
         gone = true;
         await authClient.signOut().catch(() => undefined);
         // Nothing of this person's stays on screen for the next one.
@@ -47,5 +63,5 @@ export function useDoorSync(zeikoId: string | null | undefined): void {
       gone = true;
       document.removeEventListener('visibilitychange', again);
     };
-  }, [zeikoId, qc]);
+  }, [zeikoId, city, postalCode, qc]);
 }

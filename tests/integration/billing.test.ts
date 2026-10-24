@@ -19,7 +19,8 @@ async function setup(email = 'bayar@example.com') {
 
 const summary = async (s: Session) =>
   (await (await s.req('GET', '/api/billing')).json()) as {
-    balanceIdr: number;
+    creditIdr: number;
+    renewIdr: number | null;
     storage: { limitBytes: number };
     subscription: {
       planCode: string;
@@ -27,7 +28,7 @@ const summary = async (s: Session) =>
       status: string;
       periodEnd: number;
     } | null;
-    paymentMethods: Array<{ code: string }>;
+    pendingPayments: Array<{ id: string }>;
   };
 
 async function webhook(
@@ -51,15 +52,29 @@ async function webhook(
   );
 }
 
-async function topup(rt: DevRuntime, s: Session, amountIdr: number) {
-  const res = await s.req('POST', '/api/billing/topups', { amountIdr, method: 'qris' });
-  expect(res.status).toBe(201);
-  const t = (await res.json()) as { paymentId: string; amountIdr: number; qrString: string };
-  const ref = `mock_${t.paymentId}`;
+type Item = { kind: 'plan' | 'addon' | 'compress'; code: string } | { kind: 'renew' };
+type Started = {
+  status: 'payment';
+  payment: { paymentId: string; amountIdr: number; qrString: string; checkoutUrl: string };
+  creditUsedIdr: number;
+};
+
+/** Starts buying `item`: the QRIS it asks for (201), or the purchase made at once (200). */
+async function checkout(s: Session, item: Item) {
+  const res = await s.req('POST', '/api/billing/checkout', { item });
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+}
+
+/** Buys `item` by QRIS and pays it (ADR-041). */
+async function buy(rt: DevRuntime, s: Session, item: Item) {
+  const r = await checkout(s, item);
+  expect(r.status, JSON.stringify(r.body)).toBe(201);
+  const { payment } = r.body as unknown as Started;
+  const ref = `mock_${payment.paymentId}`;
   expect(
-    (await webhook(rt, { providerRef: ref, status: 'paid', amountIdr: t.amountIdr })).status,
+    (await webhook(rt, { providerRef: ref, status: 'paid', amountIdr: payment.amountIdr })).status,
   ).toBe(200);
-  return { ...t, ref };
+  return { ...payment, ref };
 }
 
 const ledgerSum = (rt: DevRuntime, userId: string) =>
@@ -69,163 +84,183 @@ const ledgerSum = (rt: DevRuntime, userId: string) =>
       .get(userId) as { s: number }
   ).s;
 
-describe('Saldo & payments (SPEC §12.2–12.3)', () => {
-  it('tops up via QRIS; webhook replay is idempotent and status only moves forward', async () => {
-    const { rt, s } = await setup();
-    const t = await topup(rt, s, 20_000);
-    expect(t.qrString).toContain('QRIS');
-    expect((await summary(s)).balanceIdr).toBe(20_000);
-    // Replays and backwards transitions change nothing
-    await webhook(rt, { providerRef: t.ref, status: 'paid', amountIdr: 20_000 });
-    await webhook(rt, { providerRef: t.ref, status: 'failed', amountIdr: 20_000 });
-    expect((await summary(s)).balanceIdr).toBe(20_000);
-    expect(ledgerSum(rt, s.userId)).toBe(20_000);
-    // Forged signature
-    expect(
-      (await webhook(rt, { providerRef: t.ref, status: 'refunded', amountIdr: 20_000 }, 'bogus'))
-        .status,
-    ).toBe(401);
-  });
+const notices = (rt: DevRuntime, userId: string) =>
+  rt.d1.sqlite
+    .prepare('SELECT type, payload_json FROM notifications WHERE user_id = ? ORDER BY created_at')
+    .all(userId) as Array<{ type: string; payload_json: string }>;
 
-  it('rejects amounts below the minimum and mismatched webhook amounts', async () => {
-    const { rt, s } = await setup();
-    expect(
-      (await s.req('POST', '/api/billing/topups', { amountIdr: 5_000, method: 'qris' })).status,
-    ).toBe(400);
-    // Drive takes QRIS only (ADR-038), at any amount crypto would have taken.
-    expect(
-      (await s.req('POST', '/api/billing/topups', { amountIdr: 60_000, method: 'crypto' })).status,
-    ).toBe(400);
-    expect((await summary(s)).paymentMethods.map((m) => m.code)).toEqual(['qris']);
-    const res = await s.req('POST', '/api/billing/topups', { amountIdr: 15_000, method: 'qris' });
-    const { paymentId } = (await res.json()) as { paymentId: string };
-    await webhook(rt, { providerRef: `mock_${paymentId}`, status: 'paid', amountIdr: 1 });
-    expect((await summary(s)).balanceIdr).toBe(0);
-  });
-
-  it('mock checkout page simulates payment outside production', async () => {
-    const { rt, s } = await setup();
-    const res = await s.req('POST', '/api/billing/topups', { amountIdr: 10_000, method: 'qris' });
-    const { checkoutUrl } = (await res.json()) as { checkoutUrl: string };
-    const pageRes = await rt.fetch(new Request(checkoutUrl));
-    expect(await pageRes.text()).toContain('Simulasi pembayaran');
-    const paid = await rt.fetch(
-      new Request(checkoutUrl, { method: 'POST', body: new URLSearchParams({ status: 'paid' }) }),
-    );
-    expect(paid.status).toBe(303);
-    expect((await summary(s)).balanceIdr).toBe(10_000);
-  });
-
-  it('"bayar langsung" pays and buys the plan in one go', async () => {
-    const { rt, s } = await setup();
-    const res = await s.req('POST', '/api/billing/topups', {
-      amountIdr: 10_000,
-      method: 'qris',
-      then: { kind: 'plan', code: 'basic' },
-    });
-    const { paymentId } = (await res.json()) as { paymentId: string };
-    await webhook(rt, { providerRef: `mock_${paymentId}`, status: 'paid', amountIdr: 10_000 });
-    const sum = await summary(s);
-    expect(sum.subscription?.planCode).toBe('basic');
-    expect(sum.balanceIdr).toBe(5_000);
-  });
-});
-
-describe('plans (SPEC §12.4)', () => {
-  it('subscribes from Saldo, sets the quota and issues a numbered invoice; new users can then upload', async () => {
+describe('paying by QRIS, one purchase at a time (ADR-041)', () => {
+  it('buys a plan by QRIS; webhook replay is idempotent and status only moves forward', async () => {
     const { rt, s } = await setup();
     const root = await rootOf(s);
     expect((await simpleUpload(s, root, 'a.txt', 'a')).status).toBe(413);
-    expect((await s.req('POST', '/api/billing/plan', { planCode: 'mini' })).status).toBe(402);
-    await topup(rt, s, 10_000);
-    const r = (await (await s.req('POST', '/api/billing/plan', { planCode: 'mini' })).json()) as {
-      kind: string;
-      chargedIdr: number;
-      invoiceId: string;
-    };
-    expect(r).toMatchObject({ kind: 'subscribed', chargedIdr: 1_000 });
-    const sum = await summary(s);
-    expect(sum.balanceIdr).toBe(9_000);
-    expect(sum.storage.limitBytes).toBe(3 * 2 ** 30);
+    const started = await checkout(s, { kind: 'plan', code: 'mini' });
+    expect(started.status).toBe(201);
+    const { payment } = started.body as unknown as Started;
+    expect(payment.amountIdr).toBe(1_000);
+    expect(payment.qrString).toContain('QRIS');
+    // Nothing is bought until the money arrives.
+    expect((await summary(s)).subscription).toBeNull();
+    expect((await summary(s)).pendingPayments.map((p) => p.id)).toEqual([payment.paymentId]);
+    const status = async () =>
+      ((await (await s.req('GET', `/api/billing/payments/${payment.paymentId}`)).json()) as {
+        status: string;
+      }).status;
+    expect(await status()).toBe('pending');
+
+    const ref = `mock_${payment.paymentId}`;
+    expect((await webhook(rt, { providerRef: ref, status: 'paid', amountIdr: 1_000 })).status).toBe(
+      200,
+    );
+    expect(await status()).toBe('paid');
+    let sum = await summary(s);
+    expect(sum.subscription).toMatchObject({ planCode: 'mini', status: 'active' });
     expect(sum.subscription?.periodEnd).toBe(Date.UTC(2026, 10, 10, 3, 0));
-    const inv = (await (await s.req('GET', `/api/billing/invoices/${r.invoiceId}`)).json()) as {
-      number: string;
-      totalIdr: number;
-    };
-    expect(inv).toMatchObject({ number: 'ZK-202610-000001', totalIdr: 1_000 });
+    expect(sum.storage.limitBytes).toBe(3 * 2 ** 30);
+    expect(sum.creditIdr).toBe(0);
+    // Replays and backwards transitions change nothing; the payment in and the purchase out net to 0.
+    await webhook(rt, { providerRef: ref, status: 'paid', amountIdr: 1_000 });
+    await webhook(rt, { providerRef: ref, status: 'failed', amountIdr: 1_000 });
+    sum = await summary(s);
+    expect(sum.subscription?.planCode).toBe('mini');
+    expect(sum.creditIdr).toBe(0);
+    expect(ledgerSum(rt, s.userId)).toBe(0);
+    // Forged signature
+    expect(
+      (await webhook(rt, { providerRef: ref, status: 'refunded', amountIdr: 1_000 }, 'bogus'))
+        .status,
+    ).toBe(401);
+
     await uploadText(s, root, 'a.txt', 'a');
-    // Credits from the plan's monthly compress quota
     const credits = rt.d1.sqlite
       .prepare(
         "SELECT SUM(remaining) AS n FROM credit_ledger WHERE user_id = ? AND source = 'plan'",
       )
       .get(s.userId) as { n: number };
     expect(credits.n).toBe(50);
+
+    // A receipt that says what was bought; no invoice is sent or shown, but the books keep one.
+    await rt.settle();
+    const types = notices(rt, s.userId).map((n) => n.type);
+    expect(types).toContain('payment_paid');
+    expect(types).not.toContain('invoice');
+    const paid = notices(rt, s.userId).find((n) => n.type === 'payment_paid')!;
+    expect(JSON.parse(paid.payload_json)).toMatchObject({ amountIdr: 1_000, summary: 'Paket Mini aktif.' });
+    expect(rt.d1.sqlite.prepare('SELECT number FROM invoices WHERE user_id = ?').get(s.userId)).toEqual({
+      number: 'ZK-202610-000001',
+    });
+    expect((await s.req('GET', '/api/billing/ledger')).status).toBe(404);
+    expect((await s.req('GET', '/api/billing/invoices')).status).toBe(404);
+    expect((await s.req('POST', '/api/billing/topups', { amountIdr: 20_000 })).status).toBe(404);
   });
 
-  it('upgrade charges the pro-rata difference now; downgrade waits for the next period', async () => {
+  it('ignores a wrong amount; what a payment leaves is credit, and credit pays without a QRIS', async () => {
     const { rt, s, clock } = await setup();
-    await topup(rt, s, 100_000);
-    await s.req('POST', '/api/billing/plan', { planCode: 'basic' }); // 5.000
-    clock.advance(15 * DAY_MS); // half of a 31-day period left (16/31)
-    const up = (await (await s.req('POST', '/api/billing/plan', { planCode: 'plus' })).json()) as {
-      kind: string;
-      chargedIdr: number;
-    };
-    expect(up.kind).toBe('upgraded');
-    expect(up.chargedIdr).toBe(Math.ceil((20_000 * 16) / 31));
+    const pack = await checkout(s, { kind: 'compress', code: 'kompres_100' });
+    const { payment } = pack.body as unknown as Started;
+    expect(payment.amountIdr).toBe(2_000);
+    await webhook(rt, { providerRef: `mock_${payment.paymentId}`, status: 'paid', amountIdr: 1 });
+    expect((await summary(s)).pendingPayments).toHaveLength(1);
+    expect(ledgerSum(rt, s.userId)).toBe(0);
+
+    // The operator's minimum is higher than a Mini plan: the rest stays as credit.
+    const { setConfig } = await import('../../src/worker/services/config');
+    await setConfig(
+      rt.env,
+      'payment_methods',
+      [{ code: 'qris', label: 'QRIS', min_idr: 10_000, fee_flat_idr: 0, fee_pct: 0.7, active: true }],
+      s.userId,
+      clock.now(),
+    );
+    const mini = await buy(rt, s, { kind: 'plan', code: 'mini' });
+    expect(mini.amountIdr).toBe(10_000);
+    expect((await summary(s)).creditIdr).toBe(9_000);
+    const done = await checkout(s, { kind: 'compress', code: 'kompres_500' });
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ status: 'done', done: { kind: 'compress' } });
+    expect((await summary(s)).creditIdr).toBe(2_000);
+    // Part of the next price: the QRIS asks only the rest, and says so.
+    const next = await checkout(s, { kind: 'compress', code: 'kompres_1500' });
+    expect(next.body).toMatchObject({ status: 'payment', creditUsedIdr: 2_000 });
+    expect((next.body as unknown as Started).payment.amountIdr).toBe(16_000);
+  });
+
+  it('mock checkout page simulates payment outside production', async () => {
+    const { rt, s } = await setup();
+    const { payment } = (await checkout(s, { kind: 'plan', code: 'basic' })).body as unknown as Started;
+    const pageRes = await rt.fetch(new Request(payment.checkoutUrl));
+    expect(await pageRes.text()).toContain('Simulasi pembayaran');
+    const paid = await rt.fetch(
+      new Request(payment.checkoutUrl, {
+        method: 'POST',
+        body: new URLSearchParams({ status: 'paid' }),
+      }),
+    );
+    expect(paid.status).toBe(303);
+    expect((await summary(s)).subscription?.planCode).toBe('basic');
+  });
+});
+
+describe('plans (SPEC §12.4)', () => {
+  it('upgrade pays the pro-rata difference; downgrade waits; nothing renews by itself', async () => {
+    const { rt, s, clock } = await setup();
+    await buy(rt, s, { kind: 'plan', code: 'basic' }); // 5.000
+    clock.advance(15 * DAY_MS); // 16 of a 31-day period left
+    const up = await buy(rt, s, { kind: 'plan', code: 'plus' });
+    expect(up.amountIdr).toBe(Math.ceil((20_000 * 16) / 31));
     expect((await summary(s)).storage.limitBytes).toBe(120 * 2 ** 30);
-    const down = (await (
-      await s.req('POST', '/api/billing/plan', { planCode: 'mini' })
-    ).json()) as { kind: string };
-    expect(down.kind).toBe('downgrade_scheduled');
+    const down = await checkout(s, { kind: 'plan', code: 'mini' });
+    expect(down).toMatchObject({ status: 200, body: { status: 'done', done: { kind: 'downgrade_scheduled' } } });
     let sum = await summary(s);
     expect(sum.subscription).toMatchObject({ planCode: 'plus', nextPlanCode: 'mini' });
-    // Renewal applies the downgrade and charges the new price
-    const before = sum.balanceIdr;
+
+    // The period ends unpaid: grace, not a charge.
     clock.set(sum.subscription!.periodEnd + 1);
     await rt.runCron('0 * * * *');
     sum = await summary(s);
-    expect(sum.subscription).toMatchObject({
-      planCode: 'mini',
-      nextPlanCode: null,
-      status: 'active',
-    });
-    expect(sum.balanceIdr).toBe(before - 1_000);
+    expect(sum.subscription?.status).toBe('grace');
+    expect(sum.renewIdr).toBe(1_000); // the plan it was moving to
+    await buy(rt, s, { kind: 'renew' });
+    sum = await summary(s);
+    expect(sum.subscription).toMatchObject({ planCode: 'mini', nextPlanCode: null, status: 'active' });
     expect(sum.storage.limitBytes).toBe(3 * 2 ** 30);
   });
 
-  it('add-ons are pro-rated, raise the quota and renew with the plan', async () => {
-    const { rt, s } = await setup();
-    await topup(rt, s, 50_000);
-    expect((await s.req('POST', '/api/billing/addons', { addonCode: 'addon_10' })).status).toBe(
-      409,
-    ); // no plan
-    await s.req('POST', '/api/billing/plan', { planCode: 'basic' });
-    const a = (await (
-      await s.req('POST', '/api/billing/addons', { addonCode: 'addon_10' })
-    ).json()) as { chargedIdr: number };
-    expect(a.chargedIdr).toBe(5_000);
-    expect((await summary(s)).storage.limitBytes).toBe(30 * 2 ** 30);
+  it('renewing early runs on from the end of the period, add-ons included; reminders ask to pay', async () => {
+    const { rt, s, clock } = await setup();
+    expect((await checkout(s, { kind: 'addon', code: 'addon_10' })).status).toBe(409); // no plan
+    await buy(rt, s, { kind: 'plan', code: 'basic' });
+    const addon = await buy(rt, s, { kind: 'addon', code: 'addon_10' });
+    expect(addon.amountIdr).toBe(5_000);
+    let sum = await summary(s);
+    expect(sum.storage.limitBytes).toBe(30 * 2 ** 30);
+    expect(sum.renewIdr).toBe(10_000);
+    const end = sum.subscription!.periodEnd;
+
+    clock.set(end - 3 * DAY_MS + 60_000);
+    await rt.runCron(CRON.nightly);
+    await rt.settle();
+    const reminder = notices(rt, s.userId).find((n) => n.type === 'billing_reminder');
+    expect(JSON.parse(reminder!.payload_json)).toMatchObject({ days: 3, amountIdr: 10_000, creditIdr: 0 });
+
+    const renew = await buy(rt, s, { kind: 'renew' });
+    expect(renew.amountIdr).toBe(10_000);
+    sum = await summary(s);
+    expect(sum.subscription).toMatchObject({ status: 'active', periodEnd: Date.UTC(2026, 11, 10, 3, 0) });
+    expect(sum.storage.limitBytes).toBe(30 * 2 ** 30);
+    clock.set(end + 1);
+    await rt.runCron('0 * * * *');
+    expect((await summary(s)).subscription?.status).toBe('active'); // already paid
   });
 });
 
 describe('dunning cycle with a fake clock (SPEC §12.5)', () => {
   it('grace → readonly → suspended → delete (dry-run first, then live)', async () => {
     const { rt, s, clock } = await setup();
-    await topup(rt, s, 10_000);
-    await s.req('POST', '/api/billing/plan', { planCode: 'mini' });
+    await buy(rt, s, { kind: 'plan', code: 'mini' });
     const root = await rootOf(s);
     const f = await uploadText(s, root, 'penting.txt', 'data');
     await rt.settle();
-    // Spend the rest (9.000 → 0) so the renewal fails
-    expect(
-      (await s.req('POST', '/api/billing/compress-packs', { packCode: 'kompres_500' })).status,
-    ).toBe(201);
-    expect(
-      (await s.req('POST', '/api/billing/compress-packs', { packCode: 'kompres_100' })).status,
-    ).toBe(201);
-    expect((await summary(s)).balanceIdr).toBe(0);
     let sum = await summary(s);
     const due = sum.subscription!.periodEnd;
 
@@ -233,13 +268,7 @@ describe('dunning cycle with a fake clock (SPEC §12.5)', () => {
     await rt.runCron('0 * * * *');
     expect((await summary(s)).subscription?.status).toBe('grace');
     await rt.settle();
-    const mails = () =>
-      rt.d1.sqlite
-        .prepare(
-          'SELECT type, payload_json FROM notifications WHERE user_id = ? ORDER BY created_at',
-        )
-        .all(s.userId) as Array<{ type: string }>;
-    expect(mails().map((m) => m.type)).toContain('renewal_failed');
+    expect(notices(rt, s.userId).map((m) => m.type)).toContain('renewal_failed');
 
     clock.set(due + 3 * DAY_MS + 1);
     await rt.runCron('0 19 * * *');
@@ -282,29 +311,22 @@ describe('dunning cycle with a fake clock (SPEC §12.5)', () => {
     });
   });
 
-  it('paying while overdue restores everything; pending payments block deletion', async () => {
+  it('paying while overdue restores everything from today', async () => {
     const { rt, s, clock } = await setup();
-    await topup(rt, s, 10_000);
-    await s.req('POST', '/api/billing/plan', { planCode: 'mini' });
-    // Spend the rest (9.000 → 0) so the renewal fails
-    expect(
-      (await s.req('POST', '/api/billing/compress-packs', { packCode: 'kompres_500' })).status,
-    ).toBe(201);
-    expect(
-      (await s.req('POST', '/api/billing/compress-packs', { packCode: 'kompres_100' })).status,
-    ).toBe(201);
-    expect((await summary(s)).balanceIdr).toBe(0);
+    await buy(rt, s, { kind: 'plan', code: 'mini' });
     const due = (await summary(s)).subscription!.periodEnd;
     clock.set(due + 31 * DAY_MS);
     await rt.runCron('0 * * * *');
     await rt.runCron('0 19 * * *');
     expect((await summary(s)).subscription?.status).toBe('suspended');
-    await topup(rt, s, 10_000);
-    const r = (await (await s.req('POST', '/api/billing/plan', { planCode: 'mini' })).json()) as {
-      kind: string;
-    };
-    expect(r.kind).toBe('reactivated');
-    expect((await summary(s)).subscription?.status).toBe('active');
+    expect((await summary(s)).renewIdr).toBe(1_000);
+    await buy(rt, s, { kind: 'renew' });
+    const sum = await summary(s);
+    expect(sum.subscription).toMatchObject({ status: 'active', planCode: 'mini' });
+    expect(sum.subscription!.periodEnd).toBeGreaterThan(clock.now() + 27 * DAY_MS);
+    await rt.settle();
+    const paid = notices(rt, s.userId).filter((n) => n.type === 'payment_paid').pop()!;
+    expect(JSON.parse(paid.payload_json)).toMatchObject({ summary: 'Paketmu aktif lagi.' });
   });
 });
 
@@ -318,7 +340,7 @@ describe('paying through Zeiko Accounts (ADR-036)', () => {
     ZEIKO_OPS_TOKEN: OPS,
   };
 
-  it('puts the whole QRIS amount, its code included, in Saldo — once', async () => {
+  it('keeps the QRIS code as credit — once', async () => {
     const opened: unknown[] = [];
     const realFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -328,7 +350,7 @@ describe('paying through Zeiko Accounts (ADR-036)', () => {
         return Response.json({
           id: 'pay_zk1',
           payUrl: 'https://site.test/account/pay?id=pay_zk1',
-          amountIdr: 20_123,
+          amountIdr: 25_123,
           expiresAt: T0 + 3_600_000,
         });
       }
@@ -338,21 +360,25 @@ describe('paying through Zeiko Accounts (ADR-036)', () => {
       const clock = new FakeClock(T0);
       const rt = await makeRuntime({ clock, vars });
       const s = await signIn(rt, 'qris@example.com');
-      const res = await s.req('POST', '/api/billing/topups', { amountIdr: 20_000, method: 'qris' });
-      expect(res.status, await res.clone().text()).toBe(201);
-      const t = (await res.json()) as { amountIdr: number; checkoutUrl: string };
-      expect(t).toMatchObject({ amountIdr: 20_123, checkoutUrl: 'https://site.test/account/pay?id=pay_zk1' });
-      expect(opened[0]).toMatchObject({ accountId: 'zk_qris_example_com', amountIdr: 20_000, method: 'qris' });
+      const r = await checkout(s, { kind: 'plan', code: 'plus' });
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
+      expect((r.body as unknown as Started).payment).toMatchObject({
+        amountIdr: 25_123,
+        checkoutUrl: 'https://site.test/account/pay?id=pay_zk1',
+      });
+      expect(opened[0]).toMatchObject({ accountId: 'zk_qris_example_com', amountIdr: 25_000, method: 'qris' });
 
       const callback = async (body: Record<string, unknown>, key = OPS) =>
         rt.fetch(
           await ZeikoPaymentProvider.signedRequest(`${APP}/api/payments/webhook/zeiko`, key, body, clock.now()),
         );
-      const paid = { event: 'paid', id: 'pay_zk1', status: 'paid', amountIdr: 20_123 };
+      const paid = { event: 'paid', id: 'pay_zk1', status: 'paid', amountIdr: 25_123 };
       expect((await callback(paid, 'wrong-key')).status).toBe(401);
       expect((await callback(paid)).status).toBe(200);
       expect((await callback(paid)).status).toBe(200); // the relay retries; nothing doubles
-      expect((await summary(s)).balanceIdr).toBe(20_123);
+      const sum = await summary(s);
+      expect(sum.subscription?.planCode).toBe('plus');
+      expect(sum.creditIdr).toBe(123);
     } finally {
       globalThis.fetch = realFetch;
     }
@@ -364,24 +390,24 @@ describe('paying through Zeiko Accounts (ADR-036)', () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
       if (url === 'https://door.test/apps/v1/payments')
-        return Response.json({ id: 'pay_zk2', payUrl: 'https://x.test', amountIdr: 60_000 });
+        return Response.json({ id: 'pay_zk2', payUrl: 'https://x.test', amountIdr: 50_000 });
       if (url === 'https://door.test/apps/v1/payments/pay_zk2')
-        return Response.json({ id: 'pay_zk2', status: paid ? 'paid' : 'pending', amountIdr: 60_000 });
+        return Response.json({ id: 'pay_zk2', status: paid ? 'paid' : 'pending', amountIdr: 50_000 });
       return realFetch(input, init);
     }) as typeof fetch;
     try {
       const clock = new FakeClock(T0);
       const rt = await makeRuntime({ clock, vars });
       const s = await signIn(rt, 'lost@example.com');
-      const res = await s.req('POST', '/api/billing/topups', { amountIdr: 60_000, method: 'qris' });
-      expect(res.status, await res.clone().text()).toBe(201);
+      const r = await checkout(s, { kind: 'plan', code: 'pro' });
+      expect(r.status, JSON.stringify(r.body)).toBe(201);
       clock.advance(5 * 60_000);
       await rt.runCron(CRON.hourly);
-      expect((await summary(s)).balanceIdr).toBe(0); // still open at the door
+      expect((await summary(s)).subscription).toBeNull(); // still open at the door
       paid = true;
       clock.advance(60 * 60_000);
       await rt.runCron(CRON.hourly);
-      expect((await summary(s)).balanceIdr).toBe(60_000);
+      expect((await summary(s)).subscription?.planCode).toBe('pro');
     } finally {
       globalThis.fetch = realFetch;
     }

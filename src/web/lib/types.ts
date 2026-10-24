@@ -48,6 +48,10 @@ export interface Me {
     twoFactorEnabled: boolean;
     image: string | null;
     adCityCode: string | null;
+    /** From the Zeiko Account (ADR-041). */
+    adCity: string | null;
+    adPostalCode: string | null;
+    adAreaName: string | null;
     /** The Zeiko Account this user signs in as (null for one made before Zeiko Accounts). */
     zeikoId: string | null;
   };
@@ -75,7 +79,10 @@ export interface PublicAuth {
 }
 
 export interface BillingSummary {
-  balanceIdr: number;
+  /** Rupiah left over from earlier payments, taken off the next one (ADR-041). */
+  creditIdr: number;
+  /** What "Renew" asks now; null without a plan of one's own. */
+  renewIdr: number | null;
   managedByFamily: boolean;
   storage: { limitBytes: number; usedBytes: number; reservedBytes: number };
   subscription: {
@@ -107,9 +114,13 @@ export interface BillingSummary {
     createdAt: number;
   }>;
   compressCredits: number;
-  paymentMethods: Array<{ code: string; label: string; minIdr: number }>;
-  minTopupIdr: number;
+  canPay: boolean;
 }
+
+/** What can be bought (ADR-041); `renew` is the next month of one's plan. */
+export type CheckoutItem =
+  | { kind: 'plan' | 'addon' | 'compress'; code: string }
+  | { kind: 'renew' };
 
 export interface Topup {
   paymentId: string;
@@ -120,15 +131,6 @@ export interface Topup {
   expiresAt: number;
 }
 
-export interface Invoice {
-  id: string;
-  number: string;
-  lines: Array<{ label: string; amountIdr: number }>;
-  subtotalIdr: number;
-  taxIdr: number;
-  taxRatePct: number;
-  totalIdr: number;
-  status: string;
-  issuedAt: number;
-  customer: { name: string; email: string };
-}
+export type CheckoutResult =
+  | { status: 'done'; done: { kind: string } }
+  | { status: 'payment'; payment: Topup; creditUsedIdr: number };

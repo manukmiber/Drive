@@ -2,7 +2,6 @@ import { and, count, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { schema } from '../db/client';
-import { AppError } from '../lib/errors';
 import { validate } from '../lib/validate';
 import { areaName } from '../services/ads';
 import { ensureCsrfCookie, requireUser } from '../middleware/auth';
@@ -14,9 +13,7 @@ import type { AppBindings } from '../types';
 
 const profilePatch = z.object({
   name: z.string().trim().min(1).max(80).optional(),
-  /** "Lokasi untuk iklan lokal" (SPEC §10.3): optional, null clears it. */
-  adCityCode: z.string().max(13).nullable().optional(),
-  /** UI and email language (ADR-036). */
+  /** UI and email language (ADR-036). The ad location is the Zeiko Account's (ADR-041). */
   locale: z.enum(['id', 'en']).optional(),
 });
 
@@ -31,6 +28,8 @@ export const me = new Hono<AppBindings>()
         .select({
           image: schema.users.image,
           adCityCode: schema.users.adCityCode,
+          adCity: schema.users.adCity,
+          adPostalCode: schema.users.adPostalCode,
           deleteRequestedAt: schema.users.deleteRequestedAt,
           locale: schema.users.locale,
         })
@@ -62,6 +61,9 @@ export const me = new Hono<AppBindings>()
         ...user,
         image: profile?.image ?? null,
         adCityCode: profile?.adCityCode ?? null,
+        adCity: profile?.adCity ?? null,
+        adPostalCode: profile?.adPostalCode ?? null,
+        adAreaName: profile?.adCityCode ? await areaName(ctx, profile.adCityCode) : null,
         locale: profile?.locale ?? 'id',
         zeikoId: zeiko?.id ?? null,
       },
@@ -87,14 +89,6 @@ export const me = new Hono<AppBindings>()
       await ctx.db
         .update(schema.users)
         .set({ locale: body.locale, updatedAt: new Date(ctx.now()) })
-        .where(eq(schema.users.id, user.id));
-    }
-    if (body.adCityCode !== undefined) {
-      if (body.adCityCode && !(await areaName(ctx, body.adCityCode)))
-        throw new AppError('VALIDATION', 'unknown area', { field: 'adCityCode' });
-      await ctx.db
-        .update(schema.users)
-        .set({ adCityCode: body.adCityCode, updatedAt: new Date(ctx.now()) })
         .where(eq(schema.users.id, user.id));
     }
     return c.json({ ok: true });

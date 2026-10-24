@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Brain, CircleUser, KeyRound, Languages, Send, ShieldCheck, Trash2 } from 'lucide-react';
+import { Brain, CircleUser, KeyRound, Languages, MapPin, ShieldCheck, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
@@ -8,7 +8,6 @@ import { sitePage } from '../lib/zeiko';
 import { Button } from '../components/Button';
 import { TotpSetup } from '../components/TotpSetup';
 import { api, ApiError, sendJson } from '../lib/api';
-import { searchAreas } from '../lib/ads';
 import { downloadZip } from '../lib/files';
 import { authClient } from '../lib/auth-client';
 import { meQueryKey, useMe } from '../lib/session';
@@ -142,23 +141,6 @@ export function Settings() {
       <AdLocation />
 
       <AccountData />
-
-      <section className={card} aria-labelledby="telegram">
-        <h2 id="telegram" className="flex items-center gap-2 font-medium">
-          <Send className="h-4 w-4" aria-hidden="true" /> {t.settings.telegramTitle}
-        </h2>
-        <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.settings.telegramBody}</p>
-        <Button
-          variant="secondary"
-          className="mt-3"
-          onClick={async () => {
-            const { url } = await api<{ url: string }>('/api/shares/telegram/link');
-            window.open(url, '_blank', 'noopener');
-          }}
-        >
-          {t.settings.telegramLink}
-        </Button>
-      </section>
     </div>
   );
 }
@@ -226,68 +208,43 @@ function Language() {
   );
 }
 
-/** "Lokasi untuk iklan lokal" (SPEC §10.3): optional city, stored only with consent, clearable. */
+/**
+ * "Lokasi untuk iklan lokal" (SPEC §10.3, ADR-041): the city and postal code on the Zeiko Account,
+ * asked at sign-up and changed there. Shown here, never edited here.
+ */
 function AdLocation() {
   const me = useMe();
-  const qc = useQueryClient();
-  const [q, setQ] = useState('');
-  const current = me.data?.user.adCityCode ?? null;
-  const areas = useQuery({
-    queryKey: ['ad-areas', q],
-    queryFn: () => searchAreas(q),
-    enabled: q.length >= 2,
+  const link = useQuery({
+    queryKey: ['zeiko-settings-link'],
+    queryFn: () => sitePage('settings'),
+    staleTime: Infinity,
   });
-  const currentName = useQuery({
-    queryKey: ['ad-area-name', current],
-    queryFn: async () =>
-      (await searchAreas(current!)).areas.find((a) => a.code === current)?.name ?? current,
-    enabled: Boolean(current),
-  });
-  const save = useMutation({
-    mutationFn: (adCityCode: string | null) => sendJson('PATCH', '/api/me', { adCityCode }),
-    onSuccess: async () => {
-      setQ('');
-      await qc.invalidateQueries({ queryKey: meQueryKey });
-      await qc.invalidateQueries({ queryKey: ['ad'] });
-    },
-  });
+  const u = me.data?.user;
+  if (!u) return null;
   return (
     <section className={card} aria-labelledby="iklan-lokasi">
-      <h2 id="iklan-lokasi" className="font-medium">
-        {t.ads.settingsTitle}
+      <h2 id="iklan-lokasi" className="flex items-center gap-2 font-medium">
+        <MapPin className="h-4 w-4" aria-hidden="true" /> {t.ads.settingsTitle}
       </h2>
       <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.ads.settingsBody}</p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <input
-          className={`${input} max-w-xs`}
-          placeholder={current ? (currentName.data ?? current) : t.ads.areaSearch}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          aria-label={t.ads.settingsTitle}
-        />
-        {current && (
-          <Button variant="ghost" onClick={() => save.mutate(null)}>
-            {t.ads.settingsClear}
-          </Button>
-        )}
-      </div>
-      {q.length >= 2 && (
-        <ul className="mt-2 max-h-48 max-w-xs overflow-auto rounded-xl border border-[var(--border)] text-sm">
-          {areas.data?.areas.map((a) => (
-            <li key={a.code}>
-              <button
-                type="button"
-                className="w-full px-3 py-2 text-left hover:bg-[var(--bg-subtle)]"
-                onClick={() => save.mutate(a.code)}
-              >
-                {a.name}
-                {a.province && (
-                  <span className="text-xs text-[var(--fg-muted)]"> · {a.province}</span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        <dt className="text-[var(--fg-muted)]">{t.ads.settingsCity}</dt>
+        <dd>{u.adCity || t.ads.settingsNone}</dd>
+        <dt className="text-[var(--fg-muted)]">{t.ads.settingsPostal}</dt>
+        <dd>{u.adPostalCode || t.ads.settingsNone}</dd>
+      </dl>
+      {u.adCity && (
+        <p className="mt-2 text-xs text-[var(--fg-muted)]">
+          {u.adAreaName ? t.ads.settingsArea(u.adAreaName) : t.ads.settingsNoMatch}
+        </p>
+      )}
+      {link.data && (
+        <a
+          href={link.data}
+          className="mt-3 inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium"
+        >
+          {t.ads.settingsChange}
+        </a>
       )}
     </section>
   );
@@ -299,11 +256,11 @@ function NotificationPrefs() {
     queryKey: ['notification-prefs'],
     queryFn: () =>
       api<{
-        items: Array<{ type: string; email: boolean; telegram: boolean; emailLocked: boolean }>;
+        items: Array<{ type: string; email: boolean; emailLocked: boolean }>;
       }>('/api/notifications/prefs'),
   });
-  const set = (type: string, channel: 'email' | 'telegram', enabled: boolean) =>
-    void sendJson('PUT', '/api/notifications/prefs', { type, channel, enabled }).then(() =>
+  const set = (type: string, enabled: boolean) =>
+    void sendJson('PUT', '/api/notifications/prefs', { type, channel: 'email', enabled }).then(() =>
       qc.invalidateQueries({ queryKey: ['notification-prefs'] }),
     );
   return (
@@ -317,7 +274,6 @@ function NotificationPrefs() {
           <tr className="text-left text-xs text-[var(--fg-muted)]">
             <th className="py-1 font-normal" />
             <th className="w-20 font-normal">{t.notifications.email}</th>
-            <th className="w-20 font-normal">{t.notifications.telegram}</th>
           </tr>
         </thead>
         <tbody>
@@ -331,18 +287,10 @@ function NotificationPrefs() {
                   <input
                     type="checkbox"
                     checked={p.email}
-                    onChange={(e) => set(p.type, 'email', e.target.checked)}
+                    onChange={(e) => set(p.type, e.target.checked)}
                     aria-label={`${t.notifications.email}: ${t.notifications.types[p.type]}`}
                   />
                 )}
-              </td>
-              <td>
-                <input
-                  type="checkbox"
-                  checked={p.telegram}
-                  onChange={(e) => set(p.type, 'telegram', e.target.checked)}
-                  aria-label={`${t.notifications.telegram}: ${t.notifications.types[p.type]}`}
-                />
               </td>
             </tr>
           ))}

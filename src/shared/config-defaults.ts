@@ -114,6 +114,7 @@ export const configSchema = z.object({
   scan_max_attempts: int().min(1).default(3),
 
   // ── Billing ──
+  /** Unused since ADR-041 (no top-ups); kept so a stored config still reads. */
   min_topup_idr: nonNeg().default(10_000),
   payment_methods: z
     .array(
@@ -128,8 +129,9 @@ export const configSchema = z.object({
     )
     .default([
       // Zeiko Accounts (ADR-036): QRIS, checked by the operator. Drive takes QRIS only (ADR-038);
-      // another code here is never offered (services/billing.ts::DRIVE_METHODS).
-      { code: 'qris', label: 'QRIS', min_idr: 10_000, fee_flat_idr: 0, fee_pct: 0.7, active: true },
+      // another code here is never offered (services/billing.ts::DRIVE_METHODS). Every purchase is
+      // paid on its own (ADR-041), so the minimum is low: a Mini plan is Rp1.000.
+      { code: 'qris', label: 'QRIS', min_idr: 1_000, fee_flat_idr: 0, fee_pct: 0.7, active: true },
     ]),
   tax_rate_pct: z.number().nonnegative().default(0),
   billing_reminder_days_before: z.array(nonNeg()).default([3, 1]),

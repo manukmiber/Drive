@@ -1,7 +1,9 @@
-// Billing (SPEC §12): Saldo Zeiko (append-only ledger), top-ups through the PaymentProvider adapter,
-// subscriptions (upgrade pro-rata now, downgrade next period), add-ons, compress packs, numbered
-// invoices, auto-renewal and the dunning cycle. Every money movement is one atomic db.batch; the
-// wallet's CHECK (balance >= 0) is what rejects overdrafts.
+// Billing (SPEC §12, ADR-041): every purchase is paid by QRIS when it is made — plans (upgrade
+// pro-rata now, downgrade next period), add-ons, compress packs and the next month — through the
+// PaymentProvider adapter. There is no Saldo for people to see: the wallet is the clearing ledger
+// (payment in, purchase out), and what is left in it is "credit", taken off the next payment. Numbered
+// invoices are kept for the books only. Renewal is manual, then the dunning cycle. Every money
+// movement is one atomic db.batch; the wallet's CHECK (balance >= 0) is what rejects overdrafts.
 import { DAY_MS } from '../../shared/constants';
 import type { PaymentStatus } from '../../shared/enums';
 import { formatBytes } from '../../shared/format';
@@ -82,7 +84,7 @@ export async function runMoneyBatch(ctx: Ctx, stmts: Stmt[], need: number): Prom
     await ctx.env.DB.batch(stmts);
   } catch (e) {
     if (/CHECK constraint failed/i.test(String(e))) {
-      throw new AppError('INSUFFICIENT_BALANCE', 'saldo tidak cukup', { needIdr: need });
+      throw new AppError('INSUFFICIENT_BALANCE', 'not enough credit', { needIdr: need });
     }
     throw e;
   }
@@ -94,16 +96,21 @@ export interface InvoiceLine {
   amountIdr: number;
 }
 
+/** What a subtotal costs with tax — the same sum `invoiceStmts` books, so a quote is the charge. */
+export async function withTax(ctx: Ctx, subtotal: number): Promise<number> {
+  const cfg = await ctx.config();
+  return subtotal + Math.round((subtotal * cfg.tax_rate_pct) / 100);
+}
+
 export async function invoiceStmts(
   ctx: Ctx,
   userId: string,
   lines: InvoiceLine[],
   paymentId: string | null,
 ): Promise<{ id: string; total: number; stmts: Stmt[] }> {
-  const cfg = await ctx.config();
   const subtotal = lines.reduce((s, l) => s + l.amountIdr, 0);
-  const tax = Math.round((subtotal * cfg.tax_rate_pct) / 100);
-  const total = subtotal + tax;
+  const total = await withTax(ctx, subtotal);
+  const tax = total - subtotal;
   const now = ctx.now();
   const ym = wibDate(now).replace(/-/g, '').slice(0, 6);
   const counter = `invoice:${ym}`;
@@ -136,24 +143,6 @@ export function poolLimitStmt(ctx: Ctx, poolId: string): Stmt {
        ORDER BY s.created_at DESC LIMIT 1), 0) + bonus_bytes, updated_at = ?2
      WHERE id = ?1`,
   ).bind(poolId, ctx.now());
-}
-
-export async function afterInvoice(
-  ctx: Ctx,
-  userId: string,
-  invoiceId: string,
-  summary: string,
-): Promise<void> {
-  const inv = await ctx.env.DB.prepare('SELECT number, total_idr FROM invoices WHERE id = ?1')
-    .bind(invoiceId)
-    .first<{ number: string; total_idr: number }>();
-  if (inv)
-    await notify(ctx, userId, 'invoice', {
-      invoiceId,
-      number: inv.number,
-      totalIdr: inv.total_idr,
-      summary,
-    });
 }
 
 // ───────────────────────── subscriptions ─────────────────────────
@@ -226,7 +215,7 @@ export type PlanChange =
   | { kind: 'subscribed' | 'upgraded' | 'reactivated'; chargedIdr: number; invoiceId: string }
   | { kind: 'downgrade_scheduled' | 'downgrade_cancelled'; chargedIdr: 0 };
 
-/** Buys or changes the personal plan, paid from Saldo (SPEC §12.4). */
+/** Buys or changes the personal plan, paid from the wallet (SPEC §12.4; QRIS lands there first). */
 export async function choosePlan(ctx: Ctx, userId: string, planCode: string): Promise<PlanChange> {
   const p = await plan(ctx, planCode);
   if (p.kind !== 'personal') {
@@ -294,7 +283,6 @@ export async function changePlanForPool(
     );
     await runMoneyBatch(ctx, stmts, inv.total);
     await grantPlanCredits(ctx, userId, p, addBillingMonth(now, anchor), subId);
-    await afterInvoice(ctx, userId, inv.id, `Paket ${p.name} aktif.`);
     return { kind: sub ? 'reactivated' : 'subscribed', chargedIdr: inv.total, invoiceId: inv.id };
   }
 
@@ -343,23 +331,7 @@ export async function changePlanForPool(
       sub.period_end,
       sub.id,
     );
-  await afterInvoice(ctx, userId, inv.id, `Paket naik ke ${p.name}.`);
   return { kind: 'upgraded', chargedIdr: inv.total, invoiceId: inv.id };
-}
-
-export async function setAutoRenew(
-  ctx: Ctx,
-  userId: string,
-  cancelAtPeriodEnd: boolean,
-): Promise<void> {
-  const poolId = await ownPool(ctx, userId);
-  const sub = await currentSubscription(ctx, poolId);
-  if (!sub) throw new AppError('NOT_FOUND', 'no subscription');
-  await ctx.env.DB.prepare(
-    'UPDATE subscriptions SET cancel_at_period_end = ?2, updated_at = ?3 WHERE id = ?1',
-  )
-    .bind(sub.id, cancelAtPeriodEnd ? 1 : 0, ctx.now())
-    .run();
 }
 
 export async function buyAddon(
@@ -395,7 +367,6 @@ export async function buyAddon(
     ],
     inv.total,
   );
-  await afterInvoice(ctx, userId, inv.id, `${a.name} aktif.`);
   return { chargedIdr: inv.total, invoiceId: inv.id };
 }
 
@@ -444,7 +415,6 @@ export async function buyCompressPack(
     ],
     inv.total,
   );
-  await afterInvoice(ctx, userId, inv.id, `${pack.credits} kredit kompres ditambahkan.`);
   return { chargedIdr: inv.total, invoiceId: inv.id };
 }
 
@@ -464,8 +434,56 @@ export async function grantPlanCredits(
     .run();
 }
 
+/**
+ * The next month, paid now (ADR-041: renewal is manual). An active plan runs on from the end of its
+ * period, with the add-ons that were not stopped; an overdue one is restored from today.
+ */
+export async function renewNow(
+  ctx: Ctx,
+  userId: string,
+): Promise<{ kind: 'renewed' | 'reactivated'; chargedIdr: number; invoiceId: string }> {
+  const poolId = await ownPool(ctx, userId);
+  const sub = await currentSubscription(ctx, poolId);
+  if (!sub) throw new AppError('CONFLICT', 'no plan to renew', { reason: 'NO_PLAN' });
+  if (sub.status !== 'active') {
+    const r = await changePlanForPool(
+      ctx,
+      userId,
+      poolId,
+      await plan(ctx, sub.next_plan_code ?? sub.plan_code),
+    );
+    if (!('invoiceId' in r)) throw new AppError('CONFLICT', 'nothing to renew');
+    return { kind: 'reactivated', chargedIdr: r.chargedIdr, invoiceId: r.invoiceId };
+  }
+  const now = ctx.now();
+  const DB = ctx.env.DB;
+  const { lines, planCode } = await renewalPrice(ctx, sub);
+  const inv = await invoiceStmts(ctx, userId, lines, null);
+  const nextEnd = addBillingMonth(sub.period_end, sub.anchor_day);
+  await runMoneyBatch(
+    ctx,
+    [
+      ...walletStmts(ctx, userId, -inv.total, 'renewal', inv.id),
+      DB.prepare(
+        `UPDATE subscriptions SET plan_code = ?2, next_plan_code = NULL, period_start = period_end, period_end = ?3,
+           cancel_at_period_end = 0, updated_at = ?4
+         WHERE id = ?1 AND status = 'active' AND period_end = ?5`,
+      ).bind(sub.id, planCode, nextEnd, now, sub.period_end),
+      DB.prepare(
+        'UPDATE subscription_addons SET ends_at = ?2 WHERE subscription_id = ?1 AND ends_at IS NULL AND cancel_at_period_end = 1',
+      ).bind(sub.id, sub.period_end),
+      poolLimitStmt(ctx, poolId),
+      ...inv.stmts,
+    ],
+    inv.total,
+  );
+  const p = await DB.prepare('SELECT * FROM plans WHERE code = ?1').bind(planCode).first<PlanRow>();
+  if (p) await grantPlanCredits(ctx, userId, p, nextEnd, sub.id);
+  return { kind: 'renewed', chargedIdr: inv.total, invoiceId: inv.id };
+}
+
 // ───────────────────────── payments ─────────────────────────
-export interface TopupResult {
+export interface PaymentStarted {
   paymentId: string;
   amountIdr: number;
   feeIdr: number;
@@ -474,11 +492,15 @@ export interface TopupResult {
   expiresAt: number;
 }
 
-export type DirectPurpose =
+/** What a person can buy (ADR-041). `renew` is the next month of the plan they have. */
+export type CheckoutItem =
   | { kind: 'plan'; code: string }
   | { kind: 'addon'; code: string }
   | { kind: 'compress'; code: string }
-  | { kind: 'ads'; bookingIds: string[] };
+  | { kind: 'renew' };
+
+/** What a payment is for once it lands. `ads` is the operator's ad tool (ADR-041). */
+export type DirectPurpose = CheckoutItem | { kind: 'ads'; bookingIds: string[] };
 
 /** The user's Zeiko Account id (ADR-036), for the payments opened in their name. */
 async function zeikoIdOf(ctx: Ctx, userId: string): Promise<string | undefined> {
@@ -490,41 +512,43 @@ async function zeikoIdOf(ctx: Ctx, userId: string): Promise<string | undefined> 
   return row?.account_id;
 }
 
-export async function createTopup(
+/**
+ * Opens a QRIS payment of `amountIdr` (at least the method's minimum: the rest stays as credit)
+ * that makes `purpose` once it is paid.
+ */
+export async function openPayment(
   ctx: Ctx,
   user: { id: string; email: string },
-  input: { amountIdr: number; method: string; then?: DirectPurpose | undefined },
-): Promise<TopupResult> {
+  input: { amountIdr: number; purpose: DirectPurpose; method?: string | undefined },
+): Promise<PaymentStarted> {
   const cfg = await ctx.config();
   if (ctx.adapters.payment.name === 'mock' && ctx.env.APP_ENV === 'production') {
     throw new AppError('PAYMENT_UNAVAILABLE', 'payment gateway not configured');
   }
   const method = cfg.payment_methods.find(
-    (m) => m.code === input.method && m.active && DRIVE_METHODS.has(m.code),
+    (m) => m.code === (input.method ?? 'qris') && m.active && DRIVE_METHODS.has(m.code),
   );
-  if (!method) throw new AppError('VALIDATION', 'unknown payment method', { field: 'method' });
-  const min = Math.max(cfg.min_topup_idr, method.min_idr);
-  if (!Number.isInteger(input.amountIdr) || input.amountIdr < min)
-    throw new AppError('VALIDATION', 'amount below minimum', { minIdr: min });
-  if (input.amountIdr > 10_000_000)
+  if (!method) throw new AppError('PAYMENT_UNAVAILABLE', 'no payment method', { field: 'method' });
+  const amount = Math.max(Math.ceil(input.amountIdr), method.min_idr, 1);
+  if (amount > 10_000_000)
     throw new AppError('VALIDATION', 'amount too large', { maxIdr: 10_000_000 });
-  const fee = method.fee_flat_idr + Math.ceil((input.amountIdr * method.fee_pct) / 100);
-  const asked = cfg.payment_fee_paid_by === 'user' ? input.amountIdr + fee : input.amountIdr;
+  const fee = method.fee_flat_idr + Math.ceil((amount * method.fee_pct) / 100);
+  const asked = cfg.payment_fee_paid_by === 'user' ? amount + fee : amount;
   const now = ctx.now();
   const paymentId = ulid(now);
   const charge = await ctx.adapters.payment.createCharge({
     paymentId,
     amountIdr: asked,
     method: method.code,
-    description: input.then ? 'Pembayaran Zeiko Drive' : 'Isi Saldo Zeiko Drive',
+    description: 'Pembayaran Zeiko Drive',
     customerEmail: user.email,
     customerRef: await zeikoIdOf(ctx, user.id),
   });
-  // A Zeiko QRIS asks a few rupiah more (its code); the buyer pays them, so Saldo gets them.
+  // A Zeiko QRIS asks a few rupiah more (its code); the buyer paid them, so they stay as credit.
   const charged = charge.amountIdr ?? asked;
   await ctx.env.DB.prepare(
     `INSERT INTO payments (id, user_id, provider, provider_ref, method, amount_idr, fee_idr, status, purpose, purpose_ref, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, ?9, ?10, ?10)`,
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', 'direct', ?8, ?9, ?9)`,
   )
     .bind(
       paymentId,
@@ -534,8 +558,7 @@ export async function createTopup(
       method.code,
       charged,
       fee,
-      input.then ? 'direct' : 'topup',
-      input.then ? JSON.stringify(input.then) : null,
+      JSON.stringify(input.purpose),
       now,
     )
     .run();
@@ -547,6 +570,123 @@ export async function createTopup(
     qrString: charge.qrString,
     expiresAt: charge.expiresAt,
   };
+}
+
+/** What `item` costs this person right now, tax included (0: nothing to pay, e.g. a downgrade). */
+export async function quoteItem(ctx: Ctx, userId: string, item: CheckoutItem): Promise<number> {
+  const now = ctx.now();
+  if (item.kind === 'compress') {
+    const pack = await ctx.env.DB.prepare(
+      'SELECT price_idr FROM compress_packs WHERE code = ?1 AND active = 1',
+    )
+      .bind(item.code)
+      .first<{ price_idr: number }>();
+    if (!pack) throw new AppError('NOT_FOUND', 'pack not found');
+    return withTax(ctx, pack.price_idr);
+  }
+  if (item.kind === 'plan') {
+    const p = await plan(ctx, item.code);
+    if (p.kind !== 'personal') return withTax(ctx, p.price_idr);
+    const inFamily = await ctx.env.DB.prepare('SELECT role FROM family_members WHERE user_id = ?1')
+      .bind(userId)
+      .first<{ role: string }>();
+    if (inFamily) {
+      throw new AppError('CONFLICT', 'storage is managed by your family plan', {
+        reason: inFamily.role === 'owner' ? 'FAMILY_OWNER' : 'FAMILY_MEMBER',
+      });
+    }
+    const sub = await currentSubscription(ctx, await ownPool(ctx, userId));
+    if (!sub || sub.status !== 'active') return withTax(ctx, p.price_idr);
+    if (sub.plan_code === p.code) {
+      if (!sub.next_plan_code) throw new AppError('CONFLICT', 'already on this plan');
+      return 0;
+    }
+    const cur = await plan(ctx, sub.plan_code).catch(() => null);
+    if (cur && p.price_idr < cur.price_idr) return 0;
+    return withTax(ctx, proRata(p.price_idr - (cur?.price_idr ?? 0), sub, now));
+  }
+  const sub = await currentSubscription(ctx, await ownPool(ctx, userId));
+  if (item.kind === 'addon') {
+    const a = await ctx.env.DB.prepare('SELECT price_idr, active FROM addons WHERE code = ?1')
+      .bind(item.code)
+      .first<{ price_idr: number; active: number }>();
+    if (!a || !a.active) throw new AppError('NOT_FOUND', 'add-on not found');
+    if (!sub || sub.status !== 'active')
+      throw new AppError('CONFLICT', 'an active plan is required', { reason: 'NO_PLAN' });
+    return withTax(ctx, proRata(a.price_idr, sub, now));
+  }
+  if (!sub) throw new AppError('CONFLICT', 'no plan to renew', { reason: 'NO_PLAN' });
+  if (sub.status !== 'active') {
+    // Paying an overdue plan restores it from today, like buying it again.
+    return withTax(ctx, (await plan(ctx, sub.next_plan_code ?? sub.plan_code)).price_idr);
+  }
+  const { lines } = await renewalPrice(ctx, sub);
+  return withTax(
+    ctx,
+    lines.reduce((t, l) => t + l.amountIdr, 0),
+  );
+}
+
+export type ItemDone =
+  | PlanChange
+  | { kind: 'addon' | 'compress' | 'renewed'; chargedIdr: number; invoiceId: string };
+
+/** Makes the purchase from the wallet (the payment, or credit, is already there). */
+export async function performItem(
+  ctx: Ctx,
+  userId: string,
+  item: CheckoutItem,
+): Promise<ItemDone> {
+  if (item.kind === 'plan') return choosePlan(ctx, userId, item.code);
+  if (item.kind === 'addon') return { kind: 'addon', ...(await buyAddon(ctx, userId, item.code)) };
+  if (item.kind === 'compress')
+    return { kind: 'compress', ...(await buyCompressPack(ctx, userId, item.code)) };
+  return renewNow(ctx, userId);
+}
+
+export type CheckoutResult =
+  | { status: 'done'; done: ItemDone }
+  | { status: 'payment'; payment: PaymentStarted; creditUsedIdr: number };
+
+/**
+ * Buys `item` (ADR-041): nothing to pay or credit covers it → made at once; otherwise a QRIS
+ * payment for what is left, which makes it when it lands (`applyPaymentEvent`).
+ */
+export async function checkout(
+  ctx: Ctx,
+  user: { id: string; email: string },
+  item: CheckoutItem,
+): Promise<CheckoutResult> {
+  const price = await quoteItem(ctx, user.id, item);
+  const credit = await walletBalance(ctx, user.id);
+  if (price <= credit) return { status: 'done', done: await performItem(ctx, user.id, item) };
+  const payment = await openPayment(ctx, user, { amountIdr: price - credit, purpose: item });
+  return { status: 'payment', payment, creditUsedIdr: credit };
+}
+
+/** One sentence about what a payment bought, for its notice. */
+async function doneSummary(ctx: Ctx, done: ItemDone, item: DirectPurpose): Promise<string> {
+  const planName = async (code: string) =>
+    (await ctx.env.DB.prepare('SELECT name FROM plans WHERE code = ?1')
+      .bind(code)
+      .first<{ name: string }>())?.name ?? code;
+  switch (done.kind) {
+    case 'subscribed':
+    case 'reactivated':
+      return item.kind === 'plan'
+        ? `Paket ${await planName(item.code)} aktif.`
+        : 'Paketmu aktif lagi.';
+    case 'upgraded':
+      return item.kind === 'plan' ? `Paket naik ke ${await planName(item.code)}.` : 'Paketmu naik.';
+    case 'renewed':
+      return 'Paketmu sudah diperpanjang sebulan.';
+    case 'addon':
+      return 'Tambahan ruang sudah aktif.';
+    case 'compress':
+      return 'Kredit kompres sudah ditambahkan.';
+    default:
+      return 'Pembelianmu sudah jadi.';
+  }
 }
 
 interface PaymentRow {
@@ -604,7 +744,7 @@ export async function applyPaymentEvent(
       `UPDATE payments SET status = ?2, paid_at = CASE WHEN ?2 = 'paid' THEN ?3 ELSE paid_at END, raw_json = ?4, updated_at = ?3 WHERE id = ?1 AND status = ?5`,
     ).bind(p.id, ev.status, now, JSON.stringify(ev.raw).slice(0, 8000), p.status),
   ];
-  // Fee paid by the user is not credited; only the amount they meant to top up.
+  // A fee the user paid on top is not credited; only the amount meant for the purchase.
   const credit =
     p.amount_idr - ((await ctx.config()).payment_fee_paid_by === 'user' ? p.fee_idr : 0);
   if (ev.status === 'paid') {
@@ -621,25 +761,41 @@ export async function applyPaymentEvent(
          SELECT ?1, ?2, ?3, balance_idr, 'topup', ?4, ?5 FROM wallets WHERE user_id = ?2
            AND NOT EXISTS (SELECT 1 FROM wallet_ledger WHERE reason = 'topup' AND ref = ?4)`,
       ).bind(ulid(now), p.user_id, credit, p.id, now),
-      notificationStmt(ctx, p.user_id, 'payment_paid', { paymentId: p.id, amountIdr: credit }).stmt,
     );
   }
   if (ev.status === 'refunded') stmts.push(...walletStmts(ctx, p.user_id, -credit, 'refund', p.id));
   const res = await DB.batch(stmts);
   if (!res[0]?.meta.changes) return 'ignored';
 
-  if (ev.status === 'paid' && p.purpose === 'direct' && p.purpose_ref) {
-    // "Bayar langsung": the money lands in Saldo first, then the purchase is made from it.
+  if (ev.status !== 'paid') return 'applied';
+
+  // The money is in the wallet; now make what it was paid for (ADR-041). If that cannot be done
+  // any more, the money stays as credit for the next payment, and the operator is told.
+  let summary = '';
+  let failed = false;
+  if (p.purpose === 'direct' && p.purpose_ref) {
     const then = JSON.parse(p.purpose_ref) as DirectPurpose;
     try {
-      if (then.kind === 'plan') await choosePlan(ctx, p.user_id, then.code);
-      else if (then.kind === 'addon') await buyAddon(ctx, p.user_id, then.code);
-      else if (then.kind === 'ads') await payBookingsFromWallet(ctx, p.user_id, then.bookingIds);
-      else await buyCompressPack(ctx, p.user_id, then.code);
+      if (then.kind === 'ads') {
+        await payBookingsFromWallet(ctx, p.user_id, then.bookingIds);
+        summary = 'Iklanmu sudah dibayar.';
+      } else summary = await doneSummary(ctx, await performItem(ctx, p.user_id, then), then);
     } catch (e) {
+      failed = true;
       log.warn('direct_purchase_failed', { paymentId: p.id, error: String(e) });
+      await ctx.env.NOTIFY_QUEUE.send({
+        type: 'admin_alert',
+        text: `Pembayaran ${p.id} masuk, tapi pembeliannya gagal (${String(e).slice(0, 200)}); uangnya jadi kredit.`,
+      });
     }
   }
+  await notify(ctx, p.user_id, 'payment_paid', {
+    paymentId: p.id,
+    amountIdr: p.amount_idr,
+    summary,
+    failed,
+    creditIdr: await walletBalance(ctx, p.user_id),
+  });
   return 'applied';
 }
 
@@ -710,7 +866,10 @@ async function renewalPrice(
   };
 }
 
-/** Renews due subscriptions from Saldo; unpaid ones enter `grace` (SPEC §12.4–12.5). */
+/**
+ * Due subscriptions: renewed when credit covers the next month, otherwise they enter `grace` and wait
+ * to be paid (ADR-041; SPEC §12.4–12.5).
+ */
 export async function renewDueSubscriptions(
   ctx: Ctx,
   limit = 100,
@@ -766,7 +925,6 @@ export async function renewDueSubscriptions(
         .bind(planCode)
         .first<PlanRow>();
       if (p) await grantPlanCredits(ctx, sub.payer_user_id, p, nextEnd, sub.id);
-      await afterInvoice(ctx, sub.payer_user_id, inv.id, 'Paket diperpanjang.');
       renewed++;
     } catch (e) {
       if (e instanceof AppError && e.code === 'INSUFFICIENT_BALANCE') await toGrace('balance');
@@ -776,14 +934,14 @@ export async function renewDueSubscriptions(
   return { renewed, failed };
 }
 
-/** H-3 / H-1 reminders (once per subscription period and day). */
+/** H-3 / H-1 reminders to pay the next month (once per subscription period and day). */
 export async function sendRenewalReminders(ctx: Ctx): Promise<number> {
   const cfg = await ctx.config();
   const now = ctx.now();
   let sent = 0;
   for (const days of cfg.billing_reminder_days_before) {
     const { results } = await ctx.env.DB.prepare(
-      `SELECT * FROM subscriptions WHERE status = 'active' AND auto_renew = 1 AND cancel_at_period_end = 0
+      `SELECT * FROM subscriptions WHERE status = 'active' AND cancel_at_period_end = 0
          AND period_end > ?1 AND period_end <= ?2 LIMIT 500`,
     )
       .bind(now + (days - 1) * DAY_MS, now + days * DAY_MS)
@@ -796,8 +954,11 @@ export async function sendRenewalReminders(ctx: Ctx): Promise<number> {
         days,
         planName: p?.name ?? sub.plan_code,
         periodEnd: sub.period_end,
-        amountIdr: lines.reduce((s, l) => s + l.amountIdr, 0),
-        balanceIdr: await walletBalance(ctx, sub.payer_user_id),
+        amountIdr: await withTax(
+          ctx,
+          lines.reduce((s, l) => s + l.amountIdr, 0),
+        ),
+        creditIdr: await walletBalance(ctx, sub.payer_user_id),
       });
       sent++;
     }
@@ -966,9 +1127,16 @@ export async function billingSummary(ctx: Ctx, userId: string) {
       .first<{ n: number }>(),
   ]);
   const cfg = await ctx.config();
+  const managedByFamily = pool?.owner_type !== 'user' || pool.owner_id !== userId;
+  // What "Renew" asks: the next month (active) or the plan again from today (overdue).
+  const renewIdr =
+    sub && !managedByFamily
+      ? await quoteItem(ctx, userId, { kind: 'renew' }).catch(() => null)
+      : null;
   return {
-    balanceIdr: balance,
-    managedByFamily: pool?.owner_type !== 'user' || pool.owner_id !== userId,
+    creditIdr: balance,
+    renewIdr,
+    managedByFamily,
     storage: {
       limitBytes: pool?.limit_bytes ?? 0,
       usedBytes: pool?.used_bytes ?? 0,
@@ -989,67 +1157,21 @@ export async function billingSummary(ctx: Ctx, userId: string) {
     addons: addons.results,
     pendingPayments: pending.results,
     compressCredits: credits?.n ?? 0,
-    paymentMethods: cfg.payment_methods
-      .filter((m) => m.active && DRIVE_METHODS.has(m.code))
-      .map((m) => ({
-        code: m.code,
-        label: m.label,
-        minIdr: Math.max(m.min_idr, cfg.min_topup_idr),
-      })),
-    minTopupIdr: cfg.min_topup_idr,
+    canPay: cfg.payment_methods.some((m) => m.active && DRIVE_METHODS.has(m.code)),
   };
 }
 
-export async function listLedger(ctx: Ctx, userId: string) {
-  const { results } = await ctx.env.DB.prepare(
-    `SELECT id, delta_idr AS deltaIdr, balance_after AS balanceAfter, reason, ref, created_at AS createdAt
-     FROM wallet_ledger WHERE user_id = ?1 ORDER BY created_at DESC, id DESC LIMIT 100`,
-  )
-    .bind(userId)
-    .all();
-  return results;
-}
-
-export async function listInvoices(ctx: Ctx, userId: string) {
-  const { results } = await ctx.env.DB.prepare(
-    `SELECT id, number, total_idr AS totalIdr, status, issued_at AS issuedAt FROM invoices WHERE user_id = ?1 ORDER BY issued_at DESC LIMIT 100`,
-  )
-    .bind(userId)
-    .all();
-  return results;
-}
-
-export async function getInvoice(ctx: Ctx, userId: string, id: string) {
-  const inv = await ctx.env.DB.prepare(
-    `SELECT i.*, u.name AS user_name, u.email AS user_email FROM invoices i JOIN users u ON u.id = i.user_id WHERE i.id = ?1 AND i.user_id = ?2`,
-  )
+/** Where one of the user's own payments stands, for the page waiting on its QRIS. */
+export async function paymentStatus(
+  ctx: Ctx,
+  userId: string,
+  id: string,
+): Promise<{ status: PaymentStatus }> {
+  const p = await ctx.env.DB.prepare('SELECT status FROM payments WHERE id = ?1 AND user_id = ?2')
     .bind(id, userId)
-    .first<{
-      id: string;
-      number: string;
-      lines_json: string;
-      subtotal_idr: number;
-      tax_idr: number;
-      total_idr: number;
-      status: string;
-      issued_at: number;
-      user_name: string;
-      user_email: string;
-    }>();
-  if (!inv) throw new AppError('NOT_FOUND', 'invoice not found');
-  const cfg = await ctx.config();
-  return {
-    id: inv.id,
-    number: inv.number,
-    lines: JSON.parse(inv.lines_json) as InvoiceLine[],
-    subtotalIdr: inv.subtotal_idr,
-    taxIdr: inv.tax_idr,
-    taxRatePct: cfg.tax_rate_pct,
-    totalIdr: inv.total_idr,
-    status: inv.status,
-    issuedAt: inv.issued_at,
-    customer: { name: inv.user_name, email: inv.user_email },
-  };
+    .first<{ status: PaymentStatus }>();
+  if (!p) throw new AppError('NOT_FOUND', 'payment not found');
+  return { status: p.status };
 }
 
 /**

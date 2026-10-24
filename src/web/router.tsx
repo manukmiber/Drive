@@ -3,6 +3,7 @@ import {
   createRoute,
   createRouter,
   Outlet,
+  redirect,
   useParams,
 } from '@tanstack/react-router';
 import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
@@ -32,7 +33,6 @@ const Search = page(() => import('./pages/Lists'), 'Search');
 const Shared = page(() => import('./pages/Lists'), 'Shared');
 const Starred = page(() => import('./pages/Lists'), 'Starred');
 const Billing = page(() => import('./pages/Billing'), 'Billing');
-const InvoicePage = page(() => import('./pages/Billing'), 'InvoicePage');
 const Admin = page(() => import('./pages/Admin'), 'Admin');
 const Report = page(() => import('./pages/Report'), 'Report');
 const Legal = page(() => import('./pages/Legal'), 'Legal');
@@ -118,12 +118,12 @@ const routeTree = rootRoute.addChildren([
     searchRoute,
     createRoute({ getParentRoute: () => appRoute, path: '/sampah', component: Trash }),
     createRoute({ getParentRoute: () => appRoute, path: '/paket', component: Billing }),
+    // Invoices are not shown any more (ADR-041); links in older emails land on Paket.
     createRoute({
       getParentRoute: () => appRoute,
       path: '/paket/invoice/$id',
-      component: function Inv() {
-        const { id } = useParams({ from: '/app/paket/invoice/$id' });
-        return <InvoicePage id={id} />;
+      beforeLoad: () => {
+        throw redirect({ to: '/paket' });
       },
     }),
     createRoute({ getParentRoute: () => appRoute, path: '/kompres', component: Compress }),

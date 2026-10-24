@@ -15,6 +15,9 @@ export interface ZeikoAccount {
   username: string;
   name: string;
   emailVerified: boolean;
+  /** Where they said they live, for local ads (ADR-041): city required at sign-up, postal code not. */
+  city: string;
+  postalCode: string;
 }
 
 export interface ZeikoAccounts {
@@ -85,6 +88,8 @@ function account(raw: unknown): ZeikoAccount {
     username: typeof a.username === 'string' ? a.username : '',
     name: typeof a.name === 'string' ? a.name : '',
     emailVerified: a.emailVerified === true,
+    city: typeof a.city === 'string' ? a.city.trim().slice(0, 80) : '',
+    postalCode: typeof a.postalCode === 'string' ? a.postalCode.trim().slice(0, 10) : '',
   };
 }
 

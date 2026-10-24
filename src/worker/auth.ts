@@ -16,6 +16,7 @@ import { ulid } from './lib/ids';
 import { isAppError } from './lib/errors';
 import { log } from './lib/log';
 import { ensurePersonalSpace } from './services/accounts';
+import { areaForCity } from './services/ads';
 
 export const AUTH_BASE_PATH = '/api/auth';
 /** `__Host-` cookies: Secure, Path=/, no Domain → never sent to USERCONTENT_ORIGIN (SPEC §14.4). */
@@ -122,6 +123,17 @@ function zeikoSignIn(ctx: Ctx): BetterAuthPlugin {
                AND NOT EXISTS (SELECT 1 FROM users o WHERE o.email = ?2 AND o.id != ?1)`,
           )
             .bind(userId, email, name, ctx.now())
+            .run();
+          // Local ads follow the city on the Zeiko Account (ADR-041); the door is where it changes.
+          await env.DB.prepare(
+            'UPDATE users SET ad_city = ?2, ad_postal_code = ?3, ad_city_code = ?4 WHERE id = ?1',
+          )
+            .bind(
+              userId,
+              a.city || null,
+              a.postalCode || null,
+              a.city ? await areaForCity(ctx, a.city) : null,
+            )
             .run();
           const user = await ia.findUserById(userId);
           if (!user) throw new APIError('INTERNAL_SERVER_ERROR', { message: 'user vanished' });

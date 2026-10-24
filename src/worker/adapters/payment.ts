@@ -21,7 +21,8 @@ export interface Charge {
   expiresAt: number;
   /**
    * What the buyer actually pays, when the provider changes it: a Zeiko QRIS adds a code of 1–999
-   * rupiah so the operator can tell transfers apart. All of it lands in Saldo.
+   * rupiah so the operator can tell transfers apart. All of it lands in the wallet; what the
+   * purchase leaves is credit (ADR-041).
    */
   amountIdr?: number;
 }

@@ -558,3 +558,49 @@ lewat `accounts.provider_id = 'zeiko'`), tetapi dashboard relay punya dua daftar
 - Kalau Drive tidak menjawab, daftar People relay tetap tampil dan menyebut alasannya.
 
 Tes: `tests/integration/ops.test.ts` (lookup per id Akun Zeiko, lebih dari 100 id, ops key salah = 404).
+
+## ADR-041 — Tanpa Saldo dan invoice; notifikasi lewat email; lokasi iklan dari Akun Zeiko; iklan lewat admin
+
+**Konteks:** permintaan pemilik (2026-10-24): "hapus saldo drive, riwayat saldo, dan invoice. notifikasi cukup
+email, lokasi data iklan itu ditanyakan pada saat pendaftaraan, kota wajib kodepos opsional. pasang iklan itu
+langsung kontak ke admin@zeiko.biz.id". Pilihan pemilik saat ditanya: lonceng di app tetap ada (selain email),
+dan lokasi ditanyakan di formulir daftar **Akun Zeiko** (bukan di Drive).
+
+**Keputusan:**
+- **Tidak ada Saldo untuk pengguna.** Tidak ada isi saldo, kartu Saldo, riwayat saldo, daftar/halaman invoice,
+  atau email invoice. Setiap pembelian (paket, naik paket, add-on, paket kompres, perpanjangan) dibayar QRIS
+  saat itu juga, sebesar harga pembelian itu: `POST /api/billing/checkout {item}`. Harga dihitung di server
+  (`quoteItem`), sama dengan yang nanti dipotong.
+- **Di dalam, `wallets`/`wallet_ledger` tetap ada sebagai buku kliring** (uang masuk → pembelian keluar), jadi
+  angka pendapatan admin/ops tidak berubah dan tidak ada data yang dimigrasi. Rupiah yang tersisa di sana —
+  kode unik QRIS, pembelian yang gagal dibuat setelah dibayar, saldo lama, konversi/bubarnya keluarga, refund
+  iklan — disebut **kredit**: dipotong otomatis dari pembayaran berikutnya (kalau kredit menutup harganya,
+  pembelian langsung jadi tanpa QRIS). Halaman Paket hanya menyebutnya selama nilainya > 0. Pembelian yang gagal
+  setelah dibayar juga memberi tahu admin (`admin_alert`).
+- **Perpanjangan manual.** Pengingat H-3/H-1 lewat email (dengan tombol ke Paket); tombol **Perpanjang** membayar
+  bulan berikutnya (`item.kind = 'renew'`): paket aktif diperpanjang dari akhir periodenya, paket yang lewat
+  tempo dipulihkan mulai hari bayar (seperti reaktivasi sebelumnya). Tidak dibayar → masa tenggang, baca saja,
+  dikunci, dihapus, seperti sebelumnya (SPEC §12.5). Kredit yang cukup tetap memperpanjang otomatis. Tombol "Hentikan
+  perpanjangan" dihapus (tidak ada yang ditarik otomatis lagi).
+- **Invoice** tetap ditulis di tabel `invoices` untuk pembukuan internal (pajak, nomor), tetapi tidak ditampilkan
+  dan tidak dikirim. Notifikasi `payment_paid` sekarang menyebut apa yang dibeli.
+- **Operator:** admin Drive dan laci People di relay menyebutnya **Kredit**, bukan Saldo, dan tetap bisa
+  mengubahnya (dengan alasan, masuk audit log): selama buku kliring bisa menyimpan uang (kode unik, pembelian
+  yang gagal), operator harus bisa melihat dan membereskannya. Ops API tidak berubah (`balanceIdr`,
+  `/api/ops/users/:id/balance`), supaya relay versi lama tetap jalan.
+- **Notifikasi: email + lonceng.** Telegram dihapus: tidak ada kanal Telegram di preferensi, tidak ada pengiriman
+  ke Telegram, tidak ada tombol tautkan Telegram, dan "kirim lewat bot Telegram" ke username dihapus. Bagikan
+  link lewat Telegram (`t.me/share`) tetap, karena itu berbagi, bukan notifikasi.
+- **Lokasi iklan dari Akun Zeiko.** Formulir daftar Akun Zeiko meminta **kota (wajib)** dan **kode pos
+  (opsional)**; akun lama dan akun Google/GitHub mengisinya di halaman akun. Pintu mengirim keduanya saat tiket
+  ditukar; Drive menyimpannya (`users.ad_city`, `ad_postal_code`) dan mencocokkan kota ke `ad_areas`
+  (`ad_city_code`) setiap login. Pengaturan Drive hanya menampilkannya, dengan link ke Akun Zeiko untuk
+  mengubah. **Tebakan dari IP (`request.cf`) tidak dipakai lagi**: tanpa kota yang cocok (atau pengunjung tanpa
+  akun) iklannya nasional. Kode pos disimpan untuk penargetan yang lebih halus nanti.
+- **Pasang iklan = hubungi admin.** Halaman `/iklan` dan iklan internal Zeiko sekarang mengarah ke
+  admin@zeiko.biz.id. API swalayan pengiklan (`/api/advertiser/*`) ditutup; booking yang sudah dibayar tetap
+  tayang sampai selesai, moderasi admin tetap ada. Pembayaran iklan yang masih tertunda tetap diproses.
+
+Tes: `tests/integration/billing.test.ts` (checkout per item, kredit, perpanjangan manual),
+`tests/integration/auth.test.ts` (kota dari pintu), `tests/integration/notifications.test.ts` (email saja),
+`tests/integration/ads.test.ts` (kota dari akun, tanpa IP).

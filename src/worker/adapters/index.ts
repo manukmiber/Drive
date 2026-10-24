@@ -16,7 +16,6 @@ import {
 import { ContainerScanner, MockScanner, type Scanner } from './scanner';
 import { MockCsamDetector, type CsamDetector } from './csam';
 import type { Clock } from './clock';
-import { BotApiTelegram, MockTelegram, type TelegramClient } from './telegram';
 import { CloudflareMediaProcessor, MockMediaProcessor, type MediaProcessor } from './media';
 import { ContainerArchiver, MockArchiver, NoArchiver, type Archiver } from './archiver';
 import { GraphqlR2Metrics, NoR2Metrics, type R2Metrics } from './r2-metrics';
@@ -26,7 +25,6 @@ export interface Adapters {
   payment: PaymentProvider;
   scanner: Scanner;
   csam: CsamDetector;
-  telegram: TelegramClient;
   media: MediaProcessor;
   archiver: Archiver;
   accounts: ZeikoAccounts;
@@ -67,10 +65,6 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
       ? new ContainerScanner(env.BUCKET, env.SCANNER, Number(env.SCANNER_INSTANCES ?? 3))
       : new MockScanner(env.BUCKET);
   const csam = new MockCsamDetector();
-  const telegram: TelegramClient =
-    env.TELEGRAM_BOT_TOKEN && env.APP_ENV !== 'dev'
-      ? new BotApiTelegram(env.TELEGRAM_BOT_TOKEN)
-      : new MockTelegram(env.CONFIG_KV);
   const media: MediaProcessor =
     env.ADAPTER_MEDIA === 'cloudflare'
       ? new CloudflareMediaProcessor(env.IMAGES, env.MEDIA, env.MEDIA_CONTAINER)
@@ -85,5 +79,5 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
     env.CF_ACCOUNT_ID && env.CF_ANALYTICS_TOKEN
       ? new GraphqlR2Metrics(env.CF_ACCOUNT_ID, env.CF_ANALYTICS_TOKEN)
       : new NoR2Metrics();
-  return { email, payment, scanner, csam, telegram, media, archiver, accounts, r2metrics };
+  return { email, payment, scanner, csam, media, archiver, accounts, r2metrics };
 }

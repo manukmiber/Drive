@@ -5,10 +5,15 @@ import { CRON } from '../../src/shared/constants';
 import { addDaysWib, wibDate } from '../../src/shared/time';
 import { createCtx } from '../../src/worker/context';
 import { bannedTopic } from '../../src/shared/ad-policy';
-import { ctaUrl, resolveAreaChain, reviewCreative } from '../../src/worker/services/ads';
+import {
+  areaForCity,
+  ctaUrl,
+  resolveAreaChain,
+  reviewCreative,
+} from '../../src/worker/services/ads';
 import { invalidateConfigMemo } from '../../src/worker/services/config';
 import { APP, makeRuntime } from '../helpers/runtime';
-import { signIn, type Session } from '../helpers/session';
+import { signIn, staffSignIn, type Session } from '../helpers/session';
 import { grantPlan, rootOf, uploadText } from '../helpers/files';
 import type { DevRuntime } from '../../dev/env';
 
@@ -58,17 +63,17 @@ function fund(rt: DevRuntime, userId: string, idr: number) {
     .run(userId, idr);
 }
 
-const geo = (city?: string, region?: string) => ({
-  ...(city ? { 'x-dev-geo-city': city } : {}),
-  ...(region ? { 'x-dev-geo-region': region } : {}),
-});
+/** Someone whose Zeiko Account says they live in `city` (ADR-041). */
+const viewerIn = (rt: DevRuntime, city: string) =>
+  signIn(rt, `${city.toLowerCase().replace(/\W+/g, '')}@example.com`, { city });
 
 async function advertiserWithCreative(
   rt: DevRuntime,
   email = 'umkm@example.com',
   title = 'Bakso Pak Kumis',
 ) {
-  const s = await signIn(rt, email);
+  // The advertiser tool is the operator's now (ADR-041): people ask by email.
+  const s = await staffSignIn(rt, email);
   expect(
     (
       await s.req('PUT', '/api/advertiser', {
@@ -163,6 +168,36 @@ describe('ad area targeting (SPEC §10.3)', () => {
     expect(
       await resolveAreaChain(ctx, { userCity: '32.73', city: 'Malang', region: 'East Java' }),
     ).toEqual(['32.73', '32', 'ID']);
+    // A city typed on the Zeiko Account (ADR-041): a city first, else a province, else nothing.
+    expect(await areaForCity(ctx, 'Malang')).toBe('35.73');
+    expect(await areaForCity(ctx, 'Kota Bandung')).toBe('32.73');
+    expect(await areaForCity(ctx, 'Jakarta Selatan')).toBe('31.74');
+    expect(await areaForCity(ctx, 'Jawa Timur')).toBe('35');
+    expect(await areaForCity(ctx, 'Kampung Antah')).toBeNull();
+    expect(await areaForCity(ctx, '  ')).toBeNull();
+  });
+
+  it('takes the city and postal code from the Zeiko Account at every sign-in', async () => {
+    const { rt } = await setup();
+    const me = async (s: Session) =>
+      ((await (await s.req('GET', '/api/me')).json()) as { user: Record<string, unknown> }).user;
+    const s = await signIn(rt, 'warga@example.com', { city: 'Bandung', postalCode: '40115' });
+    expect(await me(s)).toMatchObject({
+      adCity: 'Bandung',
+      adPostalCode: '40115',
+      adCityCode: '32.73',
+      adAreaName: 'Kota Bandung',
+    });
+    // Drive does not edit it; the account does, and the next sign-in follows.
+    expect((await s.req('PATCH', '/api/me', { adCityCode: '35.73' })).status).toBe(200);
+    expect((await me(s)).adCityCode).toBe('32.73');
+    const again = await signIn(rt, 'warga@example.com', { city: 'Atlantis', postalCode: '' });
+    expect(await me(again)).toMatchObject({
+      adCity: 'Atlantis',
+      adPostalCode: null,
+      adCityCode: null,
+      adAreaName: null,
+    });
   });
 
   it('filters prohibited content and normalises CTAs', () => {
@@ -180,8 +215,23 @@ describe('ad area targeting (SPEC §10.3)', () => {
   });
 });
 
-describe('self-serve ads (SPEC §10.4–10.7)', () => {
-  it('moderates, books, pays from Saldo, serves by area, and counts impressions/clicks', async () => {
+describe('ads placed by the operator (SPEC §10.4–10.7, ADR-041)', () => {
+  it('the advertiser tool is for admins only', async () => {
+    const { rt } = await setup();
+    const user = await signIn(rt, 'warung@example.com');
+    expect((await user.req('GET', '/api/advertiser')).status).toBe(403);
+    expect(
+      (
+        await user.req('PUT', '/api/advertiser', {
+          businessName: 'Warung',
+          kind: 'umkm',
+          phone: '081234567890',
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  it('moderates, books, pays from credit, serves by account city, and counts impressions/clicks', async () => {
     const { rt, clock } = await setup();
     const bad = await advertiserWithCreative(rt, 'judi@example.com', 'Slot gacor maxwin');
     expect(bad.status).toBe('rejected');
@@ -207,19 +257,11 @@ describe('self-serve ads (SPEC §10.4–10.7)', () => {
       totalIdr: number;
     };
     expect(held.totalIdr).toBe(20_000);
-    expect(
-      (
-        await s.req('POST', '/api/advertiser/bookings/checkout', {
-          bookingIds: held.bookingIds,
-          method: 'saldo',
-        })
-      ).status,
-    ).toBe(402);
     fund(rt, s.userId, 50_000);
     const paid = (await (
       await s.req('POST', '/api/advertiser/bookings/checkout', {
         bookingIds: held.bookingIds,
-        method: 'saldo',
+        method: 'qris',
       })
     ).json()) as {
       paid: boolean;
@@ -234,10 +276,13 @@ describe('self-serve ads (SPEC §10.4–10.7)', () => {
       { date: tomorrow, status: 'paid' },
     ]);
 
-    // Malang visitor sees it; Surabaya visitor (no booking in Jatim) gets the internal ad.
-    const ad = await adFor(rt, geo('Malang', 'East Java'));
+    // Someone in Malang sees it; Surabaya (no booking in Jatim) gets the internal ad, and so does a
+    // visitor with no account: an IP address is never a location (ADR-041).
+    const ad = await adFor(rt, {}, await viewerIn(rt, 'Malang'));
     expect(ad).toMatchObject({ internal: false, label: 'Iklan · Kota Malang' });
-    expect((await adFor(rt, geo('Surabaya', 'East Java')))!.internal).toBe(true);
+    expect((await adFor(rt, {}, await viewerIn(rt, 'Surabaya')))!.internal).toBe(true);
+    const ipOnly = await adFor(rt, { 'x-dev-geo-city': 'Malang', 'x-dev-geo-region': 'East Java' });
+    expect(ipOnly).toMatchObject({ internal: true, ctaLabel: 'Hubungi kami' });
 
     // Impression needs the signed token; click redirects to the CTA and counts.
     const beacon = (b: string, t: string) =>
@@ -326,15 +371,15 @@ describe('self-serve ads (SPEC §10.4–10.7)', () => {
     };
     await a.s.req('POST', '/api/advertiser/bookings/checkout', {
       bookingIds: h.bookingIds,
-      method: 'saldo',
+      method: 'qris',
     });
-    expect(await adFor(rt, geo('Malang', 'East Java'))).toMatchObject({
+    expect(await adFor(rt, {}, await viewerIn(rt, 'Malang'))).toMatchObject({
       internal: false,
       label: 'Iklan · Jawa Timur',
     });
   });
 
-  it('pays by QRIS through a top-up and suspends with a refund', async () => {
+  it('pays by QRIS and suspends with a refund as credit', async () => {
     const { rt } = await setup();
     const { s, creativeId } = await advertiserWithCreative(rt);
     await approve(rt, creativeId);
@@ -381,7 +426,10 @@ describe('self-serve ads (SPEC §10.4–10.7)', () => {
     });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { refundedIdr: number }).refundedIdr).toBe(20_000);
-    expect((await adFor(rt, geo('Malang', 'East Java')))!.internal).toBe(true);
+    expect((await adFor(rt, {}, await viewerIn(rt, 'Malang')))!.internal).toBe(true);
+    expect(
+      rt.d1.sqlite.prepare('SELECT balance_idr FROM wallets WHERE user_id = ?').get(s.userId),
+    ).toEqual({ balance_idr: 20_000 });
     const audit = rt.d1.sqlite
       .prepare(`SELECT action FROM audit_logs WHERE target_id = ?`)
       .all(creativeId);
@@ -400,7 +448,7 @@ describe('where ads never appear (SPEC §10.1)', () => {
     };
     await adv.req('POST', '/api/advertiser/bookings/checkout', {
       bookingIds: h.bookingIds,
-      method: 'saldo',
+      method: 'qris',
     });
 
     const owner = await signIn(rt, 'owner@example.com');

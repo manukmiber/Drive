@@ -107,7 +107,10 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const links = useProductLinks();
-  useDoorSync(me.data ? me.data.user.zeikoId : undefined);
+  useDoorSync(
+    me.data ? me.data.user.zeikoId : undefined,
+    me.data ? { city: me.data.user.adCity, postalCode: me.data.user.adPostalCode } : undefined,
+  );
 
   if (me.isPending) {
     return (

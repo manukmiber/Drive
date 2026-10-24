@@ -2,7 +2,8 @@
 import { deleteOrphanBlob, processScan } from '../services/scan';
 import { registerQueueHandler } from '.';
 import { log } from '../lib/log';
-import { deliverShareEmail, deliverShareTelegram } from '../services/share-send';
+import { OPERATOR_EMAIL } from '../../shared/constants';
+import { deliverShareEmail } from '../services/share-send';
 import { purgePool } from '../services/billing';
 import { deliverNotification } from '../services/notify';
 import { processCompressJob } from '../services/compress';
@@ -21,11 +22,15 @@ registerQueueHandler('cleanup', async (ctx, body) => {
 registerQueueHandler('notify', async (ctx, body) => {
   if (body.type === 'notification') return deliverNotification(ctx, body.notificationId);
   if (body.type === 'share_email') return deliverShareEmail(ctx, body.sendId, body.to);
-  if (body.type === 'share_telegram') return deliverShareTelegram(ctx, body.sendId, body.chatId);
   if (body.type === 'admin_alert') {
+    // By email, like every other notice (ADR-041).
     log.warn('admin_alert', { text: body.text });
-    const chat = ctx.env.ADMIN_ALERT_TELEGRAM_CHAT_ID;
-    if (chat) await ctx.adapters.telegram.sendMessage(chat, `⚠️ Zeiko: ${body.text}`);
+    await ctx.adapters.email.send({
+      to: [OPERATOR_EMAIL],
+      subject: `Zeiko Drive: ${body.text.slice(0, 80)}`,
+      text: body.text,
+      tag: 'admin_alert',
+    });
   }
 });
 

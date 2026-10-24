@@ -15,6 +15,7 @@ import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { cn } from '../lib/cn';
 import { meQueryKey, useMe } from '../lib/session';
 import type { Catalog } from '../lib/types';
+import { useCheckout } from './Billing';
 import { Drive } from './Drive';
 
 interface Overview {
@@ -325,7 +326,7 @@ export function FamilyPage() {
     queryFn: () => api<Catalog>('/api/public/catalog'),
   });
   const [tab, setTab] = useState<'drive' | 'members'>('drive');
-  const qc = useQueryClient();
+  const buy = useCheckout();
   useEffect(() => void (document.title = `${t.family.title} · Zeiko`), []);
   if (q.isPending || !me.data)
     return <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>;
@@ -343,19 +344,12 @@ export function FamilyPage() {
           {plan ? (
             <Button
               className="mt-4"
+              disabled={buy.busy}
               onClick={() =>
-                void postJson('/api/billing/plan', { planCode: plan.code })
-                  .then(() =>
-                    Promise.all([
-                      qc.invalidateQueries({ queryKey: ['family'] }),
-                      qc.invalidateQueries({ queryKey: meQueryKey }),
-                    ]),
-                  )
-                  .catch((e) =>
-                    e instanceof ApiError && e.code === 'INSUFFICIENT_BALANCE'
-                      ? toast(t.billing.notEnough(formatRupiah(plan.priceIdr)), { tone: 'error' })
-                      : toast(errText(e), { tone: 'error' }),
-                  )
+                buy.ask(plan.name, t.billing.confirmPlan(plan.name, formatRupiah(plan.priceIdr)), {
+                  kind: 'plan',
+                  code: plan.code,
+                })
               }
             >
               {t.family.buy(formatRupiah(plan.priceIdr))}
@@ -364,6 +358,7 @@ export function FamilyPage() {
             <p className="mt-4 text-sm">{t.family.unavailable}</p>
           )}
         </div>
+        {buy.ui}
       </div>
     );
   }

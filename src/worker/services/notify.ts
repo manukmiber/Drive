@@ -1,10 +1,10 @@
 // User notifications (SPEC §13.2): one row in `notifications` (in-app bell) + delivery via the
-// `notify` queue to email and, when linked, Telegram. Message bodies are rendered at delivery time.
+// `notify` queue by email — the only channel out of the app (ADR-041). Message bodies are rendered at
+// delivery time.
 import { formatBytes, formatDateTime, formatRupiah } from '../../shared/format';
 import type { Ctx } from '../context';
 import { ulid } from '../lib/ids';
 import { AppError } from '../lib/errors';
-import { log } from '../lib/log';
 import { noticeEmail } from './email-templates';
 import { appUrl } from '../lib/paths';
 
@@ -54,7 +54,7 @@ type Rendered = { title: string; paragraphs: string[]; cta?: { label: string; ur
 
 function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | null {
   const app = appUrl(ctx.env, '');
-  const billing = { label: 'Buka Paket & tagihan', url: `${app}/paket` };
+  const billing = { label: 'Buka Paket', url: `${app}/paket` };
   switch (type) {
     case 'file_rejected':
       return {
@@ -65,20 +65,21 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
       };
     case 'billing_reminder':
       return {
-        title: `Paketmu diperpanjang ${p.days === 1 ? 'besok' : `${String(p.days)} hari lagi`}`,
+        title: `Paketmu berakhir ${p.days === 1 ? 'besok' : `${String(p.days)} hari lagi`}`,
         paragraphs: [
-          `Paket ${String(p.planName)} akan diperpanjang otomatis pada ${formatDateTime(Number(p.periodEnd))} sebesar ${formatRupiah(Number(p.amountIdr))}.`,
-          Number(p.balanceIdr) < Number(p.amountIdr)
-            ? `Saldo Zeiko kamu ${formatRupiah(Number(p.balanceIdr))}, belum cukup. Isi saldo dulu supaya perpanjangan tidak gagal.`
-            : 'Saldo Zeiko kamu cukup, tidak perlu melakukan apa-apa.',
+          `Paket ${String(p.planName)} berakhir pada ${formatDateTime(Number(p.periodEnd))}.`,
+          Number(p.creditIdr ?? 0) >= Number(p.amountIdr)
+            ? 'Kreditmu cukup untuk sebulan lagi, jadi paket diperpanjang otomatis. Tidak perlu melakukan apa-apa.'
+            : `Perpanjang sebulan lagi sebesar ${formatRupiah(Number(p.amountIdr))} dengan QRIS dari halaman Paket.`,
         ],
-        cta: billing,
+        cta: { label: 'Perpanjang paket', url: `${app}/paket` },
       };
     case 'renewal_failed':
     case 'dunning': {
       const stage = String(p.stage ?? 'grace');
       const text: Record<string, string> = {
-        grace: 'Pembayaran paketmu belum masuk. Semua fitur masih jalan normal untuk sementara.',
+        grace:
+          'Paketmu sudah berakhir dan belum diperpanjang. Semua fitur masih jalan normal untuk sementara.',
         readonly:
           'Akunmu sekarang mode baca saja: kamu tidak bisa upload atau membuat link share baru, dan link yang ada dinonaktifkan. Download dan hapus tetap bisa.',
         suspended:
@@ -90,12 +91,12 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
         title:
           stage === 'delete_warning'
             ? 'Peringatan terakhir: file akan dihapus'
-            : 'Pembayaran paket belum masuk',
+            : 'Paketmu belum diperpanjang',
         paragraphs: [
           text[stage] ?? text.grace!,
           p.deleteAt ? `Batas akhir pembayaran: ${formatDateTime(Number(p.deleteAt))}.` : '',
         ].filter(Boolean),
-        cta: billing,
+        cta: { label: 'Perpanjang paket', url: `${app}/paket` },
       };
     }
     case 'quota': {
@@ -140,7 +141,7 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
           : [
               `Alasan: ${String(p.reason || 'melanggar Kebijakan Iklan')}.`,
               Number(p.refundedIdr) > 0
-                ? `Sisa hari tayang dikembalikan ke Saldo sebesar ${formatRupiah(Number(p.refundedIdr))}.`
+                ? `Sisa hari tayang dikembalikan sebagai kredit ${formatRupiah(Number(p.refundedIdr))}, dipotong otomatis dari pembayaran berikutnya.`
                 : status === 'rejected'
                   ? 'Perbaiki materinya lalu kirim ulang untuk dimoderasi.'
                   : 'Sisa hari tayang tidak dikembalikan karena pelanggaran berat.',
@@ -171,16 +172,25 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
     case 'payment_paid':
       return {
         title: 'Pembayaran berhasil',
-        paragraphs: [`Saldo Zeiko bertambah ${formatRupiah(Number(p.amountIdr))}.`],
+        paragraphs: [
+          `Terima kasih! Pembayaran ${formatRupiah(Number(p.amountIdr))} sudah kami terima.`,
+          p.failed
+            ? 'Pembeliannya belum bisa dibuat, jadi uangmu kami simpan sebagai kredit dan kami sudah diberi tahu. Kredit dipotong otomatis dari pembayaran berikutnya.'
+            : String(p.summary ?? ''),
+          !p.failed && Number(p.creditIdr ?? 0) > 0
+            ? `Sisa ${formatRupiah(Number(p.creditIdr))} jadi kredit, dipotong otomatis dari pembayaran berikutnya.`
+            : '',
+        ].filter(Boolean),
         cta: billing,
       };
     case 'invoice':
+      // Sent before ADR-041; invoices are not shown any more.
       return {
-        title: `Invoice ${String(p.number)}`,
+        title: 'Pembayaran berhasil',
         paragraphs: [
           `Terima kasih! ${String(p.summary ?? '')} Total ${formatRupiah(Number(p.totalIdr))}.`,
         ],
-        cta: { label: 'Lihat invoice', url: `${app}/paket/invoice/${String(p.invoiceId)}` },
+        cta: billing,
       };
     case 'plan_changed':
       return {
@@ -200,44 +210,28 @@ export async function deliverNotification(ctx: Ctx, notificationId: string): Pro
   const marker = `nd:${notificationId}`;
   if (await ctx.env.CONFIG_KV.get(marker)) return;
   const row = await ctx.env.DB.prepare(
-    `SELECT n.user_id, n.type, n.payload_json, u.email, t.chat_id FROM notifications n JOIN users u ON u.id = n.user_id
-     LEFT JOIN telegram_links t ON t.user_id = n.user_id WHERE n.id = ?1`,
+    `SELECT n.user_id, n.type, n.payload_json, u.email FROM notifications n JOIN users u ON u.id = n.user_id
+     WHERE n.id = ?1`,
   )
     .bind(notificationId)
-    .first<{
-      user_id: string;
-      type: string;
-      payload_json: string;
-      email: string;
-      chat_id: string | null;
-    }>();
+    .first<{ user_id: string; type: string; payload_json: string; email: string }>();
   if (!row) return;
   const r = render(ctx, row.type, JSON.parse(row.payload_json) as Record<string, unknown>);
   if (!r) return;
-  const prefs = await channelPrefs(ctx, notificationUser(row), row.type);
-  if (prefs.email)
+  if (await emailOn(ctx, row.user_id, row.type))
     await ctx.adapters.email.send({ to: [row.email], tag: row.type, ...noticeEmail(r) });
-  if (row.chat_id && prefs.telegram) {
-    try {
-      await ctx.adapters.telegram.sendMessage(
-        row.chat_id,
-        `${r.title}\n\n${r.paragraphs.join('\n\n')}`,
-        r.cta ? [{ text: r.cta.label, url: r.cta.url }] : undefined,
-      );
-    } catch (e) {
-      log.warn('telegram_notify_failed', { error: String(e) });
-    }
-  }
   await ctx.env.CONFIG_KV.put(marker, '1', { expirationTtl: 7 * 86_400 });
 }
 
-const notificationUser = (row: { user_id: string }) => row.user_id;
-
-/** Legal/billing notices can't be switched off by email (ADR-029). */
+/**
+ * Legal/billing notices can't be switched off by email (ADR-029). Since ADR-041 that includes the
+ * renewal reminder (nothing renews by itself) and the receipt (it replaces the invoice).
+ */
 export const MANDATORY_EMAIL: readonly string[] = [
+  'billing_reminder',
+  'payment_paid',
   'renewal_failed',
   'dunning',
-  'invoice',
   'account_delete',
 ];
 export const PREF_TYPES = [
@@ -245,7 +239,6 @@ export const PREF_TYPES = [
   'quota',
   'billing_reminder',
   'payment_paid',
-  'invoice',
   'plan_changed',
   'family_invite',
   'archive_ready',
@@ -253,18 +246,14 @@ export const PREF_TYPES = [
   'ad_status',
 ] as const;
 
-async function channelPrefs(
-  ctx: Ctx,
-  userId: string,
-  type: string,
-): Promise<{ email: boolean; telegram: boolean }> {
-  const { results } = await ctx.env.DB.prepare(
-    'SELECT channel, enabled FROM notification_prefs WHERE user_id = ?1 AND type = ?2',
+async function emailOn(ctx: Ctx, userId: string, type: string): Promise<boolean> {
+  if (MANDATORY_EMAIL.includes(type)) return true;
+  const off = await ctx.env.DB.prepare(
+    `SELECT 1 AS off FROM notification_prefs WHERE user_id = ?1 AND type = ?2 AND channel = 'email' AND enabled = 0`,
   )
     .bind(userId, type)
-    .all<{ channel: string; enabled: number }>();
-  const off = (ch: string) => results.some((r) => r.channel === ch && !r.enabled);
-  return { email: MANDATORY_EMAIL.includes(type) || !off('email'), telegram: !off('telegram') };
+    .first();
+  return !off;
 }
 
 export async function getPrefs(ctx: Ctx, userId: string) {
@@ -278,7 +267,6 @@ export async function getPrefs(ctx: Ctx, userId: string) {
     email:
       MANDATORY_EMAIL.includes(type) ||
       !results.some((r) => r.type === type && r.channel === 'email' && !r.enabled),
-    telegram: !results.some((r) => r.type === type && r.channel === 'telegram' && !r.enabled),
     emailLocked: MANDATORY_EMAIL.includes(type),
   }));
 }
@@ -287,12 +275,12 @@ export async function setPref(
   ctx: Ctx,
   userId: string,
   type: string,
-  channel: 'email' | 'telegram',
+  channel: 'email',
   enabled: boolean,
 ): Promise<void> {
   if (!(PREF_TYPES as readonly string[]).includes(type))
     throw new AppError('VALIDATION', 'unknown notification type');
-  if (channel === 'email' && MANDATORY_EMAIL.includes(type) && !enabled)
+  if (MANDATORY_EMAIL.includes(type) && !enabled)
     throw new AppError('BAD_REQUEST', 'this notice is mandatory');
   await ctx.env.DB.prepare(
     `INSERT INTO notification_prefs (user_id, type, channel, enabled) VALUES (?1, ?2, ?3, ?4)

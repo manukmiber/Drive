@@ -14,13 +14,14 @@ import { track } from '../lib/analytics';
 import { hmacBase62, sha256Hex, timingSafeEqual } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { randomBase62, ulid } from '../lib/ids';
+import { AD_CONTACT } from '../../shared/constants';
 import {
-  createTopup,
   invoiceStmts,
-  afterInvoice,
+  openPayment,
   walletBalance,
   walletStmts,
-  type TopupResult,
+  withTax,
+  type PaymentStarted,
 } from './billing';
 import { notify } from './notify';
 import { appPath } from '../lib/paths';
@@ -158,6 +159,21 @@ export async function searchAreas(
           ? (index.byCode.get(a.parent_code)?.name ?? null)
           : null,
     }));
+}
+
+/**
+ * The ad area a typed city names (ADR-041: the city on the Zeiko Account): a city or regency
+ * first, else a province, else null (national ads only).
+ */
+export async function areaForCity(ctx: Ctx, city: string): Promise<string | null> {
+  const key = normalizeAreaName(city);
+  if (!key) return null;
+  const index = await areaIndex(ctx);
+  const pick =
+    index.regencies.find((x) => x.aliases.has(key)) ??
+    index.regencies.find((x) => x.name === key && x.row.name.startsWith('Kota ')) ??
+    index.regencies.find((x) => x.name === key);
+  return pick?.row.code ?? index.provinces.get(key)?.code ?? null;
 }
 
 export async function areaName(ctx: Ctx, code: string): Promise<string | null> {
@@ -649,7 +665,7 @@ export async function reviewCreative(
 
 /**
  * Takedown of an approved creative (SPEC §10.5): upcoming/live bookings stop. The unused days are
- * refunded to Saldo unless the violation is severe and `ad_refund_on_suspend.severe` is false.
+ * refunded as credit (ADR-041) unless the violation is severe and `ad_refund_on_suspend.severe` is false.
  */
 export async function suspendCreative(
   ctx: Ctx,
@@ -847,7 +863,7 @@ async function heldBookings(ctx: Ctx, userId: string, ids: string[]): Promise<Bo
   return results;
 }
 
-/** Pays held bookings from Saldo in one batch; today's bookings go live immediately. */
+/** Pays held bookings from the wallet in one batch; today's bookings go live immediately. */
 export async function payBookingsFromWallet(
   ctx: Ctx,
   userId: string,
@@ -882,33 +898,33 @@ export async function payBookingsFromWallet(
   } catch (e) {
     if (!/CHECK constraint failed/i.test(String(e))) throw e;
     await heldBookings(ctx, userId, ids); // throws HOLD_EXPIRED if that was the cause
-    throw new AppError('INSUFFICIENT_BALANCE', 'saldo tidak cukup', { needIdr: inv.total });
+    throw new AppError('INSUFFICIENT_BALANCE', 'not enough credit', { needIdr: inv.total });
   }
-  await afterInvoice(ctx, userId, inv.id, `Iklan lokal (${bookings.length} hari).`);
   if (bookings.some((b) => b.date === today)) await bumpServeVersion(ctx);
   return { invoiceId: inv.id, totalIdr: inv.total };
 }
 
-/** Bayar: Saldo if it covers the total, otherwise a QRIS/VA top-up that pays on success. */
+/** Bayar: credit if it covers the total, otherwise QRIS for the rest, which pays on success. */
 export async function checkoutBookings(
   ctx: Ctx,
   user: { id: string; email: string },
   ids: string[],
   method: string,
-): Promise<{ paid: true; invoiceId: string } | { paid: false; topup: TopupResult }> {
+): Promise<{ paid: true; invoiceId: string } | { paid: false; topup: PaymentStarted }> {
   const bookings = await heldBookings(ctx, user.id, ids);
-  const subtotal = bookings.reduce((s, b) => s + b.price_idr, 0);
-  const cfg = await ctx.config();
-  const total = subtotal + Math.round((subtotal * cfg.tax_rate_pct) / 100);
-  const balance = await walletBalance(ctx, user.id);
-  if (method === 'saldo' || balance >= total) {
+  const total = await withTax(
+    ctx,
+    bookings.reduce((s, b) => s + b.price_idr, 0),
+  );
+  const credit = await walletBalance(ctx, user.id);
+  if (credit >= total) {
     const r = await payBookingsFromWallet(ctx, user.id, ids);
     return { paid: true, invoiceId: r.invoiceId };
   }
-  const topup = await createTopup(ctx, user, {
-    amountIdr: Math.max(total - balance, cfg.min_topup_idr),
+  const topup = await openPayment(ctx, user, {
+    amountIdr: total - credit,
     method,
-    then: { kind: 'ads', bookingIds: bookings.map((b) => b.id) },
+    purpose: { kind: 'ads', bookingIds: bookings.map((b) => b.id) },
   });
   return { paid: false, topup };
 }
@@ -1042,9 +1058,9 @@ export async function serveAd(
     bookingId: null,
     creativeId: null,
     title: 'Pasang iklan di Zeiko',
-    body: `Iklan lokal untuk usahamu, mulai Rp${(cheapest?.p ?? 0).toLocaleString('id-ID')}/hari. Tampil di kotamu saja.`,
+    body: `Iklan lokal untuk usahamu, mulai Rp${(cheapest?.p ?? 0).toLocaleString('id-ID')}/hari. Hubungi ${AD_CONTACT}.`,
     imageUrl: null,
-    ctaLabel: 'Pasang iklan',
+    ctaLabel: 'Hubungi kami',
     clickUrl: appPath(ctx.env, '/iklan'),
     label: 'Iklan · Zeiko',
     token: null,

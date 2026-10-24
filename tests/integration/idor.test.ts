@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createCtx } from '../../src/worker/context';
 import { reviewCreative } from '../../src/worker/services/ads';
 import { APP, makeRuntime } from '../helpers/runtime';
-import { signIn } from '../helpers/session';
+import { staffSignIn } from '../helpers/session';
 import { createFolder, grantPlan, rootOf, uploadText } from '../helpers/files';
 
 const WEBP = (() => {
@@ -21,8 +21,9 @@ const WEBP = (() => {
 describe('IDOR (SPEC §14.1)', () => {
   it("rejects every endpoint replayed against another user's IDs", async () => {
     const rt = await makeRuntime();
-    const a = await signIn(rt, 'korban@example.com');
-    const b = await signIn(rt, 'penyerang@example.com');
+    // Admins both: the advertiser tool is the operator's (ADR-041), and still per person.
+    const a = await staffSignIn(rt, 'korban@example.com');
+    const b = await staffSignIn(rt, 'penyerang@example.com');
     await grantPlan(rt, a.userId);
     await grantPlan(rt, b.userId);
     const aRoot = await rootOf(a);
@@ -97,12 +98,13 @@ describe('IDOR (SPEC §14.1)', () => {
         `INSERT INTO notifications (id, user_id, type, payload_json, created_at) VALUES ('n1', ?, 'quota', '{}', 0)`,
       )
       .run(a.userId);
-    const invoice = 'inv_a';
+    const payment = 'pay_a';
     rt.d1.sqlite
       .prepare(
-        `INSERT INTO invoices (id, number, user_id, lines_json, subtotal_idr, tax_idr, total_idr, status, issued_at) VALUES (?, 'ZK-X', ?, '[]', 0, 0, 0, 'paid', 0)`,
+        `INSERT INTO payments (id, user_id, provider, provider_ref, method, amount_idr, fee_idr, status, purpose, created_at, updated_at)
+         VALUES (?, ?, 'mock', 'mock_pay_a', 'qris', 1000, 0, 'pending', 'direct', 0, 0)`,
       )
-      .run(invoice, a.userId);
+      .run(payment, a.userId);
 
     const snapshot = () =>
       JSON.stringify([
@@ -169,7 +171,7 @@ describe('IDOR (SPEC §14.1)', () => {
       ['DELETE', `/api/shares/${share.id}`],
       ['POST', `/api/shares/${share.id}/regenerate`],
       ['POST', `/api/shares/${share.id}/sends`, { mode: 'email', recipients: ['x@example.com'] }],
-      ['GET', `/api/billing/invoices/${invoice}`],
+      ['GET', `/api/billing/payments/${payment}`],
       ['POST', '/api/compress', { nodeIds: [file.id] }],
       ['PUT', `/api/compress/standalone/${job.jobId}/parts/1`, undefined, body(new Uint8Array(10))],
       [
@@ -210,7 +212,7 @@ describe('IDOR (SPEC §14.1)', () => {
       [
         'POST',
         '/api/advertiser/bookings/checkout',
-        { bookingIds: booking.bookingIds, method: 'saldo' },
+        { bookingIds: booking.bookingIds, method: 'qris' },
       ],
       ['POST', '/api/advertiser/bookings/cancel', { bookingIds: booking.bookingIds }],
       ['DELETE', `/api/family/members/${a.userId}`],

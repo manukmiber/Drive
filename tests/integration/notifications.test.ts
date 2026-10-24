@@ -66,9 +66,19 @@ describe('notifications (SPEC §13.2)', () => {
     expect(
       (
         await s.req('PUT', '/api/notifications/prefs', {
-          type: 'invoice',
+          type: 'billing_reminder',
           channel: 'email',
           enabled: false,
+        })
+      ).status,
+    ).toBe(400);
+    // Email is the only channel out of the app (ADR-041).
+    expect(
+      (
+        await s.req('PUT', '/api/notifications/prefs', {
+          type: 'file_rejected',
+          channel: 'telegram',
+          enabled: true,
         })
       ).status,
     ).toBe(400);
@@ -79,9 +89,10 @@ describe('notifications (SPEC §13.2)', () => {
       items: Array<{ type: string; email: boolean; emailLocked: boolean }>;
     };
     expect(prefs.items.find((p) => p.type === 'file_rejected')).toMatchObject({ email: false });
-    expect(prefs.items.find((p) => p.type === 'invoice')).toMatchObject({
+    expect(prefs.items.find((p) => p.type === 'billing_reminder')).toMatchObject({
       email: true,
       emailLocked: true,
     });
+    expect(prefs.items.some((p) => 'telegram' in p)).toBe(false);
   });
 });

@@ -168,7 +168,7 @@ function UserCard({ u, isAdmin }: { u: UserRow; isAdmin: boolean }) {
       </div>
       <p className="mt-1 text-xs text-[var(--fg-muted)]">
         {u.planCode ?? 'tanpa paket'} {u.subStatus && `(${u.subStatus})`} ·{' '}
-        {formatBytes(u.usedBytes ?? 0)} / {formatBytes(u.limitBytes ?? 0)} · Saldo{' '}
+        {formatBytes(u.usedBytes ?? 0)} / {formatBytes(u.limitBytes ?? 0)} · Kredit{' '}
         {formatRupiah(u.balanceIdr)} · daftar {formatDateTime(u.createdAt)}
       </p>
       <input
@@ -212,7 +212,7 @@ function UserCard({ u, isAdmin }: { u: UserRow; isAdmin: boolean }) {
                   )
                 }
               >
-                Saldo
+                Kredit
               </Button>
             </span>
             <span className="flex items-center gap-1">

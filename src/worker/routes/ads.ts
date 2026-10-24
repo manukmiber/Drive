@@ -1,5 +1,6 @@
-// Ads (SPEC §10): GET /api/ads (serving), /api/ads/areas, /api/advertiser/* (self-serve), and the
-// cookie-less public endpoints /ad/i (impression beacon), /ad/c/:id (click), /ad/img/:id (image).
+// Ads (SPEC §10): GET /api/ads (serving), /api/ads/areas, /api/advertiser/* (the operator's tool for
+// placing a client's ad — ADR-041: people ask by email), and the cookie-less public endpoints /ad/i
+// (impression beacon), /ad/c/:id (click), /ad/img/:id (image).
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import {
@@ -12,7 +13,7 @@ import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { contentLength } from '../lib/http';
 import { validate } from '../lib/validate';
-import { requireUser } from '../middleware/auth';
+import { requireStaff } from '../middleware/auth';
 import { verifyTurnstile } from '../lib/turnstile';
 import { clientIp, enforceRateLimit, rateLimit } from '../middleware/ratelimit';
 import {
@@ -37,25 +38,10 @@ import {
   upsertAdvertiser,
   verifyStudentOtp,
   type AdDto,
-  type Geo,
 } from '../services/ads';
 import { escapeHtml } from '../services/email-templates';
 import type { AppBindings } from '../types';
 import { appPath } from '../lib/paths';
-
-/** Area hints from Cloudflare (`request.cf`). In dev, `x-dev-geo-*` headers stand in for it. */
-export function geoOf(c: Context<AppBindings>): Geo {
-  const cf = (c.req.raw as Request & { cf?: { city?: string; region?: string; country?: string } })
-    .cf;
-  if (c.env.APP_ENV === 'dev' && !cf) {
-    return {
-      city: c.req.header('x-dev-geo-city') ?? null,
-      region: c.req.header('x-dev-geo-region') ?? null,
-      country: c.req.header('x-dev-geo-country') ?? null,
-    };
-  }
-  return { city: cf?.city ?? null, region: cf?.region ?? null, country: cf?.country ?? null };
-}
 
 async function userCity(ctx: Ctx, userId: string | undefined): Promise<string | null> {
   if (!userId) return null;
@@ -73,8 +59,8 @@ export async function pickAd(
 ): Promise<AdDto | null> {
   const ctx = c.get('ctx');
   if (!(await adsAllowedForUser(ctx, planUserId))) return null;
-  const viewer = c.get('user')?.id;
-  const chain = await resolveAreaChain(ctx, { ...geoOf(c), userCity: await userCity(ctx, viewer) });
+  // Only the city on the viewer's Zeiko Account (ADR-041); no account or no city: national ads.
+  const chain = await resolveAreaChain(ctx, { userCity: await userCity(ctx, c.get('user')?.id) });
   return serveAd(ctx, placement, chain, exclude);
 }
 
@@ -125,7 +111,7 @@ export const adsApi = new Hono<AppBindings>()
   );
 
 export const advertiser = new Hono<AppBindings>()
-  .use('*', requireUser)
+  .use('*', requireStaff(['admin']))
   .get('/', async (c) => c.json(await advertiserDashboard(c.get('ctx'), c.get('user')!.id)))
   .put(
     '/',

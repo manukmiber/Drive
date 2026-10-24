@@ -11,7 +11,6 @@ import { randomBase62, ulid } from '../lib/ids';
 import { nameKey } from '../lib/names';
 import { ensurePersonalSpace, FAMILY_ROOT_NAME } from './accounts';
 import {
-  afterInvoice,
   changePlanForPool,
   currentSubscription,
   grantPlanCredits,
@@ -100,7 +99,7 @@ function movePoolStmts(ctx: Ctx, from: string, to: string): Stmt[] {
   ];
 }
 
-/** Credit the unused part of an active personal plan to Saldo and end it (SPEC §9.3). */
+/** Credit the unused part of an active personal plan (as credit, ADR-041) and end it (SPEC §9.3). */
 async function convertPersonalPlan(
   ctx: Ctx,
   userId: string,
@@ -228,12 +227,6 @@ async function createFamily(ctx: Ctx, ownerId: string, p: PlanRow): Promise<Plan
     plan: p.code,
     convertedIdr: convert.creditIdr,
   });
-  await afterInvoice(
-    ctx,
-    ownerId,
-    inv.id,
-    `Paket ${p.name} aktif. Undang anggota dari halaman Keluarga.`,
-  );
   return { kind: 'subscribed', chargedIdr: inv.total, invoiceId: inv.id };
 }
 

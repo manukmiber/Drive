@@ -52,6 +52,9 @@ export const users = sqliteTable('users', {
   name: text('name').notNull().default(''),
   image: text('avatar_url'),
   adCityCode: text('ad_city_code'),
+  /** From the Zeiko Account at sign-in (ADR-041); `adCityCode` is the matched area. */
+  adCity: text('ad_city'),
+  adPostalCode: text('ad_postal_code'),
   role: text('role', { enum: USER_ROLES }).notNull().default('user'),
   status: text('status', { enum: USER_STATUSES }).notNull().default('active'),
   twoFactorEnabled: bool('two_factor_enabled').notNull().default(false),

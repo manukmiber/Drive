@@ -1,4 +1,4 @@
-// /api/notifications — the bell (in-app list) and per-channel preferences (SPEC §13.2).
+// /api/notifications — the bell (in-app list) and email preferences (SPEC §13.2, ADR-041).
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { validate } from '../lib/validate';
@@ -27,7 +27,7 @@ export const notifications = new Hono<AppBindings>()
       'json',
       z.object({
         type: z.string().max(40),
-        channel: z.enum(['email', 'telegram']),
+        channel: z.literal('email'),
         enabled: z.boolean(),
       }),
     ),

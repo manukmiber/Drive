@@ -36,9 +36,7 @@ export interface Env {
   /** `none` = no Container `archiver`: TAR.ZST and large deflate ZIPs are unavailable. */
   ADAPTER_ARCHIVER?: 'mock' | 'container' | 'none';
   TURNSTILE_SITE_KEY?: string;
-  ADMIN_ALERT_TELEGRAM_CHAT_ID?: string;
   SCANNER_INSTANCES?: string;
-  TELEGRAM_BOT_USERNAME?: string;
   /** This environment's R2 bucket, as Cloudflare's analytics name it (ADR-037). */
   R2_BUCKET_NAME?: string;
   /** The Cloudflare account the bucket is in, for R2's analytics (ADR-037). */
@@ -55,8 +53,6 @@ export interface Env {
   PAYMENT_WEBHOOK_SECRET: string;
   GOOGLE_CLIENT_ID?: string;
   GOOGLE_CLIENT_SECRET?: string;
-  TELEGRAM_BOT_TOKEN?: string;
-  TELEGRAM_WEBHOOK_SECRET?: string;
   TURNSTILE_SECRET_KEY?: string;
   MAIL_RELAY_TOKEN?: string;
   /** Bearer for the door's /apps/v1 routes (minted on the relay's Zeiko Drive screen). */

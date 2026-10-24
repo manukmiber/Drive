@@ -54,7 +54,8 @@ export async function seedDemo(env: Env): Promise<void> {
       updatedAt: new Date(now),
     });
     const space = await ensurePersonalSpace(ctx, u.id);
-    await db.insert(schema.wallets).values({ userId: u.id, balanceIdr: 50_000, updatedAt: now });
+    // No Saldo to start with (ADR-041): demo purchases go through the mock QRIS page.
+    await db.insert(schema.wallets).values({ userId: u.id, balanceIdr: 0, updatedAt: now });
     if (!u.plan) continue;
     const plan = await db.select().from(schema.plans).where(eq(schema.plans.code, u.plan)).get();
     if (!plan) continue;

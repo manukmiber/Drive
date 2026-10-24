@@ -5,12 +5,7 @@ import { SHARE_CHANNELS } from '../../shared/enums';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
 import { clientIp, rateLimit } from '../middleware/ratelimit';
-import {
-  logDeeplinkSend,
-  sendShareEmail,
-  sendShareTelegram,
-  telegramLinkUrl,
-} from '../services/share-send';
+import { logDeeplinkSend, sendShareEmail } from '../services/share-send';
 import {
   createShare,
   listMyShares,
@@ -55,9 +50,6 @@ export const shares = new Hono<AppBindings>()
         { share: await createShare(c.get('ctx'), c.get('user')!.id, c.req.valid('json')) },
         201,
       ),
-  )
-  .get('/telegram/link', async (c) =>
-    c.json(await telegramLinkUrl(c.get('ctx'), c.get('user')!.id)),
   )
   .get('/:id', async (c) => {
     const ctx = c.get('ctx');
@@ -114,11 +106,6 @@ export const shares = new Hono<AppBindings>()
           message: z.string().max(2000).nullable().optional(),
           turnstileToken: z.string().max(4096).nullable().optional(),
         }),
-        z.object({
-          mode: z.literal('telegram'),
-          username: z.string().min(2).max(64),
-          message: z.string().max(2000).nullable().optional(),
-        }),
       ]),
     ),
     async (c) => {
@@ -127,8 +114,6 @@ export const shares = new Hono<AppBindings>()
       const body = c.req.valid('json');
       const id = c.req.param('id');
       if (body.mode === 'deeplink') return c.json(await logDeeplinkSend(ctx, user.id, id, body));
-      if (body.mode === 'email')
-        return c.json(await sendShareEmail(ctx, user, id, body, clientIp(c.req.raw)));
-      return c.json(await sendShareTelegram(ctx, user, id, body));
+      return c.json(await sendShareEmail(ctx, user, id, body, clientIp(c.req.raw)));
     },
   );

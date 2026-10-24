@@ -25,7 +25,9 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
 Buka app lewat **http://localhost:5173/** (bukan IP LAN): cookie `__Host-` butuh origin
 aman, dan browser hanya menganggap `localhost` aman tanpa HTTPS. Di production app ada di root
 **drive.zeiko.biz.id** (ADR-038; `/dashboard/…` hanya jalan pulang dari website); landing, harga, dan
-deskripsi produk ada di website (`proxychat`, zeiko.biz.id/drive). Drive dibayar dengan **QRIS saja**. Login lewat Akun Zeiko:
+deskripsi produk ada di website (`proxychat`, zeiko.biz.id/drive). Drive dibayar dengan **QRIS saja**, per
+pembelian, tanpa Saldo dan tanpa perpanjangan otomatis; notifikasi lewat email + lonceng; lokasi iklan dari
+kota di Akun Zeiko; pasang iklan lewat admin@zeiko.biz.id (ADR-041). Login lewat Akun Zeiko:
 di dev, "Masuk dengan Akun Zeiko" membuka pintu tiruan `/__dev/door/account/signin` untuk memilih akun
 demo `demo@zeiko.local` (Plus), `admin@zeiko.local` (admin, Max), atau `baru@zeiko.local` (tanpa paket).
 

@@ -1,8 +1,8 @@
-// Sending share links: deeplinks (WhatsApp/Telegram/QR/copy/Web Share, logged only), email via the
-// `notify` queue, and direct Telegram messages for linked users (SPEC §6.3–6.8).
+// Sending share links: deeplinks (WhatsApp/Telegram/QR/copy/Web Share, logged only) and email via the
+// `notify` queue (SPEC §6.3–6.8). Sending through a Telegram bot is gone (ADR-041).
 import { formatBytes, formatDateTime } from '../../shared/format';
 import type { ShareChannel, ShareSendMode } from '../../shared/enums';
-import { DAY_MS, MINUTE_MS } from '../../shared/constants';
+import { DAY_MS } from '../../shared/constants';
 import { wibDate } from '../../shared/time';
 import type { Ctx } from '../context';
 import {
@@ -14,7 +14,7 @@ import {
 } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { verifyTurnstile } from '../lib/turnstile';
-import { randomBase62, ulid } from '../lib/ids';
+import { ulid } from '../lib/ids';
 import { shareEmail } from './email-templates';
 import { requireOwnShare, shareState, shareUrl } from './shares';
 import { appUrl } from '../lib/paths';
@@ -195,41 +195,6 @@ export async function sendShareEmail(
   return { queued, suppressed };
 }
 
-export async function sendShareTelegram(
-  ctx: Ctx,
-  user: { id: string },
-  shareId: string,
-  input: { username: string; message?: string | null | undefined },
-): Promise<{ sent: boolean }> {
-  const cfg = await ctx.config();
-  if (!cfg.features.telegram_bot) throw new AppError('FORBIDDEN', 'telegram bot is disabled');
-  const share = await requireOwnShare(ctx, user.id, shareId);
-  if (await shareState(ctx, share)) throw new AppError('CONFLICT', 'share link is not active');
-  const username = input.username.trim().replace(/^@/, '').toLowerCase();
-  const link = await ctx.env.DB.prepare(
-    'SELECT chat_id, allow_receive FROM telegram_links WHERE username_lower = ?1',
-  )
-    .bind(username)
-    .first<{ chat_id: string; allow_receive: number }>();
-  if (!link || !link.allow_receive)
-    throw new AppError('NOT_FOUND', 'telegram user not linked', { reason: 'TELEGRAM_NOT_LINKED' });
-  if (!(await consumeUsage(ctx, `share_tg:${user.id}:${wibDate(ctx.now())}`, 1, 50, DAY_MS))) {
-    throw new AppError('RATE_LIMITED', 'daily telegram limit reached');
-  }
-  const message = input.message?.slice(0, cfg.share_message_max_chars) ?? null;
-  const sendId = await insertSend(ctx, {
-    shareId,
-    userId: user.id,
-    channel: 'telegram',
-    mode: 'bot',
-    recipient: username,
-    message,
-    status: 'queued',
-  });
-  await ctx.env.NOTIFY_QUEUE.send({ type: 'share_telegram', sendId, chatId: link.chat_id });
-  return { sent: true };
-}
-
 // ── delivery (notify queue consumer) ──
 interface SendRow {
   id: string;
@@ -315,95 +280,4 @@ export async function deliverShareEmail(ctx: Ctx, sendId: string, to: string): P
     ...mail,
   });
   await markSend(ctx, sendId, 'sent', res.id);
-}
-
-export async function deliverShareTelegram(
-  ctx: Ctx,
-  sendId: string,
-  chatId: string,
-): Promise<void> {
-  const c = await loadSendContext(ctx, sendId);
-  if (!c) return;
-  const text = `${c.sender.name || 'Seseorang'} membagikan "${c.share.title}" (${c.sizeText}) lewat Zeiko.${c.send.message ? `\n\n${c.send.message}` : ''}`;
-  const res = await ctx.adapters.telegram.sendMessage(chatId, text, [
-    { text: 'Unduh', url: c.url },
-  ]);
-  await markSend(ctx, sendId, 'sent', res.messageId);
-}
-
-// ── Telegram account linking (SPEC §6.4) ──
-export async function telegramLinkUrl(
-  ctx: Ctx,
-  userId: string,
-): Promise<{ url: string; expiresAt: number }> {
-  const code = randomBase62(24);
-  await ctx.env.CONFIG_KV.put(`tglink:${code}`, userId, { expirationTtl: 15 * 60 });
-  const bot = ctx.env.TELEGRAM_BOT_USERNAME ?? 'ZeikoBot';
-  return { url: `https://t.me/${bot}?start=${code}`, expiresAt: ctx.now() + 15 * MINUTE_MS };
-}
-
-interface TgUpdate {
-  message?: { chat: { id: number }; from?: { id: number; username?: string }; text?: string };
-}
-
-export async function handleTelegramUpdate(ctx: Ctx, update: TgUpdate): Promise<void> {
-  const msg = update.message;
-  if (!msg?.from) return;
-  const tgId = String(msg.from.id);
-  const chatId = String(msg.chat.id);
-  const username = msg.from.username?.toLowerCase() ?? null;
-  const now = ctx.now();
-  // Usernames can change; refresh on every interaction.
-  await ctx.env.DB.prepare(
-    'UPDATE telegram_links SET username_lower = ?2, chat_id = ?3, updated_at = ?4 WHERE tg_user_id = ?1',
-  )
-    .bind(tgId, username, chatId, now)
-    .run();
-  const text = msg.text?.trim() ?? '';
-  const start = /^\/start(?:\s+([0-9A-Za-z]{24}))?$/.exec(text);
-  if (start?.[1]) {
-    const userId = await ctx.env.CONFIG_KV.get(`tglink:${start[1]}`);
-    if (!userId) {
-      await ctx.adapters.telegram.sendMessage(
-        chatId,
-        'Kode tautan sudah kedaluwarsa. Buat kode baru dari Pengaturan Zeiko.',
-      );
-      return;
-    }
-    await ctx.env.CONFIG_KV.delete(`tglink:${start[1]}`);
-    await ctx.env.DB.batch([
-      ctx.env.DB.prepare('DELETE FROM telegram_links WHERE tg_user_id = ?1 AND user_id != ?2').bind(
-        tgId,
-        userId,
-      ),
-      ctx.env.DB.prepare(
-        `INSERT INTO telegram_links (user_id, tg_user_id, chat_id, username_lower, allow_receive, linked_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?5)
-         ON CONFLICT (user_id) DO UPDATE SET tg_user_id = excluded.tg_user_id, chat_id = excluded.chat_id,
-           username_lower = excluded.username_lower, allow_receive = 1, updated_at = excluded.updated_at`,
-      ).bind(userId, tgId, chatId, username, now),
-    ]);
-    await ctx.adapters.telegram.sendMessage(
-      chatId,
-      'Akun Zeiko kamu sudah tertaut. Kamu akan menerima notifikasi dan file di sini. Ketik /stop untuk berhenti menerima file.',
-    );
-  } else if (text === '/stop') {
-    await ctx.env.DB.prepare('UPDATE telegram_links SET allow_receive = 0 WHERE tg_user_id = ?1')
-      .bind(tgId)
-      .run();
-    await ctx.adapters.telegram.sendMessage(
-      chatId,
-      'Oke, kamu tidak akan menerima file dari pengguna lain lagi. Ketik /terima untuk mengaktifkan.',
-    );
-  } else if (text === '/terima') {
-    await ctx.env.DB.prepare('UPDATE telegram_links SET allow_receive = 1 WHERE tg_user_id = ?1')
-      .bind(tgId)
-      .run();
-    await ctx.adapters.telegram.sendMessage(chatId, 'Siap, kamu bisa menerima file lagi.');
-  } else {
-    await ctx.adapters.telegram.sendMessage(
-      chatId,
-      'Halo! Ini bot Zeiko. Tautkan akunmu dari Pengaturan → Telegram di zeiko.biz.id.',
-    );
-  }
 }

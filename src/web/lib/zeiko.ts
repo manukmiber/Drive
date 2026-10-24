@@ -49,6 +49,9 @@ interface DoorAccount {
   id?: string;
   email?: string;
   emailVerified?: boolean;
+  /** Where they live, for local ads (ADR-041). */
+  city?: string;
+  postalCode?: string;
 }
 
 /**

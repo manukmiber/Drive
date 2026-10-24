@@ -6,6 +6,10 @@ import type { DevRuntime } from '../../dev/env';
 
 const GB = 2 ** 30;
 
+/** Buys a plan; the tests fund credit first, which pays without a QRIS (ADR-041). */
+const buyPlan = (s: Session, code: string) =>
+  s.req('POST', '/api/billing/checkout', { item: { kind: 'plan', code } });
+
 async function fund(rt: DevRuntime, s: Session, idr: number) {
   rt.d1.sqlite
     .prepare(
@@ -26,7 +30,7 @@ async function setupFamily() {
   const other = await signIn(rt, 'adik@example.com');
   await fund(rt, owner, 100_000);
   // Owner already has a personal plan and private files before creating the family
-  expect((await owner.req('POST', '/api/billing/plan', { planCode: 'mini' })).status).toBe(200);
+  expect((await buyPlan(owner, 'mini')).status).toBe(200);
   const ownerPrivate = await uploadText(
     owner,
     await rootOf(owner),
@@ -34,7 +38,7 @@ async function setupFamily() {
     'rahasia ayah',
   );
   await rt.settle();
-  const buy = await owner.req('POST', '/api/billing/plan', { planCode: 'family' });
+  const buy = await buyPlan(owner, 'family');
   expect(buy.status).toBe(200);
   const invite = async () =>
     (
@@ -243,9 +247,9 @@ describe('family plan (SPEC §9)', () => {
       'FAMILY_FULL',
     );
     rt.d1.sqlite.prepare("UPDATE plans SET max_members = 6 WHERE code = 'family'").run();
-    // Has an active personal plan → must confirm conversion to Saldo
+    // Has an active personal plan → must confirm conversion to credit
     await fund(rt, extra, 10_000);
-    await extra.req('POST', '/api/billing/plan', { planCode: 'basic' });
+    await buyPlan(extra, 'basic');
     const needs = await extra.req('POST', `/api/family/invites/${t}/accept`, {});
     expect(
       ((await needs.json()) as { error: { data: { reason: string } } }).error.data.reason,
@@ -289,8 +293,8 @@ describe('family plan (SPEC §9)', () => {
       .get(f.id) as { space: string; pool_id: string };
     expect(node).toEqual({ space: 'personal', pool_id: after.space.poolId });
     expect(
-      ((await (await owner.req('GET', '/api/billing')).json()) as { balanceIdr: number })
-        .balanceIdr,
+      ((await (await owner.req('GET', '/api/billing')).json()) as { creditIdr: number })
+        .creditIdr,
     ).toBeGreaterThan(49_000);
   });
 });

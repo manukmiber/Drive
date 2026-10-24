@@ -179,7 +179,7 @@ const IDS_PER_QUERY = 90;
 
 /**
  * Drive's side of the people the relay lists on Zeiko Accounts (ADR-040): for each Zeiko Account
- * id that has a Drive user, that user's plan, storage, Saldo and standing. Ids with no Drive user
+ * id that has a Drive user, that user's plan, storage, credit (`balanceIdr`, ADR-041) and standing. Ids with no Drive user
  * are left out. Nothing about anybody's files.
  */
 export async function peopleByZeikoId(ctx: Ctx, zeikoIds: string[]) {

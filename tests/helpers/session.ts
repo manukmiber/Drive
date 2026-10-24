@@ -42,6 +42,8 @@ export function zeikoAccountFor(email: string, over: Partial<ZeikoAccount> = {})
     username: slug.slice(0, 30),
     name: email.split('@')[0] ?? email,
     emailVerified: true,
+    city: '',
+    postalCode: '',
     ...over,
   };
 }
@@ -65,9 +67,13 @@ export async function exchange(
   );
 }
 
-export async function signIn(rt: DevRuntime, email: string): Promise<Session> {
+export async function signIn(
+  rt: DevRuntime,
+  email: string,
+  over: Partial<ZeikoAccount> = {},
+): Promise<Session> {
   const jar = new Jar();
-  const signed = await exchange(rt, jar, zeikoAccountFor(email));
+  const signed = await exchange(rt, jar, zeikoAccountFor(email, over));
   expect(signed.status, await signed.clone().text()).toBe(200);
 
   const meRes = jar.absorb(
@@ -96,4 +102,18 @@ export async function signIn(rt: DevRuntime, email: string): Promise<Session> {
       return jar.absorb(res);
     },
   };
+}
+
+/** An admin (or moderator) with a second factor, as staff-only routes want (SPEC §13.1). */
+export async function staffSignIn(
+  rt: DevRuntime,
+  email: string,
+  role: 'admin' | 'moderator' = 'admin',
+  over: Partial<ZeikoAccount> = {},
+): Promise<Session> {
+  const s = await signIn(rt, email, over);
+  rt.d1.sqlite
+    .prepare('UPDATE users SET role = ?, two_factor_enabled = 1 WHERE id = ?')
+    .run(role, s.userId);
+  return signIn(rt, email, over); // a fresh session carries the new role
 }

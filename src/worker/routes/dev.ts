@@ -13,7 +13,7 @@ const DEMO = ['demo@zeiko.local', 'admin@zeiko.local', 'baru@zeiko.local'];
 /** The Zeiko Account a dev email stands for: a stable id per address. */
 export function devAccount(email: string): ZeikoAccount {
   const slug = email.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-  return { id: `zk_${slug}`, email, username: slug.slice(0, 30), name: email.split('@')[0] ?? email, emailVerified: true };
+  return { id: `zk_${slug}`, email, username: slug.slice(0, 30), name: email.split('@')[0] ?? email, emailVerified: true, city: 'Bandung', postalCode: '40115' };
 }
 
 /**
