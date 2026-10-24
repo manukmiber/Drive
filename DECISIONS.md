@@ -605,3 +605,12 @@ dan lokasi ditanyakan di formulir daftar **Akun Zeiko** (bukan di Drive).
 Tes: `tests/integration/billing.test.ts` (checkout per item, kredit, perpanjangan manual),
 `tests/integration/auth.test.ts` (kota dari pintu), `tests/integration/notifications.test.ts` (email saja),
 `tests/integration/ads.test.ts` (kota dari akun, tanpa IP).
+
+## ADR-042 — Email uji dari ops API
+Pemilik minta penguji email (2026-10-24), setelah `MAIL_RELAY_TOKEN` production terpasang. Drive tidak punya
+cara mengirim email tanpa menunggu notifikasi sungguhan, dan tanpa token adapter diam-diam jatuh ke `mock`.
+- `POST /api/ops/test-email {to}` (token ops seperti route ops lain) mengirim satu email lewat adapter yang sedang
+  jalan, lalu menjawab `200 {ok, adapter, id | error}`. `adapter` menyebut jalurnya (`relay`, `cloudflare`,
+  `mock`), jadi `mock` berarti tidak ada yang keluar dari Worker. Penolakan relay diteruskan apa adanya
+  (dipotong 300 karakter): endpoint ini hanya untuk operator.
+- Setiap percobaan, berhasil atau gagal, dicatat di audit log sebagai `email.test` dengan alamat tujuannya.

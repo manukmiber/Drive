@@ -105,4 +105,19 @@ describe('ops API for the relay', () => {
     expect(items.zk_budi_example_com?.planCode).toBeNull();
     expect((await ops('POST', '/people', { zeikoIds: ['x'] }, 'wrong-wrong-wrong-wrong-wrong-wrong')).status).toBe(404);
   });
+
+  it('sends a test email through the live adapter, says which one, and audits it', async () => {
+    const { ops } = await setup();
+    expect((await ops('POST', '/test-email', { to: 'not-an-address' })).status).toBe(400);
+    const res = await ops('POST', '/test-email', { to: 'pemilik@example.com' });
+    expect(res.status).toBe(200);
+    const sent = (await res.json()) as { ok: boolean; adapter: string; id: string };
+    expect(sent).toMatchObject({ ok: true, adapter: 'mock' });
+    const audit = (await (await ops('GET', '/audit?action=email.test')).json()) as {
+      items: Array<{ targetId: string; meta: string }>;
+    };
+    expect(audit.items[0]?.targetId).toBe('pemilik@example.com');
+    expect(JSON.parse(audit.items[0]?.meta ?? '{}')).toMatchObject({ adapter: 'mock', id: sent.id });
+    expect((await ops('POST', '/test-email', { to: 'a@example.com' }, 'wrong-wrong-wrong-wrong-wrong-wrong')).status).toBe(404);
+  });
 });

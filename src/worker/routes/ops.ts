@@ -16,6 +16,7 @@ import {
   grantPlan,
   peopleByZeikoId,
   searchUsers,
+  sendTestEmail,
   setBonusQuota,
   setUserSuspended,
   updateCatalogItem,
@@ -136,6 +137,12 @@ export const ops = new Hono<AppBindings>()
         .all();
       return c.json({ items: results });
     },
+  )
+  // A test message through the live email adapter: 200 either way, `ok` and the relay's own words.
+  .post(
+    '/test-email',
+    validate('json', z.object({ to: z.string().trim().email().max(254) })),
+    async (c) => c.json(await sendTestEmail(c.get('ctx'), OPS_ACTOR, c.req.valid('json').to)),
   )
   .get(
     '/audit',

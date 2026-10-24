@@ -11,6 +11,7 @@ import { ensurePersonalSpace } from './accounts';
 import { poolLimitStmt, wibAnchorDay } from './billing';
 import { getConfig, setConfig } from './config';
 import { setUserStatus } from './reports';
+import { noticeEmail } from './email-templates';
 
 async function audit(
   ctx: Ctx,
@@ -447,6 +448,36 @@ export async function updateCatalogItem(
     .bind(...binds)
     .run();
   await audit(ctx, actorId, 'catalog.update', kind, code, { from: prev, patch });
+}
+
+// ── Email ──
+
+/**
+ * One message through the email adapter this Worker is running, so the operator sees mail arrive
+ * (or the relay's refusal, word for word) without waiting for a real notice. `adapter` names the
+ * path it took: `mock` means nothing left the Worker (no token, or not `relay`/`cloudflare`).
+ */
+export async function sendTestEmail(ctx: Ctx, actorId: string, to: string) {
+  const adapter = ctx.adapters.email.name;
+  try {
+    const { id } = await ctx.adapters.email.send({
+      to: [to],
+      tag: 'test',
+      ...noticeEmail({
+        title: 'Email uji dari Zeiko Drive',
+        paragraphs: [
+          'Kalau email ini sampai, Zeiko Drive bisa mengirim email ke pengguna: notifikasi, undangan keluarga, dan berbagi lewat email.',
+          `Dikirim lewat: ${adapter}.`,
+        ],
+      }),
+    });
+    await audit(ctx, actorId, 'email.test', 'email', to, { adapter, id });
+    return { ok: true as const, adapter, id };
+  } catch (e) {
+    const error = (e instanceof Error ? e.message : String(e)).slice(0, 300);
+    await audit(ctx, actorId, 'email.test', 'email', to, { adapter, error });
+    return { ok: false as const, adapter, error };
+  }
 }
 
 // ── Audit ──
