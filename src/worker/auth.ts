@@ -125,16 +125,14 @@ function zeikoSignIn(ctx: Ctx): BetterAuthPlugin {
             .bind(userId, email, name, ctx.now())
             .run();
           // Local ads follow the city on the Zeiko Account (ADR-041); the door is where it changes.
-          await env.DB.prepare(
-            'UPDATE users SET ad_city = ?2, ad_postal_code = ?3, ad_city_code = ?4 WHERE id = ?1',
-          )
-            .bind(
-              userId,
-              a.city || null,
-              a.postalCode || null,
-              a.city ? await areaForCity(ctx, a.city) : null,
+          // An account with no city yet (older, or Google/GitHub) keeps what Drive had.
+          if (a.city) {
+            await env.DB.prepare(
+              'UPDATE users SET ad_city = ?2, ad_postal_code = ?3, ad_city_code = ?4 WHERE id = ?1',
             )
-            .run();
+              .bind(userId, a.city, a.postalCode || null, await areaForCity(ctx, a.city))
+              .run();
+          }
           const user = await ia.findUserById(userId);
           if (!user) throw new APIError('INTERNAL_SERVER_ERROR', { message: 'user vanished' });
           // A session this browser still holds (the person before, or this one from an earlier

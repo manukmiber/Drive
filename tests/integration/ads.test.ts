@@ -198,6 +198,12 @@ describe('ad area targeting (SPEC §10.3)', () => {
       adCityCode: null,
       adAreaName: null,
     });
+    // An account with no city yet (older, or Google/GitHub) leaves what Drive had.
+    rt.d1.sqlite
+      .prepare("UPDATE users SET ad_city = NULL, ad_postal_code = NULL, ad_city_code = '35.73' WHERE id = ?")
+      .run(s.userId);
+    const old = await signIn(rt, 'warga@example.com', { city: '', postalCode: '' });
+    expect(await me(old)).toMatchObject({ adCity: null, adCityCode: '35.73' });
   });
 
   it('filters prohibited content and normalises CTAs', () => {

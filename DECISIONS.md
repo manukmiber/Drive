@@ -594,8 +594,9 @@ dan lokasi ditanyakan di formulir daftar **Akun Zeiko** (bukan di Drive).
 - **Lokasi iklan dari Akun Zeiko.** Formulir daftar Akun Zeiko meminta **kota (wajib)** dan **kode pos
   (opsional)**; akun lama dan akun Google/GitHub mengisinya di halaman akun. Pintu mengirim keduanya saat tiket
   ditukar; Drive menyimpannya (`users.ad_city`, `ad_postal_code`) dan mencocokkan kota ke `ad_areas`
-  (`ad_city_code`) setiap login. Pengaturan Drive hanya menampilkannya, dengan link ke Akun Zeiko untuk
-  mengubah. **Tebakan dari IP (`request.cf`) tidak dipakai lagi**: tanpa kota yang cocok (atau pengunjung tanpa
+  (`ad_city_code`) setiap login, dan saat app dibuka kalau kota di pintu berbeda (`door-sync`: tiket baru).
+  Akun yang belum punya kota tidak mengubah apa-apa (kota lama pilihan pengguna di Drive tetap dipakai).
+  Pengaturan Drive hanya menampilkannya, dengan link ke Akun Zeiko untuk mengubah. **Tebakan dari IP (`request.cf`) tidak dipakai lagi**: tanpa kota yang cocok (atau pengunjung tanpa
   akun) iklannya nasional. Kode pos disimpan untuk penargetan yang lebih halus nanti.
 - **Pasang iklan = hubungi admin.** Halaman `/iklan` dan iklan internal Zeiko sekarang mengarah ke
   admin@zeiko.biz.id. API swalayan pengiklan (`/api/advertiser/*`) ditutup; booking yang sudah dibayar tetap

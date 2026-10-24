@@ -37,8 +37,10 @@ export function useDoorSync(
         const account = await doorAccount();
         if (gone || account === undefined) return;
         if (account && account.id === zeikoId) {
+          // An account with no city yet changes nothing here (Drive keeps what it had).
           const moved =
-            (account.city ?? '') !== city || (account.postalCode ?? '') !== postalCode;
+            Boolean(account.city) &&
+            (account.city !== city || (account.postalCode ?? '') !== postalCode);
           if (moved && (await signInSilently()) === 'signed-in' && !gone) {
             await qc.invalidateQueries({ queryKey: meQueryKey });
             await qc.invalidateQueries({ queryKey: ['ad'] });
