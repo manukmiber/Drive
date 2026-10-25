@@ -468,6 +468,14 @@
         {
           "binding": "BUCKET",
           "bucket_name": "zeiko-production"
+        },
+        {
+          "binding": "S3_REPLICA_A",
+          "bucket_name": "zeiko-s3-replica-a-production"
+        },
+        {
+          "binding": "S3_REPLICA_B",
+          "bucket_name": "zeiko-s3-replica-b-production"
         }
       ],
       "kv_namespaces": [
