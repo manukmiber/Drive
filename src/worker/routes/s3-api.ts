@@ -36,6 +36,7 @@ import {
 import { clientIp } from '../middleware/ratelimit';
 import { meterS3Egress } from '../services/s3-billing';
 import { getFromAnyCopy } from '../services/s3-replicas';
+import { s3UrlOwner } from '../services/s3-urls';
 import {
   createBucket,
   getAccount,
@@ -77,6 +78,20 @@ export function isS3Host(url: URL, env: Pick<Env, 'S3_ORIGIN'>): boolean {
   if (!env.S3_ORIGIN) return false;
   const host = new URL(env.S3_ORIGIN).host;
   return url.host === host || url.host.endsWith(`.${host}`);
+}
+
+/**
+ * Whether a request is for Zeiko S3: the shared host (owner null), or an account's own address
+ * (ADR-048), which answers for that account only. Null: the app's.
+ */
+export async function resolveS3Host(url: URL, env: Env): Promise<{ owner: string | null } | null> {
+  if (!env.S3_ORIGIN) return null;
+  if (isS3Host(url, env)) return { owner: null };
+  const host = url.hostname.toLowerCase();
+  if (host === new URL(env.APP_ORIGIN).hostname) return null;
+  if (env.USERCONTENT_ORIGIN && host === new URL(env.USERCONTENT_ORIGIN).hostname) return null;
+  const owner = await s3UrlOwner(env, host);
+  return owner ? { owner } : null;
 }
 
 /** Query parameters that name a sub-resource we don't serve. */
@@ -133,15 +148,22 @@ interface Req {
   /** Bytes in and out, for the per-account request log (Analytics Engine). */
   bytesIn: number;
   bytesOut: number;
+  /** The account an own address belongs to (ADR-048); null on the shared host. */
+  hostOwner: string | null;
   /** Whose period an object read's bytes count in (ADR-047): the bucket owner's. */
   egressTo: { userId: string; periodStart: number | null } | null;
   op: string;
 }
 
-function locate(url: URL, env: Env): { bucket: string | null; key: string | null } {
+function locate(
+  url: URL,
+  env: Env,
+  ownHost: boolean,
+): { bucket: string | null; key: string | null } {
   const s3Host = new URL(env.S3_ORIGIN!).host;
   const path = url.pathname;
-  if (url.host !== s3Host) {
+  // Own addresses are path-style only.
+  if (!ownHost && url.host !== s3Host) {
     const bucket = url.host.slice(0, -(s3Host.length + 1));
     const key = path.length > 1 ? decodeComponent(path.slice(1)) : null;
     return { bucket, key };
@@ -967,7 +989,21 @@ async function objectOp(r: Req): Promise<Response> {
   }
 }
 
+/** On an own address: only its owner's key, and only its owner's buckets (else they don't exist). */
+async function ownerOnly(r: Req): Promise<void> {
+  if (r.hostOwner === null) return;
+  if (r.auth && r.auth.userId !== r.hostOwner) throw new S3Error('AccessDenied', 'Access Denied');
+  if (!r.bucket) return;
+  const b = await getBucket(r.ctx, r.bucket);
+  const creating = r.method === 'PUT' && r.key === null && !b;
+  if (!creating && b?.user_id !== r.hostOwner)
+    throw new S3Error('NoSuchBucket', 'The specified bucket does not exist.', {
+      BucketName: r.bucket,
+    });
+}
+
 async function dispatch(r: Req): Promise<Response> {
+  await ownerOnly(r);
   if (!r.bucket) {
     if (r.method !== 'GET')
       throw new S3Error(
@@ -987,6 +1023,7 @@ export async function handleS3(
   raw: Request,
   ctx: Ctx,
   waitUntil?: (p: Promise<unknown>) => void,
+  hostOwner: string | null = null,
 ): Promise<Response> {
   const requestId =
     raw.headers.get('cf-ray') ?? crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
@@ -1004,6 +1041,7 @@ export async function handleS3(
     bytesIn: 0,
     bytesOut: 0,
     egressTo: null,
+    hostOwner,
     op: 'Unknown',
   };
   let res: Response;
@@ -1012,7 +1050,7 @@ export async function handleS3(
       throw new S3Error('ServiceUnavailable', 'Zeiko S3 is not available here yet.');
     const pairs = parseQuery(url.search);
     r.query = new Map(pairs);
-    Object.assign(r, locate(url, ctx.env));
+    Object.assign(r, locate(url, ctx.env, hostOwner !== null));
     r.auth = await authenticate(ctx, raw, url, pairs);
     res = await dispatch(r);
   } catch (e) {

@@ -17,6 +17,10 @@ export const DEV_DEFAULTS: Record<string, string> = {
   ADAPTER_ARCHIVER: 'mock',
   // VirusTotal stand-in: the real key goes to `wrangler secret put VIRUSTOTAL_API_KEY` (ADR-046).
   ADAPTER_VIRUSTOTAL: 'mock',
+  // Own S3 addresses (ADR-048): s3.<name>.localhost:8790 answers locally (curl resolves *.localhost).
+  ADAPTER_HOSTNAMES: 'mock',
+  S3_SUBDOMAIN_SUFFIX: 'localhost',
+  S3_CNAME_TARGET: 'custom-s3.zeiko.biz.id',
   // Insecure, dev-only secrets. Real ones come from `wrangler secret put`.
   BETTER_AUTH_SECRET: 'dev-only-better-auth-secret-change-me-0000000000',
   DOWNLOAD_SECRET: 'dev-only-download-secret',

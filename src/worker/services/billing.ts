@@ -23,6 +23,7 @@ import {
   type Replicas,
   type S3Done,
 } from './s3-billing';
+import { buyS3Url, quoteS3Url, type S3UrlRequest } from './s3-urls';
 
 type Stmt = D1PreparedStatement;
 
@@ -510,7 +511,8 @@ export type CheckoutItem =
   | { kind: 'compress'; code: string }
   | { kind: 'renew' }
   | { kind: 's3_plan'; gb: number; replicas: Replicas }
-  | { kind: 's3_renew' };
+  | { kind: 's3_renew' }
+  | { kind: 's3_url'; url: S3UrlRequest };
 
 /** What a payment is for once it lands. `ad_campaign` is an approved ad campaign (ADR-043). */
 export type DirectPurpose = CheckoutItem | { kind: 'ad_campaign'; campaignId: string };
@@ -590,6 +592,7 @@ export async function quoteItem(ctx: Ctx, userId: string, item: CheckoutItem): P
   const now = ctx.now();
   if (item.kind === 's3_plan') return quoteS3Plan(ctx, userId, item.gb, item.replicas);
   if (item.kind === 's3_renew') return quoteS3Renew(ctx, userId);
+  if (item.kind === 's3_url') return quoteS3Url(ctx, userId, item.url);
   if (item.kind === 'compress') {
     const pack = await ctx.env.DB.prepare(
       'SELECT price_idr FROM compress_packs WHERE code = ?1 AND active = 1',
@@ -644,7 +647,7 @@ export async function quoteItem(ctx: Ctx, userId: string, item: CheckoutItem): P
 
 export type ItemDone =
   | PlanChange
-  | { kind: 'addon' | 'compress' | 'renewed'; chargedIdr: number; invoiceId: string }
+  | { kind: 'addon' | 'compress' | 'renewed' | 's3_url'; chargedIdr: number; invoiceId: string }
   | { kind: S3Done; chargedIdr: number; invoiceId: string | null };
 
 /** Makes the purchase from the wallet (the payment, or credit, is already there). */
@@ -655,6 +658,7 @@ export async function performItem(ctx: Ctx, userId: string, item: CheckoutItem):
     return { kind: 'compress', ...(await buyCompressPack(ctx, userId, item.code)) };
   if (item.kind === 's3_plan') return buyS3Plan(ctx, userId, item.gb, item.replicas);
   if (item.kind === 's3_renew') return renewS3Plan(ctx, userId);
+  if (item.kind === 's3_url') return buyS3Url(ctx, userId, item.url);
   return renewNow(ctx, userId);
 }
 
@@ -708,6 +712,8 @@ async function doneSummary(ctx: Ctx, done: ItemDone, item: DirectPurpose): Promi
       return 'Paket Zeiko S3 diperpanjang sebulan.';
     case 's3_reactivated':
       return 'Paket Zeiko S3 aktif lagi.';
+    case 's3_url':
+      return 'Alamat Zeiko S3 sudah dibuat.';
     default:
       return 'Pembelianmu sudah jadi.';
   }

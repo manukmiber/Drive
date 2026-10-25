@@ -54,6 +54,21 @@ interface S3Plan {
   egress: { periodStart: number; bytes: number; billable: boolean; pendingIdr: number };
 }
 
+interface S3Url {
+  hostname: string;
+  kind: 'zeiko' | 'custom';
+  status: 'pending' | 'active' | 'failed';
+  url: string;
+  records: Array<{ type: string; name: string; value: string }>;
+  error: string | null;
+}
+
+interface S3UrlOptions {
+  zeiko: { available: boolean; priceIdr: number; suffix: string | null };
+  custom: { available: boolean; priceIdr: number; cnameTarget: string | null };
+  releaseDays: number;
+}
+
 interface S3Overview {
   configured: boolean;
   enabled: boolean;
@@ -67,6 +82,8 @@ interface S3Overview {
     billingState: 'ok' | 'readonly' | 'locked';
   } | null;
   plan: S3Plan | null;
+  url: S3Url | null;
+  urlOptions: S3UrlOptions | null;
   keys: S3Key[];
   buckets: S3Bucket[];
 }
@@ -377,6 +394,206 @@ function PlanSection({ plan }: { plan: S3Plan }) {
   );
 }
 
+/** The account's own address (ADR-048): what it is and its DNS, or buying one. */
+function UrlSection({
+  url,
+  options,
+  canBuy,
+  onChanged,
+}: {
+  url: S3Url | null;
+  options: S3UrlOptions;
+  canBuy: boolean;
+  onChanged: () => Promise<unknown>;
+}) {
+  const checkout = useCheckout();
+  const [type, setType] = useState<'zeiko' | 'custom'>(
+    options.zeiko.available ? 'zeiko' : 'custom',
+  );
+  const [name, setName] = useState('');
+  const [hostname, setHostname] = useState('');
+  const [releasing, setReleasing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!url && !(options.zeiko.available || options.custom.available)) return null;
+  const zeikoHost = `s3.${name.trim().toLowerCase() || '…'}.${options.zeiko.suffix ?? ''}`;
+
+  async function act(fn: () => Promise<unknown>, done?: string) {
+    setBusy(true);
+    try {
+      await fn();
+      if (done) toast(done);
+      await onChanged();
+    } catch (e) {
+      toast(errorText(e), { tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const buy = (e: FormEvent) => {
+    e.preventDefault();
+    const zeiko = type === 'zeiko';
+    const host = zeiko ? zeikoHost : hostname.trim().toLowerCase();
+    const price = formatRupiah(zeiko ? options.zeiko.priceIdr : options.custom.priceIdr);
+    checkout.ask(t.s3.urlBuyTitle, t.s3.urlBuyBody(host, price), {
+      kind: 's3_url',
+      url: zeiko ? { type: 'zeiko', name: name.trim() } : { type: 'custom', hostname: host },
+    });
+  };
+
+  return (
+    <Section
+      id="s3-url"
+      title={t.s3.urlTitle}
+      icon={<Globe className="h-4 w-4" aria-hidden="true" />}
+    >
+      {url ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-[12rem] flex-1">
+              <CopyField label={url.hostname} value={url.url} wrap />
+            </div>
+            <span
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[11px]',
+                url.status === 'active'
+                  ? 'bg-[var(--bg-subtle)] text-[var(--fg-muted)]'
+                  : 'bg-amber-100 text-amber-900',
+              )}
+            >
+              {t.s3.urlStatus[url.status]}
+            </span>
+          </div>
+          {url.status !== 'active' && url.records.length > 0 && (
+            <div className="text-sm">
+              <p>{t.s3.urlDns}</p>
+              <ul className="mt-1 space-y-1">
+                {url.records.map((r) => (
+                  <li key={`${r.type}${r.name}`}>
+                    <code className="break-all text-xs">
+                      {r.type} {r.name} → {r.value}
+                    </code>
+                  </li>
+                ))}
+              </ul>
+              {url.error && <p className="mt-1 text-xs text-[var(--fg-muted)]">{url.error}</p>}
+              <Button
+                variant="secondary"
+                className="mt-2 h-9 px-3"
+                disabled={busy}
+                onClick={() => void act(() => postJson('/api/s3/url/check', {}))}
+              >
+                {t.s3.urlCheck}
+              </Button>
+            </div>
+          )}
+          <Button
+            variant="ghost"
+            className="h-9 px-3 text-red-700"
+            disabled={busy}
+            onClick={() => setReleasing(true)}
+          >
+            {t.s3.urlRemove}
+          </Button>
+        </div>
+      ) : canBuy ? (
+        <form className="space-y-3" onSubmit={buy}>
+          <p className="text-sm text-[var(--fg-muted)]">{t.s3.urlIntro(options.releaseDays)}</p>
+          <fieldset className="space-y-1">
+            {options.zeiko.available && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="url-type"
+                  checked={type === 'zeiko'}
+                  onChange={() => setType('zeiko')}
+                />
+                {t.s3.urlZeiko(formatRupiah(options.zeiko.priceIdr))}
+              </label>
+            )}
+            {options.custom.available && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="url-type"
+                  checked={type === 'custom'}
+                  onChange={() => setType('custom')}
+                />
+                {t.s3.urlCustom(formatRupiah(options.custom.priceIdr))}
+              </label>
+            )}
+          </fieldset>
+          {type === 'zeiko' ? (
+            <label className="block">
+              <span className="text-sm font-medium">{t.s3.urlName}</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                required
+                minLength={3}
+                maxLength={32}
+                pattern="[a-z0-9][a-z0-9-]{1,30}[a-z0-9]"
+                aria-describedby="s3-url-hint"
+                className="mt-1 h-10 w-full max-w-xs rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 text-sm"
+              />
+              <span id="s3-url-hint" className="mt-1 block text-xs text-[var(--fg-muted)]">
+                {t.s3.urlNameHint} {t.s3.urlPreview(zeikoHost)}
+              </span>
+            </label>
+          ) : (
+            <label className="block">
+              <span className="text-sm font-medium">{t.s3.urlHostname}</span>
+              <input
+                value={hostname}
+                onChange={(e) => setHostname(e.target.value)}
+                required
+                maxLength={253}
+                placeholder="s3.tokobudi.com"
+                aria-describedby="s3-url-hint"
+                className="mt-1 h-10 w-full max-w-sm rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 text-sm"
+              />
+              <span id="s3-url-hint" className="mt-1 block text-xs text-[var(--fg-muted)]">
+                {t.s3.urlHostnameHint(options.custom.cnameTarget ?? '')}
+              </span>
+            </label>
+          )}
+          <Button type="submit" className="h-9 px-4" disabled={checkout.busy}>
+            {t.s3.urlBuy(
+              formatRupiah(type === 'zeiko' ? options.zeiko.priceIdr : options.custom.priceIdr),
+            )}
+          </Button>
+        </form>
+      ) : (
+        <p className="text-sm text-[var(--fg-muted)]">{t.s3.urlNeedsPlan}</p>
+      )}
+      <Dialog
+        open={releasing}
+        title={t.s3.urlRemoveTitle}
+        onClose={() => setReleasing(false)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setReleasing(false)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setReleasing(false);
+                void act(() => sendJson('DELETE', '/api/s3/url'), t.s3.urlRemoved);
+              }}
+            >
+              {t.s3.urlRemove}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm">{url ? t.s3.urlRemoveBody(url.hostname) : ''}</p>
+      </Dialog>
+      {checkout.ui}
+    </Section>
+  );
+}
+
 export function S3() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: QUERY, queryFn: () => api<S3Overview>('/api/s3') });
@@ -525,6 +742,14 @@ export function S3() {
       </Section>
 
       {d.plan && <PlanSection plan={d.plan} />}
+      {d.urlOptions && (
+        <UrlSection
+          url={d.url}
+          options={d.urlOptions}
+          canBuy={Boolean(d.plan?.plan && !d.plan.plan.lapsed)}
+          onChanged={refresh}
+        />
+      )}
 
       <Section
         id="s3-keys"

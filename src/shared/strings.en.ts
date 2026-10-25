@@ -198,6 +198,37 @@ export const en: Strings = {
     lockedBanner:
       'Your Zeiko S3 is locked because its plan was not renewed. Renew to open it again.',
     unpaid: 'Your Zeiko S3 plan has not been renewed, so this has to wait.',
+    urlTitle: 'Your own address',
+    urlIntro: (days: number) =>
+      `An S3 endpoint on an address of your own. Paid once and kept while your plan is renewed; if the plan goes unpaid for ${days} days, the address is released and has to be bought again.`,
+    urlZeiko: (price: string) => `Zeiko subdomain · ${price}`,
+    urlCustom: (price: string) => `Your own domain · ${price}`,
+    urlName: 'Name',
+    urlNameHint: '3–32 lowercase letters, digits or hyphens.',
+    urlPreview: (host: string) => `Your address: ${host}`,
+    urlHostname: 'Domain',
+    urlHostnameHint: (target: string) =>
+      `A subdomain of a domain you own, such as s3.mystore.com. After buying, point its CNAME at ${target}.`,
+    urlBuy: (amount: string) => `Buy · ${amount}`,
+    urlBuyTitle: 'Buy a Zeiko S3 address?',
+    urlBuyBody: (host: string, amount: string) =>
+      `${host} for ${amount}, paid once. If your credit covers it, it is set up without QRIS.`,
+    urlStatus: { active: 'Active', pending: 'Waiting for DNS', failed: 'Failed' } as Record<
+      string,
+      string
+    >,
+    urlDns: 'Add this record to your domain’s DNS, then check again:',
+    urlCheck: 'Check again',
+    urlRemove: 'Release address',
+    urlRemoveTitle: 'Release this address?',
+    urlRemoveBody: (host: string) =>
+      `${host} stops working and is not refunded. The shared endpoint keeps working.`,
+    urlRemoved: 'Address released',
+    urlTaken: 'That address is taken. Try another one.',
+    urlInvalid: 'That address can’t be used.',
+    urlReserved: 'That name is kept for Zeiko. Try another one.',
+    urlExists: 'Your account already has its own address. Release the old one first.',
+    urlNeedsPlan: 'This needs an active Zeiko S3 plan.',
     howTo: 'How to connect',
     limits:
       'A plain upload can be 100 MB at most; bigger files go up as multipart uploads (aws-cli and rclone do this on their own). Every part except the last must be the same size, at least 5 MB.',
@@ -457,6 +488,7 @@ export const en: Strings = {
       s3_reactivated: 'Your Zeiko S3 plan is active again.',
       s3_change_scheduled: 'The new plan starts next period.',
       s3_change_cancelled: 'The plan change is cancelled.',
+      s3_url: 'Your Zeiko S3 address is set up.',
       downgrade_scheduled: 'Downgrade scheduled.',
       downgrade_cancelled: 'Downgrade cancelled.',
     } as Record<string, string>,

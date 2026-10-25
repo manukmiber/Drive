@@ -120,7 +120,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [ ] Staging dengan SSO sungguhan: menunggu relay live diperbarui pemilik, secret `ZEIKO_APP_TOKEN`/`ZEIKO_OPS_TOKEN`,
   dan `https://staging.zeiko.biz.id` di `site.auth.origins`.
 
-## Zeiko S3 + ToS/Kebijakan Privasi (ADR-044–047, 2026-10-24/25)
+## Zeiko S3 + ToS/Kebijakan Privasi (ADR-044–048, 2026-10-24/25)
 - [x] API S3 di host `S3_ORIGIN` (SigV4 header + presigned, aws-chunked, objek, listing v1/v2, multipart + copy,
   bucket publik, `NotImplemented` untuk sisanya), diuji dengan AWS SDK v3 asli.
 - [x] Akun S3 = user Drive + `s3_accounts` (migrasi 0007); ops API untuk tombol relay; batas penyimpanan atomik;
@@ -134,10 +134,13 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Egress per GET, gratis 500 GB per periode, kelebihan Rp5.000 per 500 GB ditambahkan ke perpanjangan.
 - [x] 3 salinan sungguhan: dua bucket R2 replika (`weur`, `wnam`), salin setelah scan, backfill/hapus saat paket
   berubah, baca dari salinan lain kalau yang pertama hilang, sapuan malam.
+- [x] Alamat sendiri (ADR-048): `s3.<nama>.zeiko.biz.id` Rp3.000 atau domain sendiri Rp5.000, sekali bayar,
+  hanya untuk akun pemiliknya, cek DNS per jam, dilepas setelah paket tidak dibayar 30 hari.
 - [x] VirusTotal (ADR-046): cek hash tipe berisiko, kirim program/dokumen ber-macro yang belum dikenal, anggaran key
   per menit/hari/orang, tidak pernah menahan file lama. Drive dan Zeiko S3.
 - [ ] Tombol relay "tambah user + binding ke worker" (diagram: "nanti"): buat D1, catat binding, panggil ops API.
 - [ ] Deploy: `cf-setup` (secret `S3_KEYS_ENC_KEY`, bucket replika), `wrangler secret put VIRUSTOTAL_API_KEY`,
-  migrasi 0007 + 0008, custom domain `s3.zeiko.biz.id` / `s3-staging.zeiko.biz.id`: menunggu izin pemilik.
+  migrasi 0007 + 0008, custom domain `s3.zeiko.biz.id` / `s3-staging.zeiko.biz.id`, `CF_HOSTNAMES_TOKEN` + `zoneId`,
+  Cloudflare for SaaS + fallback origin `custom-s3.zeiko.biz.id`: menunggu izin pemilik.
 - [ ] Pemilik: VirusTotal Premium dan Hive/Thorn (akan ditambahkan pemilik); alamat dukungan/privasi; retensi log;
   alur peringatan ToS §6–§7.

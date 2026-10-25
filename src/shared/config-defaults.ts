@@ -168,6 +168,13 @@ export const configSchema = z.object({
     .min(1)
     .default(500 * GIB),
   s3_egress_block_idr: nonNeg().default(5_000),
+  // An address of the account's own (ADR-048), paid once and kept while the plan is renewed.
+  /** s3.<name>.zeiko.biz.id */
+  s3_url_zeiko_idr: nonNeg().default(3_000),
+  /** The person's own domain, e.g. s3.tokobudi.com */
+  s3_url_custom_idr: nonNeg().default(5_000),
+  /** Days a plan may stay unpaid before its address is released (and has to be bought again). */
+  s3_url_release_days: int().min(1).default(30),
   /** Days after a plan ran out: read-only (no uploads, no public links), locked, deleted. */
   s3_dunning: z
     .object({

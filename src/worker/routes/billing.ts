@@ -20,6 +20,13 @@ const item = z.discriminatedUnion('kind', [
     replicas: z.union([z.literal(1), z.literal(3)]),
   }),
   z.object({ kind: z.literal('s3_renew') }),
+  z.object({
+    kind: z.literal('s3_url'),
+    url: z.discriminatedUnion('type', [
+      z.object({ type: z.literal('zeiko'), name: z.string().min(1).max(40) }),
+      z.object({ type: z.literal('custom'), hostname: z.string().min(1).max(253) }),
+    ]),
+  }),
 ]);
 
 export const billing = new Hono<AppBindings>()

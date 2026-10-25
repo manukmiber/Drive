@@ -24,6 +24,7 @@ import { notify } from './notify';
 import type { ScanCarry } from '../queues/messages';
 import { afterVirusTotal } from './scan';
 import { deleteReplicas, replicateObject } from './s3-replicas';
+import { releaseS3Url } from './s3-urls';
 
 export const MAX_KEY_BYTES = 1024;
 /** One PUT or CopyObject (Amazon's limit too; bigger objects are multipart). */
@@ -1017,6 +1018,8 @@ export async function reconcileS3(ctx: Ctx, limit = 20): Promise<number> {
 export async function purgeS3Account(ctx: Ctx, userId: string, batches = 8): Promise<boolean> {
   const account = await getAccount(ctx, userId);
   if (!account) return true;
+  // Its own address goes first, so it stops answering (ADR-048).
+  await releaseS3Url(ctx, userId, 'deleted');
   const DB = ctx.env.DB;
   await DB.batch([
     DB.prepare(

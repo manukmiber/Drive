@@ -82,6 +82,10 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 - Paket tidak diperpanjang (ADR-047): `readonly` menolak PUT/POST (kecuali DeleteObjects) dan menutup bucket
   publik; `locked` menolak semua request ber-key. Harga paket selalu dihitung server (`quoteS3Plan`), sama dengan
   yang dipotong; ukuran dan jumlah salinan dicek ulang di server.
+- Alamat sendiri (ADR-048): host itu hanya melayani akun pemiliknya (key lain `AccessDenied`, bucket lain
+  `NoSuchBucket`); app dan API Drive tidak pernah dilayani di sana. Nama layanan Zeiko dan nama yang memuat `zeiko`
+  ditolak; domain di zone Zeiko tidak bisa didaftarkan sebagai domain sendiri; custom domain yang sudah ada tidak
+  diambil alih. Token Cloudflare hanya di secret Worker, dan izinnya sebatas route, sertifikat, DNS, dan script.
 - 3 salinan: bucket replika juga privat (dibuat `cf-setup` tanpa akses publik), key-nya sama
   (`s3/{userId}/{blobId}`), dan penghapusan selalu dikirim ke ketiga bucket.
 

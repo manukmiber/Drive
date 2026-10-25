@@ -37,6 +37,11 @@ function errText(e: unknown): string {
   if (reason === 'S3_TOO_SMALL') return t.s3.tooSmall(formatBytes(Number(e.data?.usedBytes ?? 0)));
   if (reason === 'SAME_PLAN') return t.s3.samePlan;
   if (reason === 'NO_REPLICAS') return t.s3.threeUnavailable;
+  if (reason === 'URL_TAKEN') return t.s3.urlTaken;
+  if (reason === 'URL_INVALID') return t.s3.urlInvalid;
+  if (reason === 'URL_RESERVED') return t.s3.urlReserved;
+  if (reason === 'URL_EXISTS') return t.s3.urlExists;
+  if (reason === 'NO_PLAN') return t.s3.urlNeedsPlan;
   if (e.code === 'VALIDATION' && e.data?.field === 'gb')
     return t.s3.sizeHint(Number(e.data.min), Number(e.data.max));
   return t.errors.generic;

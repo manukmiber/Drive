@@ -37,7 +37,7 @@ import { ops } from './routes/ops';
 import { notifications } from './routes/notifications';
 import { family } from './routes/family';
 import { s3 } from './routes/s3';
-import { handleS3, isS3Host } from './routes/s3-api';
+import { handleS3, resolveS3Host } from './routes/s3-api';
 import { createCtx } from './context';
 import type { AppBindings } from './types';
 import { appPath, basePath } from './lib/paths';
@@ -45,9 +45,10 @@ import { appPath, basePath } from './lib/paths';
 export function createApp() {
   const app = new Hono<AppBindings>();
 
-  // Zeiko S3 has a host of its own and speaks S3, not this app's API (ADR-044).
+  // Zeiko S3 has a host of its own, and own addresses (ADR-048), and speaks S3, not this app's API.
   app.use('*', async (c, next) => {
-    if (!isS3Host(new URL(c.req.url), c.env)) return next();
+    const host = await resolveS3Host(new URL(c.req.url), c.env);
+    if (!host) return next();
     let waitUntil: ((p: Promise<unknown>) => void) | undefined;
     try {
       const exec = c.executionCtx;
@@ -55,7 +56,7 @@ export function createApp() {
     } catch {
       // No execution context (tests): handleS3 awaits instead.
     }
-    return handleS3(c.req.raw, createCtx(c.env), waitUntil);
+    return handleS3(c.req.raw, createCtx(c.env), waitUntil, host.owner);
   });
   app.use('*', userContentGuard, requestContext);
 

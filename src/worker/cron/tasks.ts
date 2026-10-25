@@ -18,6 +18,7 @@ import { runAdsDaily } from '../services/ads';
 import { expireS3Uploads, reconcileS3 } from '../services/s3-objects';
 import { remindS3Renewals, renewS3FromCredit, runS3Dunning } from '../services/s3-billing';
 import { sweepReplication } from '../services/s3-replicas';
+import { refreshPendingUrls, releaseLapsedUrls } from '../services/s3-urls';
 import { cleanupVirusTotal } from '../services/virustotal';
 import { registerCronTask } from '.';
 
@@ -38,6 +39,12 @@ registerCronTask(CRON.nightly, {
 });
 
 // Zeiko S3 plans (ADR-047): one that just ran out renews itself from credit.
+// Own domains waiting for their CNAME (ADR-048).
+registerCronTask(CRON.hourly, {
+  name: 's3_url_refresh',
+  run: async (ctx) => void (await refreshPendingUrls(ctx)),
+});
+
 registerCronTask(CRON.hourly, {
   name: 's3_renew_from_credit',
   async run(ctx) {
@@ -59,6 +66,7 @@ registerCronTask(CRON.nightly, {
       });
     }
     await sweepReplication(ctx);
+    await releaseLapsedUrls(ctx);
   },
 });
 

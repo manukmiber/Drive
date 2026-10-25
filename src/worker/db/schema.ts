@@ -765,6 +765,20 @@ export const s3Usage = sqliteTable(
   (t) => [primaryKey({ columns: [t.userId, t.periodStart] })],
 );
 
+export const s3Urls = sqliteTable('s3_urls', {
+  hostname: text('hostname').primaryKey(),
+  userId: text('user_id').notNull(),
+  kind: text('kind', { enum: ['zeiko', 'custom'] }).notNull(),
+  status: text('status', { enum: ['reserved', 'pending', 'active', 'failed'] }).notNull(),
+  cfId: text('cf_id'),
+  cfRouteId: text('cf_route_id'),
+  recordsJson: text('records_json'),
+  error: text('error'),
+  priceIdr: integer('price_idr').notNull(),
+  createdAt: ms('created_at').notNull(),
+  updatedAt: ms('updated_at').notNull(),
+});
+
 export const vtVerdicts = sqliteTable('vt_verdicts', {
   sha256: text('sha256').primaryKey(),
   verdict: text('verdict', { enum: ['malicious', 'clean', 'unknown'] }).notNull(),

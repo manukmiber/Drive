@@ -198,6 +198,37 @@ export const t = {
     lockedBanner:
       'Zeiko S3 kamu dikunci karena paketnya belum diperpanjang. Perpanjang untuk membukanya lagi.',
     unpaid: 'Paket Zeiko S3 belum diperpanjang, jadi ini belum bisa.',
+    urlTitle: 'Alamat sendiri',
+    urlIntro: (days: number) =>
+      `Endpoint S3 dengan alamatmu sendiri. Sekali bayar dan tetap aktif selama paket diperpanjang; kalau paket tidak dibayar ${days} hari, alamatnya dilepas dan harus dibeli lagi.`,
+    urlZeiko: (price: string) => `Subdomain Zeiko · ${price}`,
+    urlCustom: (price: string) => `Domain sendiri · ${price}`,
+    urlName: 'Nama',
+    urlNameHint: '3–32 huruf kecil, angka, atau tanda hubung.',
+    urlPreview: (host: string) => `Alamatmu: ${host}`,
+    urlHostname: 'Domain',
+    urlHostnameHint: (target: string) =>
+      `Subdomain dari domain milikmu, misalnya s3.tokobudi.com. Setelah membeli, arahkan CNAME-nya ke ${target}.`,
+    urlBuy: (amount: string) => `Beli · ${amount}`,
+    urlBuyTitle: 'Beli alamat Zeiko S3?',
+    urlBuyBody: (host: string, amount: string) =>
+      `${host} seharga ${amount}, sekali bayar. Kalau kreditmu cukup, langsung dibuat tanpa QRIS.`,
+    urlStatus: { active: 'Aktif', pending: 'Menunggu DNS', failed: 'Gagal' } as Record<
+      string,
+      string
+    >,
+    urlDns: 'Tambahkan record ini di DNS domainmu, lalu periksa lagi:',
+    urlCheck: 'Periksa lagi',
+    urlRemove: 'Lepas alamat',
+    urlRemoveTitle: 'Lepas alamat ini?',
+    urlRemoveBody: (host: string) =>
+      `${host} berhenti dipakai dan uangnya tidak dikembalikan. Endpoint bersama tetap bisa dipakai.`,
+    urlRemoved: 'Alamat dilepas',
+    urlTaken: 'Alamat itu sudah dipakai. Coba yang lain.',
+    urlInvalid: 'Alamat itu tidak bisa dipakai.',
+    urlReserved: 'Nama itu dicadangkan Zeiko. Coba nama lain.',
+    urlExists: 'Akunmu sudah punya alamat sendiri. Lepas dulu yang lama.',
+    urlNeedsPlan: 'Butuh paket Zeiko S3 yang aktif.',
     howTo: 'Cara menyambungkan',
     limits:
       'Satu upload biasa paling besar 100 MB; file yang lebih besar diunggah multipart (aws-cli dan rclone melakukannya sendiri). Semua bagian kecuali yang terakhir harus sama besar, minimal 5 MB.',
@@ -457,6 +488,7 @@ export const t = {
       s3_reactivated: 'Paket Zeiko S3 aktif lagi.',
       s3_change_scheduled: 'Paket baru mulai periode berikutnya.',
       s3_change_cancelled: 'Perubahan paket dibatalkan.',
+      s3_url: 'Alamat Zeiko S3 sudah dibuat.',
       downgrade_scheduled: 'Penurunan paket dijadwalkan.',
       downgrade_cancelled: 'Penurunan paket dibatalkan.',
     } as Record<string, string>,

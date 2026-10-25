@@ -34,6 +34,7 @@ import {
 } from '../services/s3';
 import { indexBindings } from '../services/s3-index';
 import { s3PlanView } from '../services/s3-billing';
+import { s3UrlView } from '../services/s3-urls';
 import type { AppBindings } from '../types';
 
 /** Who the audit log says made an operator's change. */
@@ -188,7 +189,11 @@ export const ops = new Hono<AppBindings>()
     const ctx = c.get('ctx');
     const userId = c.req.param('userId');
     const account = await accountView(ctx, userId);
-    return c.json({ account, plan: await s3PlanView(ctx, userId) });
+    return c.json({
+      account,
+      plan: await s3PlanView(ctx, userId),
+      url: await s3UrlView(ctx, userId),
+    });
   })
   .patch(
     '/s3/accounts/:userId',

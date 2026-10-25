@@ -24,7 +24,8 @@ export type NotificationType =
   | 'family_invite'
   | 'account_delete'
   | 's3_reminder'
-  | 's3_dunning';
+  | 's3_dunning'
+  | 's3_url_released';
 
 export function notificationStmt(
   ctx: Ctx,
@@ -117,6 +118,14 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
             : `Perpanjang sebulan lagi sebesar ${formatRupiah(Number(p.amountIdr))} dengan QRIS dari halaman Zeiko S3.`,
         ],
         cta: { label: 'Perpanjang', url: `${app}/s3` },
+      };
+    case 's3_url_released':
+      return {
+        title: 'Alamat Zeiko S3 kamu dilepas',
+        paragraphs: [
+          `${String(p.hostname)} dilepas karena paket Zeiko S3 tidak dibayar. Setelah memperpanjang, alamat sendiri bisa dibeli lagi dari halaman Zeiko S3.`,
+        ],
+        cta: { label: 'Buka Zeiko S3', url: `${app}/s3` },
       };
     case 's3_dunning': {
       const stage = String(p.stage ?? 'grace');
@@ -311,6 +320,7 @@ export const MANDATORY_EMAIL: readonly string[] = [
   'account_delete',
   's3_reminder',
   's3_dunning',
+  's3_url_released',
 ];
 export const PREF_TYPES = [
   'file_rejected',

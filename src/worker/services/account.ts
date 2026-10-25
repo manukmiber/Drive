@@ -104,6 +104,13 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
             userId,
           )
         )[0] ?? null,
+      url:
+        (
+          await q(
+            'SELECT hostname, kind, status, created_at FROM s3_urls WHERE user_id = ?1',
+            userId,
+          )
+        )[0] ?? null,
       egress: await q(
         'SELECT period_start, egress_bytes, billed_blocks FROM s3_usage WHERE user_id = ?1 ORDER BY period_start',
         userId,

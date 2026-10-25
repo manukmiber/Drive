@@ -883,3 +883,37 @@ jadi `0008` diubah langsung.
   (`s3_purge`), hanya bila `dunning_delete_mode = live` dan tidak ada pembayaran yang sedang berjalan. Memperpanjang
   langsung mengembalikan `billing_state`. Email + lonceng `s3_reminder` dan `s3_dunning` wajib.
 - Biaya R2 untuk 3 salinan ±3 × $0,015/GB-bulan (±Rp750–810/GB), jadi harga Rp1.500 masih menutupnya.
+
+## ADR-048 — Alamat Zeiko S3 sendiri: subdomain Zeiko Rp3.000, domain sendiri Rp5.000
+
+**Status:** diterima (pemilik, 2026-10-25). **Konteks:** pemilik: "S3 pakai Url mereka sendiri bayar 5K dan kalau
+S3nya ga dibayar 1 bulan, maka next renewal bayar url lagi", lalu "Kalau misal S3.namapilihanuser.zeiko.biz.id itu
+cuma 3K". Pilihan: keduanya, dan opsional.
+
+**Keputusan:**
+- Tambahan opsional untuk akun yang punya paket aktif (ADR-047), satu alamat per akun, **sekali bayar** lewat checkout
+  (`CheckoutItem { kind: 's3_url', url: { type: 'zeiko', name } | { type: 'custom', hostname } }`), harga di config
+  `s3_url_zeiko_idr` (Rp3.000) dan `s3_url_custom_idr` (Rp5.000).
+  - **Subdomain Zeiko** `s3.<nama>.<S3_SUBDOMAIN_SUFFIX>` (production `zeiko.biz.id`): custom domain Worker lewat API
+    Cloudflare; Cloudflare membuat record DNS dan sertifikat (Advanced Certificate, juga untuk subdomain bertingkat),
+    langsung aktif. Nama 3–32 huruf kecil/angka/tanda hubung; nama layanan Zeiko dan nama yang memuat `zeiko` ditolak
+    (`URL_RESERVED`). Custom domain yang sudah ada tidak pernah diambil alih (PUT Cloudflare akan memindahkannya).
+  - **Domain sendiri** (mis. `s3.tokobudi.com`, minimal tiga label, bukan di zone Zeiko): custom hostname Cloudflare for
+    SaaS + route Worker khusus untuk host itu (bukan `*/*`, karena zone `zeiko.biz.id` juga dipakai layanan lain).
+    Menunggu DNS sampai pemiliknya membuat CNAME ke `S3_CNAME_TARGET` (fallback origin, `custom-s3.zeiko.biz.id`);
+    halaman `/s3` menampilkan record yang harus dibuat, tombol Periksa lagi, dan cron per jam memeriksa sendiri.
+- Alamat sendiri melayani **hanya akun pemiliknya**: path-style, key orang lain `AccessDenied`, bucket orang lain
+  `NoSuchBucket`. Endpoint bersama tetap jalan. Siapa pemilik host dibaca dari `s3_urls` (cache 30 detik per isolate).
+- Pembelian memesan nama dulu (baris `reserved`), baru memanggil Cloudflare, lalu memotong kredit dan mengaktifkan
+  baris dalam satu batch. Gagal di tengah → nama dilepas lagi (dan dihapus di Cloudflare); pesanan yang tertinggal
+  (request mati) dibersihkan cron per jam setelah 10 menit.
+- **Dilepas** kalau paket tidak dibayar `s3_url_release_days` (30) hari setelah periodenya berakhir (cron malam,
+  notifikasi `s3_url_released`, email wajib), kalau pemiliknya melepas sendiri (tanpa refund), atau saat akun S3
+  dihapus. Setelah dilepas, alamat harus dibeli lagi (setelah memperpanjang paket) dan namanya bisa diambil orang lain.
+  Selama paket diperpanjang, alamat tetap dan tidak ditagih lagi.
+- Butuh secret `CF_HOSTNAMES_TOKEN` (pemilik) dan `CF_ACCOUNT_ID`, `CF_ZONE_ID` (`zoneId` di `deploy/{env}.json`),
+  `WORKER_NAME`. Tanpa itu pilihan ini tidak ditampilkan. Adapter `hostnames` dengan mock untuk dev/test.
+
+**Konsekuensi:** Cloudflare for SaaS harus dinyalakan di zone dan fallback origin dibuat (perubahan zone, oleh pemilik).
+Kuota custom hostname dan batas route/custom domain per zone dari Cloudflare berlaku; cek sebelum ramai. Virtual-hosted
+style (`bucket.s3.nama…`) tidak didukung di alamat sendiri.

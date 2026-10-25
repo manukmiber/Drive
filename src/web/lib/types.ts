@@ -122,7 +122,11 @@ export type CheckoutItem =
   | { kind: 'plan' | 'addon' | 'compress'; code: string }
   | { kind: 'renew' }
   | { kind: 's3_plan'; gb: number; replicas: 1 | 3 }
-  | { kind: 's3_renew' };
+  | { kind: 's3_renew' }
+  | {
+      kind: 's3_url';
+      url: { type: 'zeiko'; name: string } | { type: 'custom'; hostname: string };
+    };
 
 export interface Topup {
   paymentId: string;

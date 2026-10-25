@@ -20,6 +20,7 @@ import { CloudflareMediaProcessor, MockMediaProcessor, type MediaProcessor } fro
 import { ContainerArchiver, MockArchiver, NoArchiver, type Archiver } from './archiver';
 import { GraphqlR2Metrics, NoR2Metrics, type R2Metrics } from './r2-metrics';
 import { HttpVirusTotal, MockVirusTotal, type VirusTotal } from './virustotal';
+import { CloudflareHostnames, MockHostnames, type Hostnames } from './hostnames';
 
 export interface Adapters {
   email: EmailSender;
@@ -32,6 +33,8 @@ export interface Adapters {
   r2metrics: R2Metrics;
   /** Null: VirusTotal is not set up here (ADR-046). */
   virustotal: VirusTotal | null;
+  /** Null: no own S3 addresses here (ADR-048). */
+  hostnames: Hostnames | null;
 }
 
 /** Zeiko Accounts is set up: the door's address and the app token. */
@@ -87,5 +90,27 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
     : env.ADAPTER_VIRUSTOTAL === 'mock' && env.APP_ENV !== 'production'
       ? new MockVirusTotal()
       : null;
-  return { email, payment, scanner, csam, media, archiver, accounts, r2metrics, virustotal };
+  const hostnames: Hostnames | null =
+    env.CF_HOSTNAMES_TOKEN && env.CF_ACCOUNT_ID && env.CF_ZONE_ID && env.WORKER_NAME
+      ? new CloudflareHostnames(
+          env.CF_HOSTNAMES_TOKEN,
+          env.CF_ACCOUNT_ID,
+          env.CF_ZONE_ID,
+          env.WORKER_NAME,
+        )
+      : env.ADAPTER_HOSTNAMES === 'mock' && env.APP_ENV !== 'production'
+        ? new MockHostnames()
+        : null;
+  return {
+    email,
+    payment,
+    scanner,
+    csam,
+    media,
+    archiver,
+    accounts,
+    r2metrics,
+    virustotal,
+    hostnames,
+  };
 }

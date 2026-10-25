@@ -85,6 +85,7 @@ Cloudflare tidak mencakup `a.b.zeiko.biz.id`). Setelah alamat berubah, ganti jug
 | `CF_ANALYTICS_TOKEN`, `CF_ACCOUNT_ID` | untuk tab R2 storage di relay (ADR-037): token API Cloudflare dengan izin **Account Analytics: Read**. Isi di kolom "R2 analytics token" pada Setup yang sama; relay memasangnya ke Worker ini bersama account id, tanpa menyimpannya. Tanpa keduanya, tab itu memakai hitungan Drive sendiri dan operasi A/B tidak diketahui. |
 
 | `S3_KEYS_ENC_KEY` | otomatis (acak, `cf-setup`): menyegel secret key Zeiko S3 (ADR-044). Mengganti nilainya membuat **semua** key S3 tidak bisa dipakai. |
+| `CF_HOSTNAMES_TOKEN` | kamu (ADR-048): token API dengan *Zone → Workers Routes Edit, SSL and Certificates Edit, DNS Edit* untuk `zeiko.biz.id` dan *Account → Workers Scripts Edit*. Butuh juga `CF_ACCOUNT_ID` dan `"zoneId"` di `deploy/<env>.json`. Tanpa ini alamat S3 sendiri tidak ditawarkan. |
 | `VIRUSTOTAL_API_KEY` | kamu (ADR-046): `npx wrangler secret put VIRUSTOTAL_API_KEY --env <env>`. Tanpa secret ini pemindaian berjalan tanpa VirusTotal. Key gratis: 4 request/menit, 500/hari; atur di config `virustotal`. |
 
 Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai lamanya dipindah ke
@@ -102,6 +103,14 @@ Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai 
 - **Paket** (ADR-047): dibayar di awal di `/s3`, minimal 3 GB. Harga di config `s3_price_idr_per_gb_month` (1
   salinan), `s3_price_idr_per_gb_month_3x` (3 salinan), `s3_min_gb`, `s3_max_gb`, `s3_egress_*`, dan `s3_dunning`;
   penghapusan karena tidak diperpanjang ikut `dunning_delete_mode` (default `dry_run`).
+- **Alamat sendiri** (ADR-048, opsional; semua langkah di zone oleh pemilik):
+  1. subdomain Zeiko (`s3.<nama>.zeiko.biz.id`, Rp3.000): cukup `CF_HOSTNAMES_TOKEN`, `CF_ACCOUNT_ID`, dan
+     `"zoneId": "<zone id zeiko.biz.id>"` di `deploy/<env>.json`, lalu `node scripts/gen-wrangler.mjs > wrangler.jsonc`
+     dan deploy. Worker membuat custom domain-nya sendiri.
+  2. domain sendiri (Rp5.000), tambahan: nyalakan **Cloudflare for SaaS** di zone `zeiko.biz.id`, buat record
+     `custom-s3.zeiko.biz.id AAAA 100::` (proxied), jadikan *fallback origin*. Jangan pasang route `*/*`: Worker
+     membuat route per domain sendiri. Ganti target lewat `"s3CnameTarget"` di `deploy/<env>.json`.
+  Harga di config `s3_url_zeiko_idr`, `s3_url_custom_idr`, `s3_url_release_days`.
 - Menyalakan akun tanpa paket (gratis, diberi operator): `POST /api/ops/s3/accounts {"zeikoId" | "email",
   "limitBytes", "reason"}` dengan bearer ops (tombol relay nanti). Orangnya harus sudah pernah masuk Drive.
 - **Index sendiri per akun** (opsional, butuh kuota D1: Free 10 database per akun Cloudflare):

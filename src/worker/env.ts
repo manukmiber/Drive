@@ -45,6 +45,15 @@ export interface Env {
   CF_ACCOUNT_ID?: string;
   /** Zeiko S3's own address, e.g. https://s3.zeiko.biz.id (ADR-044). Unset = no S3 API. */
   S3_ORIGIN?: string;
+  /** Own S3 addresses (ADR-048): s3.<name>.<S3_SUBDOMAIN_SUFFIX>, e.g. suffix zeiko.biz.id. */
+  S3_SUBDOMAIN_SUFFIX?: string;
+  /** What a person's own domain CNAMEs to: the zone's Cloudflare for SaaS fallback origin. */
+  S3_CNAME_TARGET?: string;
+  /** The zone the addresses live in, and this Worker's name (custom domains and routes). */
+  CF_ZONE_ID?: string;
+  WORKER_NAME?: string;
+  /** Own S3 addresses without Cloudflare: `mock` (dev, tests). */
+  ADAPTER_HOSTNAMES?: 'mock';
 
   // ── secrets (wrangler secret / .dev.vars) ──
   BETTER_AUTH_SECRET: string;
@@ -69,6 +78,11 @@ export interface Env {
   S3_KEYS_ENC_KEY?: string;
   /** VirusTotal API key (ADR-046), set by the owner. Unset = no VirusTotal. */
   VIRUSTOTAL_API_KEY?: string;
+  /**
+   * Zeiko S3 addresses of their own (ADR-048): an API token with Workers Routes Write, DNS Edit and
+   * SSL and Certificates Edit on the zone, and Workers Scripts Edit on the account. Unset = none.
+   */
+  CF_HOSTNAMES_TOKEN?: string;
 
   // ── bindings ──
   DB: D1Database;

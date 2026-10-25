@@ -1,5 +1,5 @@
-// /api/s3: the signed-in person's own Zeiko S3 page (ADR-044): endpoint, storage, access keys and
-// buckets. Turning Zeiko S3 on and setting its storage is the operator's (ops API, relay).
+// /api/s3: the signed-in person's own Zeiko S3 page (ADR-044): endpoint, storage, plan, own address,
+// access keys and buckets. Plans and addresses are bought through /api/billing/checkout (ADR-047/048).
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { AppError } from '../lib/errors';
@@ -16,6 +16,7 @@ import {
   setBucketPublic,
 } from '../services/s3';
 import { deleteBucket } from '../services/s3-objects';
+import { checkS3Url, releaseS3Url } from '../services/s3-urls';
 import type { Ctx } from '../context';
 import type { AppBindings } from '../types';
 
@@ -110,6 +111,14 @@ export const s3 = new Hono<AppBindings>()
     await s3Call(() =>
       setBucketPublic(ctx, userId, c.req.param('name'), c.req.valid('json').public),
     );
+    return c.body(null, 204);
+  })
+  // The account's own address (ADR-048): bought through /api/billing/checkout.
+  .post('/url/check', async (c) =>
+    c.json({ url: await checkS3Url(c.get('ctx'), c.get('user')!.id) }),
+  )
+  .delete('/url', async (c) => {
+    await releaseS3Url(c.get('ctx'), c.get('user')!.id, 'removed');
     return c.body(null, 204);
   })
   .delete('/buckets/:name', async (c) => {

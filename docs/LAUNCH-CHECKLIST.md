@@ -16,7 +16,10 @@ Centang sebelum production dibuka untuk umum (SPEC §14.6).
 - [ ] Hive dan Thorn (Kebijakan Privasi §4, rencana pemilik): belum ada perjanjian/kode; teksnya menyebut keduanya.
 - [x] Zeiko S3: paket dibayar di awal, minimal 3 GB, Rp500/GB (1 salinan) atau Rp1.500/GB (3 salinan sungguhan) per
       bulan, egress gratis 500 GB lalu Rp5.000/500 GB ditagih saat perpanjangan (ADR-047).
+- [x] Zeiko S3: alamat sendiri, subdomain Zeiko Rp3.000 atau domain sendiri Rp5.000, sekali bayar (ADR-048).
 - [ ] Zeiko S3: DNS `s3.zeiko.biz.id`, bucket replika lewat `cf-setup`, tombol relay, dan harga S3 di website.
+- [ ] Zeiko S3 alamat sendiri: `CF_HOSTNAMES_TOKEN`, `zoneId`, Cloudflare for SaaS + fallback origin
+      `custom-s3.zeiko.biz.id` (pemilik).
 - [ ] Prosedur takedown: siapa yang piket untuk SLA 4 jam (CSAM/terorisme) dan 24 jam (lainnya).
 - [ ] Runbook kebocoran data: siapa memutuskan, template email pemberitahuan 3×24 jam.
 - [ ] Perjanjian vendor deteksi CSAM (Hive/Thorn Safer/PhotoDNA) bila ingin mengaktifkan `features.csam_scan`.

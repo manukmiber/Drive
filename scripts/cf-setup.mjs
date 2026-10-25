@@ -50,6 +50,9 @@ const OWNER_SECRETS = [
   'TURNSTILE_SECRET_KEY',
   // The owner's VirusTotal key (ADR-046); without it the scan simply skips VirusTotal.
   'VIRUSTOTAL_API_KEY',
+  // Own Zeiko S3 addresses (ADR-048): Workers Routes Write, DNS Edit, SSL and Certificates Edit on
+  // the zone, Workers Scripts Edit on the account. Also needs CF_ACCOUNT_ID and deploy `zoneId`.
+  'CF_HOSTNAMES_TOKEN',
 ];
 
 function wrangler(argv, { json = false, allowFail = false, input } = {}) {

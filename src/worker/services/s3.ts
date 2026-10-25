@@ -10,6 +10,7 @@ import { randomBase62, ulid } from '../lib/ids';
 import { S3Error } from '../lib/s3-errors';
 import { boundIndex, ensureIndex, INDEX_BINDING_RE, indexDb } from './s3-index';
 import { s3PlanView, type S3BillingState } from './s3-billing';
+import { s3UrlView, urlOptions } from './s3-urls';
 
 export type S3AccountStatus = 'active' | 'suspended' | 'deleting';
 
@@ -640,6 +641,8 @@ export async function s3Overview(ctx: Ctx, userId: string) {
           }
         : null,
     plan: configured ? await s3PlanView(ctx, userId) : null,
+    url: enabled ? await s3UrlView(ctx, userId) : null,
+    urlOptions: configured ? urlOptions(ctx, await ctx.config()) : null,
     keys: enabled ? await listKeys(ctx, userId) : [],
     buckets: enabled
       ? (await listBuckets(ctx, userId)).map((b) => ({

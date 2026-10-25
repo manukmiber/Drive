@@ -47,7 +47,9 @@ API (`/api/ops/s3/*`); key dan bucket di halaman `/s3`. Index objek per akun di 
 Indonesia kata per kata, jangan diubah tanpa pemilik; kontak di `contacts.ts`. **Paket S3 dibayar di awal**
 (ADR-047, `services/s3-billing.ts`): minimal 3 GB, 1 salinan Rp500/GB atau 3 salinan Rp1.500/GB per bulan, egress
 lebih ditagih saat perpanjangan. 3 salinan = salinan sungguhan di `S3_REPLICA_A/B` (`services/s3-replicas.ts`);
-jangan pernah menjual atau menyebut jumlah salinan yang tidak benar-benar disimpan.
+jangan pernah menjual atau menyebut jumlah salinan yang tidak benar-benar disimpan. **Alamat sendiri** (ADR-048,
+`services/s3-urls.ts`, adapter `hostnames`): `s3.<nama>.zeiko.biz.id` Rp3.000 atau domain sendiri Rp5.000, sekali bayar,
+hanya melayani akun pemiliknya, dilepas kalau paket tidak dibayar 30 hari. Di dev: `s3.<nama>.localhost:8790`.
 
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.
