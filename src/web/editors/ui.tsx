@@ -2,7 +2,8 @@
 // and the save dialog (to Drive as a new file or in place of the original, or to this device).
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
-import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
+import { useEffect, useState, type ComponentType, type MouseEvent, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { formatBytes } from '../../shared/format';
 import { Button } from '../components/Button';
 import { Dialog } from '../components/ui/Dialog';
@@ -93,8 +94,14 @@ export function EditorFrame({
   const close = () => (dirty ? setAsking(true) : onClose());
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      // An editor that used the key itself (closing its search box, leaving a cell) says so.
-      if (e.key !== 'Escape' || e.defaultPrevented || (e.target as HTMLElement).closest('dialog'))
+      // An editor that used the key itself (closing its search box, leaving a cell) says so, and
+      // an open menu or dialog takes it first.
+      if (
+        e.key !== 'Escape' ||
+        e.defaultPrevented ||
+        (e.target as HTMLElement).closest('dialog') ||
+        document.querySelector('[role="menu"], dialog[open]')
+      )
         return;
       if (dirty) setAsking(true);
       else onClose();
@@ -102,7 +109,9 @@ export function EditorFrame({
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [dirty, onClose]);
-  return (
+  // On the page itself, so an editor opened from a part of the page that is hidden (the sidebar on
+  // a phone) still shows.
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -139,7 +148,8 @@ export function EditorFrame({
       >
         <p>{t.editor.closeBody}</p>
       </Dialog>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -234,7 +244,7 @@ export function BarButton({
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
-  onClick: () => void;
+  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
   /** A switch (wrap lines, preview): shown pressed when on. */
   active?: boolean;
   disabled?: boolean;

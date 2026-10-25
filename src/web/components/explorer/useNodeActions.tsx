@@ -9,6 +9,7 @@ import {
   Eye,
   FileCode2,
   FilePen,
+  FileType2,
   FileImage,
   FolderInput,
   FolderOpen,
@@ -39,6 +40,7 @@ import { isCompressible } from '../../lib/compress';
 import { EditorHost } from '../../editors/EditorHost';
 import {
   editable,
+  isDoc,
   isImage,
   isPdf,
   isText,
@@ -258,6 +260,12 @@ export function useNodeActions(items: NodeDto[]) {
         label: t.editor.imagesToPdf,
         icon: FileImage,
         onSelect: () => setEditing({ tool: 'pdf', nodes: files, files: [], fromImages: true }),
+      });
+    if (single && all(isDoc))
+      list.push({
+        label: t.editor.editDoc,
+        icon: FileType2,
+        onSelect: () => setEditing({ tool: 'doc', nodes: files, files: [] }),
       });
     if (single && all(isText) && toolFor(single.mime, single.name) === 'text')
       list.push({

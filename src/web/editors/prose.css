@@ -110,3 +110,29 @@
   color: #111827;
   padding: 0 0.1em;
 }
+.z-prose :is(td, th, li, blockquote) > :last-child {
+  margin-bottom: 0;
+}
+/* The document editor: the page itself shows where the text is. */
+.z-prose.ProseMirror:focus-visible {
+  outline: none;
+}
+.z-prose.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--fg-muted);
+  pointer-events: none;
+}
+.z-prose.ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid var(--color-brand-500);
+}
+.z-prose.ProseMirror .selectedCell {
+  background: color-mix(in srgb, var(--color-brand-500) 18%, transparent);
+}
+.z-prose.ProseMirror .tableWrapper {
+  overflow-x: auto;
+}
+.z-prose.ProseMirror .tableWrapper table {
+  display: table;
+}

@@ -101,7 +101,7 @@ export const searchNodes = (q: string, type?: string) =>
 export const listStarred = () => api<{ items: NodeDto[] }>('/api/starred');
 export const listRecent = () => api<{ items: NodeDto[] }>('/api/recent');
 
-/** Browser-rendered preview is possible for these (decided server-side too). */
+/** Browser-rendered preview is possible for these (decided server-side too; .docx in the app). */
 export function canPreview(n: NodeDto): boolean {
   if (n.kind !== 'file' || n.status === 'rejected' || n.status === 'uploading') return false;
   const m = n.mime ?? '';
@@ -109,7 +109,7 @@ export function canPreview(n: NodeDto): boolean {
     /^(image\/(jpeg|png|webp|avif|gif|bmp|heic)|video\/|audio\/|text\/|application\/(pdf|json|xml))/.test(
       m,
     ) ||
-    /\.(pdf|txt|md|csv|json|xml|svg|html?|css|js|ts|py|go|rs|java|c|cpp|sh|ya?ml|toml|sql|log)$/i.test(
+    /\.(pdf|docx|txt|md|csv|json|xml|svg|html?|css|js|ts|py|go|rs|java|c|cpp|sh|ya?ml|toml|sql|log)$/i.test(
       n.name,
     )
   );

@@ -6,7 +6,8 @@ import { formatBytes } from '../../../shared/format';
 import { t } from '../../lib/i18n';
 import { downloadFile, previewInfo, type NodeDto } from '../../lib/files';
 import { FileIcon } from '../FileIcon';
-import { editable, toolFor } from '../../editors/files';
+import { editable, isDoc, maxBytes, toolFor } from '../../editors/files';
+import { useConfig } from '../../editors/ui';
 
 // pdf.js shows PDFs (SPEC §8.4; Chrome on Android has no PDF viewer for iframes). It loads only for a
 // PDF, and the browser's own viewer is the fallback.
@@ -25,6 +26,39 @@ function PdfFrame({ url, title }: { url: string; title: string }) {
     <Suspense fallback={<p className="text-sm text-white/70">{t.common.loading}</p>}>
       <PdfPreview url={url} onFail={fail} />
     </Suspense>
+  );
+}
+
+// A .docx is drawn by docx-preview, in the app (ADR-051); a file too big for that can be downloaded.
+const DocxPreview = lazy(() =>
+  import('../../editors/doc/DocxPreview').then((m) => ({ default: m.DocxPreview })),
+);
+
+function DocxFrame({ url, node }: { url: string; node: NodeDto }) {
+  const [failed, setFailed] = useState(false);
+  const fail = useCallback(() => setFailed(true), []);
+  const max = maxBytes(useConfig(), 'doc');
+  if (failed || !max || node.size > max) return <NoPreview node={node} />;
+  return (
+    <Suspense fallback={<p className="text-sm text-white/70">{t.common.loading}</p>}>
+      <DocxPreview url={url} onFail={fail} />
+    </Suspense>
+  );
+}
+
+function NoPreview({ node }: { node: NodeDto }) {
+  return (
+    <div className="flex flex-col items-center gap-4 text-center">
+      <FileIcon node={node} className="h-16 w-16" />
+      <p className="text-sm text-white/70">{t.files.noPreview}</p>
+      <button
+        type="button"
+        onClick={() => void downloadFile(node.id)}
+        className="rounded-full bg-white px-5 py-2 text-sm font-medium text-gray-900"
+      >
+        {t.common.download}
+      </button>
+    </div>
   );
 }
 
@@ -139,19 +173,13 @@ export function Preview({
         )}
         {d && d.kind === 'pdf' && <PdfFrame key={d.url} url={d.url} title={node.name} />}
         {d && d.kind === 'text' && <TextView url={d.url} />}
-        {d && !d.kind && (
-          <div className="flex flex-col items-center gap-4 text-center">
-            <FileIcon node={node} className="h-16 w-16" />
-            <p className="text-sm text-white/70">{t.files.noPreview}</p>
-            <button
-              type="button"
-              onClick={() => void downloadFile(node.id)}
-              className="rounded-full bg-white px-5 py-2 text-sm font-medium text-gray-900"
-            >
-              {t.common.download}
-            </button>
-          </div>
-        )}
+        {d &&
+          !d.kind &&
+          (isDoc(node.mime, node.name) ? (
+            <DocxFrame key={d.url} url={d.url} node={node} />
+          ) : (
+            <NoPreview node={node} />
+          ))}
         {next !== null && (
           <button
             type="button"

@@ -1022,8 +1022,8 @@ spreadsheet, docs, dll? ambil dari github boleh kok gausah bikin dari awal".
   - `.docx` dibuka dengan `mammoth` (BSD-2-Clause) menjadi HTML yang dibersihkan DOMPurify. Tata letak halaman,
     header/footer, komentar, dan lacak perubahan tidak ikut. Editor menyebutkannya saat file dibuka, dan "ganti asli"
     tetap mengirim yang lama ke Sampah.
-  - Disimpan sebagai `.docx` (`docx`, MIT; pengubah dari dokumen TipTap kita tulis sendiri), Markdown
-    (`@tiptap/markdown`), atau HTML.
+  - Disimpan sebagai `.docx` (`docx`, MIT; HTML dari TipTap diubah oleh `docx/html` milik library itu sendiri),
+    Markdown (`@tiptap/markdown`), atau HTML.
   - Pratinjau `.docx` memakai `docx-preview` (Apache-2.0), dibersihkan DOMPurify. Tautan hanya http(s)/mailto, dan
     CSP app tetap menolak skrip inline.
 - **Spreadsheet** (`.xlsx`, `.csv`, `.tsv`, spreadsheet baru): FortuneSheet (MIT), dengan `@corbe30/fortune-excel`

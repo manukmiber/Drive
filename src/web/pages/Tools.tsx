@@ -1,6 +1,6 @@
 // /alat — the editors for files from this device (ADR-050, ADR-051), or a new empty file. Drive
 // files open in the same editors from their ⋮ menu or the preview.
-import { Clapperboard, FileCode2, FileImage, FilePen, ImageIcon } from 'lucide-react';
+import { Clapperboard, FileCode2, FileImage, FilePen, FileType2, ImageIcon } from 'lucide-react';
 import { useRef, useState, type ComponentType } from 'react';
 import { formatBytes } from '../../shared/format';
 import { Button } from '../components/Button';
@@ -60,6 +60,16 @@ const CARDS: Card[] = [
     accept: 'image/*',
     multiple: true,
     fromImages: true,
+  },
+  {
+    id: 'doc',
+    tool: 'doc',
+    icon: FileType2,
+    title: t.editor.doc,
+    body: t.editor.docDesc,
+    accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    multiple: false,
+    blank: t.editor.untitledDoc,
   },
   {
     id: 'text',

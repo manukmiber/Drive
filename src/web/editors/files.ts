@@ -7,7 +7,7 @@ import { nodeInfo, previewInfo, type NodeDto } from '../lib/files';
 import type { Catalog, Me } from '../lib/types';
 import { uploads } from '../upload/useUploads';
 
-export type Tool = 'photo' | 'video' | 'pdf' | 'text';
+export type Tool = 'photo' | 'video' | 'pdf' | 'text' | 'doc';
 
 /** What an editor opens: Drive files, files from this device, or both. */
 export interface EditRequest {
@@ -48,6 +48,7 @@ export const isVideo = (mime: string | null, name: string) =>
   (mime ?? '').startsWith('video/') || VIDEO_EXT.test(name);
 export const isPdf = (mime: string | null, name: string) =>
   mime === 'application/pdf' || /\.pdf$/i.test(name);
+export const isDoc = (_mime: string | null, name: string) => /\.docx$/i.test(name);
 export const isText = (mime: string | null, name: string) =>
   TEXT_EXT.has(extOf(name)) ||
   /^text\//.test(mime ?? '') ||
@@ -61,6 +62,7 @@ export function toolFor(mime: string | null, name: string): Tool | null {
   if (isPdf(mime, name)) return 'pdf';
   if (isVideo(mime, name)) return 'video';
   if (isImage(mime, name)) return 'photo';
+  if (isDoc(mime, name)) return 'doc';
   if (isText(mime, name)) return 'text';
   return null;
 }
@@ -72,6 +74,7 @@ export function maxBytes(c: Catalog['config'] | undefined, tool: Tool): number {
     video: c.editor_video_max_bytes,
     pdf: c.editor_pdf_max_bytes,
     text: c.editor_text_max_bytes,
+    doc: c.editor_doc_max_bytes,
   };
   return max[tool];
 }

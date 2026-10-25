@@ -162,6 +162,10 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Teks & kode: CodeMirror 6, bahasa dari nama file, cari & ganti, bungkus baris, pratinjau Markdown (dibersihkan
   DOMPurify), UTF-8 saja dengan BOM/CRLF dipertahankan. Baru → File teks dan "Buat file kosong" di `/alat`; simpan
   berikutnya langsung menawarkan "ganti" file yang sama. Dites di Chrome (dev), terang/gelap, Indonesia/Inggris.
-- [ ] Dokumen (.docx, TipTap) + pratinjau .docx.
+- [x] Dokumen: TipTap (judul, tebal/miring/garis bawah/coret, stabilo, perataan, daftar, daftar centang, kutipan,
+  tautan, gambar, tabel dengan baris/kolom/gabung sel). Buka `.docx` lewat mammoth (catatan bahwa huruf, warna,
+  perataan, tata letak tidak ikut), simpan `.docx` (docx/html), Markdown, atau HTML. Baru → Dokumen. Pratinjau `.docx`
+  pakai docx-preview, dibersihkan DOMPurify, halaman dikecilkan agar muat di HP. Dites di Chrome (dev): buka, ubah,
+  ganti asli, simpan Markdown, dokumen baru, terang/gelap, HP/desktop.
 - [ ] Spreadsheet (.xlsx/.csv, FortuneSheet).
 - [ ] ZIP: lihat isi, bongkar ke Drive.
