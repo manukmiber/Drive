@@ -135,6 +135,18 @@ console.log(`✓ KV ${kvTitle} ${state.kvId ?? '(dibuat saat run)'}`);
 const bucket = `zeiko-${env}`;
 const r2 = wrangler(['r2', 'bucket', 'create', bucket], { allowFail: true });
 console.log(`✓ R2 ${bucket}${/already exists/i.test(r2) ? ' (sudah ada)' : ''}`);
+// Zeiko S3's 3-copy plans (ADR-047): two more private buckets, placed in other regions.
+for (const [suffix, location] of [
+  ['a', 'weur'],
+  ['b', 'wnam'],
+]) {
+  const name = `zeiko-s3-replica-${suffix}-${env}`;
+  const out = wrangler(['r2', 'bucket', 'create', name, '--location', location], {
+    allowFail: true,
+  });
+  console.log(`✓ R2 ${name} (${location})${/already exists/i.test(out) ? ' (sudah ada)' : ''}`);
+}
+state.s3Replicas = true;
 
 // 4. Queues
 for (const q of QUEUES) {

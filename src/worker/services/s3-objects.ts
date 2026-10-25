@@ -23,6 +23,7 @@ import { indexDb } from './s3-index';
 import { notify } from './notify';
 import type { ScanCarry } from '../queues/messages';
 import { afterVirusTotal } from './scan';
+import { deleteReplicas, replicateObject } from './s3-replicas';
 
 export const MAX_KEY_BYTES = 1024;
 /** One PUT or CopyObject (Amazon's limit too; bigger objects are multipart). */
@@ -180,8 +181,9 @@ async function replaceRow(
 }
 
 async function dropBlob(ctx: Ctx, userId: string, blobId: string): Promise<void> {
-  await ctx.env.BUCKET.delete(s3BlobKey(userId, blobId)).catch((e: unknown) =>
-    log.warn('s3_blob_delete_failed', { blobId, message: String(e) }),
+  const key = s3BlobKey(userId, blobId);
+  await Promise.all([ctx.env.BUCKET.delete(key), deleteReplicas(ctx.env, [key])]).catch(
+    (e: unknown) => log.warn('s3_blob_delete_failed', { blobId, message: String(e) }),
   );
 }
 
@@ -289,7 +291,8 @@ export async function deleteObjects(
   const gone = results.flatMap((r) => r.results as Array<{ blob_id: string; size: number }>);
   if (!gone.length) return;
   await commitBytes(ctx, account.userId, 0, -gone.reduce((n, g) => n + g.size, 0));
-  await ctx.env.BUCKET.delete(gone.map((g) => s3BlobKey(account.userId, g.blob_id))).catch(
+  const r2Keys = gone.map((g) => s3BlobKey(account.userId, g.blob_id));
+  await Promise.all([ctx.env.BUCKET.delete(r2Keys), deleteReplicas(ctx.env, r2Keys)]).catch(
     (e: unknown) => log.warn('s3_blob_delete_failed', { count: gone.length, message: String(e) }),
   );
 }
@@ -1028,7 +1031,9 @@ export async function purgeS3Account(ctx: Ctx, userId: string, batches = 8): Pro
       .bind(userId)
       .all<{ bucket: string; key: string; blob_id: string }>();
     if (!results.length) break;
-    await ctx.env.BUCKET.delete(results.map((r) => s3BlobKey(userId, r.blob_id)));
+    const keys = results.map((r) => s3BlobKey(userId, r.blob_id));
+    await ctx.env.BUCKET.delete(keys);
+    await deleteReplicas(ctx.env, keys);
     await db.batch(
       results.map((r) =>
         db
@@ -1051,6 +1056,8 @@ export async function purgeS3Account(ctx: Ctx, userId: string, batches = 8): Pro
   if (left) return false;
   await DB.batch([
     DB.prepare(`DELETE FROM s3_buckets WHERE user_id = ?1`).bind(userId),
+    DB.prepare(`DELETE FROM s3_subscriptions WHERE user_id = ?1`).bind(userId),
+    DB.prepare(`DELETE FROM s3_usage WHERE user_id = ?1`).bind(userId),
     DB.prepare(`DELETE FROM s3_accounts WHERE user_id = ?1`).bind(userId),
   ]);
   return true;
@@ -1144,6 +1151,8 @@ export async function processS3Scan(
       .prepare(`UPDATE s3_objects SET scan_status = ?5, sha256 = ?6 WHERE ${same}`)
       .bind(msg.bucket, msg.key, msg.userId, msg.blobId, status, result.sha256)
       .run();
+    // Passed: a 3-copy plan's other two copies (ADR-047).
+    await replicateObject(ctx, account, row);
     return status;
   }
   const gone = await db

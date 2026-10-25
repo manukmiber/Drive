@@ -39,14 +39,15 @@ akun kalau pintu bilang orang lain (`src/web/lib/door-sync.ts`). Login dari Driv
 
 **Zeiko S3** (ADR-044) ada di Worker yang sama, di host `S3_ORIGIN` (dev `http://s3.localhost:8790`,
 production `https://s3.zeiko.biz.id`): API S3 asli (SigV4), `routes/s3-api.ts` + `services/s3*.ts`. Akun S3 =
-user Drive + baris `s3_accounts` yang dinyalakan operator lewat ops API (`/api/ops/s3/*`); key dan bucket di
-halaman `/s3`. Index objek per akun di D1 sendiri (`S3_DB_*`, daftar di `deploy/{env}.json` → `s3Indexes`), atau
-di D1 utama kalau belum ada; tabelnya dibuat `services/s3-index.ts`, bukan `migrations/`. Coba lokal:
-`curl http://s3.localhost:8790/` atau `aws --endpoint-url http://s3.localhost:8790 s3 ls` (key dari `/s3`
-setelah akun dinyalakan lewat ops API). ToS dan Kebijakan Privasi pemilik ada di `src/web/legal/` (ADR-045):
-teks Indonesia kata per kata, jangan diubah tanpa pemilik; kontak di `contacts.ts`. S3 **pascabayar** (ADR-047):
-`services/s3-billing.ts` (sampel per jam, tagihan tanggal 1, checkout `s3_bills`, menunggak → baca saja → kunci).
-Hanya ada satu salinan R2 per objek: jangan menjual atau menyebut "replikasi 3x" tanpa salinan sungguhan.
+user Drive + baris `s3_accounts`, dibuat saat membeli paket di `/s3` (ADR-047) atau dinyalakan operator lewat ops
+API (`/api/ops/s3/*`); key dan bucket di halaman `/s3`. Index objek per akun di D1 sendiri (`S3_DB_*`, daftar di
+`deploy/{env}.json` → `s3Indexes`), atau di D1 utama kalau belum ada; tabelnya dibuat `services/s3-index.ts`, bukan
+`migrations/`. Coba lokal: `curl http://s3.localhost:8790/` atau `aws --endpoint-url http://s3.localhost:8790 s3 ls`
+(key dari `/s3` setelah membeli paket). ToS dan Kebijakan Privasi pemilik ada di `src/web/legal/` (ADR-045): teks
+Indonesia kata per kata, jangan diubah tanpa pemilik; kontak di `contacts.ts`. **Paket S3 dibayar di awal**
+(ADR-047, `services/s3-billing.ts`): minimal 3 GB, 1 salinan Rp500/GB atau 3 salinan Rp1.500/GB per bulan, egress
+lebih ditagih saat perpanjangan. 3 salinan = salinan sungguhan di `S3_REPLICA_A/B` (`services/s3-replicas.ts`);
+jangan pernah menjual atau menyebut jumlah salinan yang tidak benar-benar disimpan.
 
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.

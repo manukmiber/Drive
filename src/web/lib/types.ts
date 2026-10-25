@@ -121,7 +121,8 @@ export interface BillingSummary {
 export type CheckoutItem =
   | { kind: 'plan' | 'addon' | 'compress'; code: string }
   | { kind: 'renew' }
-  | { kind: 's3_bills'; billIds: string[] };
+  | { kind: 's3_plan'; gb: number; replicas: 1 | 3 }
+  | { kind: 's3_renew' };
 
 export interface Topup {
   paymentId: string;

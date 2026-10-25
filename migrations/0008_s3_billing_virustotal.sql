@@ -1,40 +1,37 @@
--- Zeiko S3 is billed after the month from what was used (ADR-047), and new files of risky types are
--- checked with VirusTotal (ADR-046).
+-- Zeiko S3 is paid upfront per month for a chosen size, with 1 or 3 copies (ADR-047), and new files
+-- of risky types are checked with VirusTotal (ADR-046).
 
--- Unpaid bills move an account to read-only, then locked (the dunning cycle); `status` stays the
--- operator's switch.
+-- A plan not renewed moves the account to read-only, then locked (the dunning cycle); `status`
+-- stays the operator's switch.
 ALTER TABLE s3_accounts ADD COLUMN billing_state TEXT NOT NULL DEFAULT 'ok';  -- ok | readonly | locked
 
--- What an account used in one calendar month (WIB): stored bytes sampled every hour, bytes served.
-CREATE TABLE s3_usage (
-  user_id       TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  period        TEXT NOT NULL,                       -- YYYY-MM
-  gib_hours     REAL NOT NULL DEFAULT 0,
-  egress_bytes  INTEGER NOT NULL DEFAULT 0,
-  last_hour     INTEGER NOT NULL DEFAULT 0,          -- hours since the epoch of the last sample
-  updated_at    INTEGER NOT NULL,
-  PRIMARY KEY (user_id, period)
-) WITHOUT ROWID;
-
-CREATE TABLE s3_bills (
-  id             TEXT PRIMARY KEY,
-  user_id        TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  period         TEXT NOT NULL,
-  gib_months     REAL NOT NULL,
-  egress_bytes   INTEGER NOT NULL,
-  lines_json     TEXT NOT NULL,
-  subtotal_idr   INTEGER NOT NULL,
-  total_idr      INTEGER NOT NULL,                   -- tax included
-  status         TEXT NOT NULL,                      -- open | paid | carried | waived
-  due_at         INTEGER,
-  carried_into   TEXT,                               -- the bill that took this small amount over
-  invoice_id     TEXT,
-  paid_at        INTEGER,
-  waived_reason  TEXT,
+-- What a person bought: `gb` GiB with `replicas` copies for [period_start, period_end). A smaller
+-- plan waits in next_* until the next period. No row: storage granted by the operator.
+CREATE TABLE s3_subscriptions (
+  user_id        TEXT PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+  gb             INTEGER NOT NULL,
+  replicas       INTEGER NOT NULL,                   -- 1 | 3
+  next_gb        INTEGER,
+  next_replicas  INTEGER,
+  anchor_day     INTEGER NOT NULL,
+  period_start   INTEGER NOT NULL,
+  period_end     INTEGER NOT NULL,
   created_at     INTEGER NOT NULL,
-  UNIQUE (user_id, period)
+  updated_at     INTEGER NOT NULL
 );
-CREATE INDEX s3_bills_status_idx ON s3_bills (status, due_at);
+CREATE INDEX s3_subscriptions_end_idx ON s3_subscriptions (period_end);
+
+-- Bytes served per account and period (the plan's month, or the WIB month without a plan). Egress
+-- past the free allowance in a paid period is added to a later renewal; `billed_blocks` is what was.
+CREATE TABLE s3_usage (
+  user_id        TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  period_start   INTEGER NOT NULL,
+  billable       INTEGER NOT NULL DEFAULT 0,
+  egress_bytes   INTEGER NOT NULL DEFAULT 0,
+  billed_blocks  INTEGER NOT NULL DEFAULT 0,
+  updated_at     INTEGER NOT NULL,
+  PRIMARY KEY (user_id, period_start)
+) WITHOUT ROWID;
 
 -- VirusTotal's answer per file hash, so the same file costs one request (500 a day on a free key).
 CREATE TABLE vt_verdicts (
@@ -47,9 +44,10 @@ CREATE TABLE vt_verdicts (
   checked_at  INTEGER NOT NULL
 ) WITHOUT ROWID;
 
--- Requests spent per minute and per day, so the Worker never asks more than the key allows.
+-- Requests spent per minute, per day and per person, so the Worker never asks more than the key
+-- allows.
 CREATE TABLE vt_budget (
-  slot        TEXT PRIMARY KEY,                      -- m:<minute> | d:<YYYY-MM-DD>
+  slot        TEXT PRIMARY KEY,                      -- m:<minute> | d:<YYYY-MM-DD> | u:<user>:<day>
   used        INTEGER NOT NULL,
   expires_at  INTEGER NOT NULL
 ) WITHOUT ROWID;

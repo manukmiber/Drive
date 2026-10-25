@@ -10,11 +10,13 @@ Centang sebelum production dibuka untuk umum (SPEC §14.6).
 - [ ] Konfirmasi isian ToS/Kebijakan Privasi (ADR-045, `src/web/legal/contacts.ts`): dukungan & privasi
       `admin@zeiko.biz.id`, retensi log akses 90 hari, enkripsi saat disimpan (R2).
 - [x] VirusTotal: dipakai dengan key pemilik (ADR-046), cek hash + kirim program yang belum dikenal.
-- [ ] Ganti key VirusTotal gratis dengan lisensi Premium/komersial: ketentuan VirusTotal melarang Public API
-      dipakai di layanan komersial, dan key gratis hanya 500 request/hari.
-- [ ] Hive dan Thorn (Kebijakan Privasi §4): belum ada perjanjian/kode; teksnya menyebut keduanya.
-- [x] Zeiko S3: harga pascabayar Rp500/GB-bulan, egress gratis 500 GB lalu Rp5.000/500 GB (ADR-047).
-- [ ] Zeiko S3: DNS `s3.zeiko.biz.id`, tombol relay untuk menambah akun, dan harga S3 di website.
+- [ ] Ganti key VirusTotal gratis dengan lisensi Premium/komersial (rencana pemilik): ketentuan VirusTotal melarang
+      Public API dipakai di layanan komersial, dan key gratis hanya 500 request/hari. Cukup ganti secret
+      `VIRUSTOTAL_API_KEY` lalu naikkan `virustotal.per_minute`/`per_day` di config.
+- [ ] Hive dan Thorn (Kebijakan Privasi §4, rencana pemilik): belum ada perjanjian/kode; teksnya menyebut keduanya.
+- [x] Zeiko S3: paket dibayar di awal, minimal 3 GB, Rp500/GB (1 salinan) atau Rp1.500/GB (3 salinan sungguhan) per
+      bulan, egress gratis 500 GB lalu Rp5.000/500 GB ditagih saat perpanjangan (ADR-047).
+- [ ] Zeiko S3: DNS `s3.zeiko.biz.id`, bucket replika lewat `cf-setup`, tombol relay, dan harga S3 di website.
 - [ ] Prosedur takedown: siapa yang piket untuk SLA 4 jam (CSAM/terorisme) dan 24 jam (lainnya).
 - [ ] Runbook kebocoran data: siapa memutuskan, template email pemberitahuan 3×24 jam.
 - [ ] Perjanjian vendor deteksi CSAM (Hive/Thorn Safer/PhotoDNA) bila ingin mengaktifkan `features.csam_scan`.

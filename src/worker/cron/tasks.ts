@@ -16,7 +16,8 @@ import { purgeStandalone } from '../services/compress';
 import { expireArchives } from '../services/archives';
 import { runAdsDaily } from '../services/ads';
 import { expireS3Uploads, reconcileS3 } from '../services/s3-objects';
-import { issueS3Bills, runS3Dunning, sampleS3Storage } from '../services/s3-billing';
+import { remindS3Renewals, renewS3FromCredit, runS3Dunning } from '../services/s3-billing';
+import { sweepReplication } from '../services/s3-replicas';
 import { cleanupVirusTotal } from '../services/virustotal';
 import { registerCronTask } from '.';
 
@@ -36,25 +37,28 @@ registerCronTask(CRON.nightly, {
   run: async (ctx) => void (await reconcileS3(ctx)),
 });
 
-// Zeiko S3 is billed from usage (ADR-047): stored bytes count by the hour.
+// Zeiko S3 plans (ADR-047): one that just ran out renews itself from credit.
 registerCronTask(CRON.hourly, {
-  name: 's3_usage_sample',
-  run: async (ctx) => void (await sampleS3Storage(ctx)),
+  name: 's3_renew_from_credit',
+  async run(ctx) {
+    const renewed = await renewS3FromCredit(ctx);
+    if (renewed) log.info('s3_renewed_from_credit', { renewed });
+  },
 });
 
-// 02:00 WIB: last month's bills (on the 1st), then unpaid ones move along the dunning cycle.
+// 02:00 WIB: renewal reminders, plans not renewed along the dunning cycle, missed copies.
 registerCronTask(CRON.nightly, {
   name: 's3_billing',
   async run(ctx) {
-    const issued = await issueS3Bills(ctx);
-    if (issued) log.info('s3_bills_issued', { issued });
+    await remindS3Renewals(ctx);
     const r = await runS3Dunning(ctx);
     if (r.dryRun.length) {
       await ctx.env.NOTIFY_QUEUE.send({
         type: 'admin_alert',
-        text: `Dry-run hapus Zeiko S3 menunggak: ${r.dryRun.length} akun. Ubah dunning_delete_mode ke "live" untuk benar-benar menghapus.`,
+        text: `Dry-run hapus Zeiko S3 yang tidak diperpanjang: ${r.dryRun.length} akun. Ubah dunning_delete_mode ke "live" untuk benar-benar menghapus.`,
       });
     }
+    await sweepReplication(ctx);
   },
 });
 

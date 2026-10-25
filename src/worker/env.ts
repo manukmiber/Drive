@@ -73,6 +73,9 @@ export interface Env {
   // ── bindings ──
   DB: D1Database;
   BUCKET: R2Bucket;
+  /** Zeiko S3's 3-copy plans (ADR-047): two more buckets in other regions. Without both, no 3x. */
+  S3_REPLICA_A?: R2Bucket;
+  S3_REPLICA_B?: R2Bucket;
   CONFIG_KV: KVNamespace;
   ASSETS: Fetcher;
   SCAN_QUEUE: Queue<ScanMessage>;

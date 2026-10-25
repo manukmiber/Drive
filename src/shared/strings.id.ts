@@ -108,8 +108,6 @@ export const t = {
     intro:
       'Penyimpanan objek yang dipakai lewat API S3, misalnya dengan aws-cli, rclone, atau AWS SDK di aplikasimu. Terpisah dari isi Drive dan paket Drive.',
     notAvailable: 'Zeiko S3 belum tersedia di sini.',
-    notEnabled: (email: string) =>
-      `Zeiko S3 untuk akunmu belum aktif. Kirim email ke ${email} untuk meminta akses dan ruang penyimpanan; tim Zeiko yang menyalakannya.`,
     suspended: (email: string) =>
       `Zeiko S3 kamu sedang dibekukan: key tidak bisa dipakai dan bucket publik tertutup. Hubungi ${email}.`,
     connection: 'Sambungan',
@@ -160,32 +158,46 @@ export const t = {
     nameTaken: 'Nama bucket itu sudah dipakai. Coba nama lain.',
     notEmpty: 'Bucket masih berisi objek. Hapus isinya dulu lewat API.',
     invalidName: 'Nama bucket tidak sesuai aturan.',
-    billing: 'Biaya',
-    priceLine: (perGb: string, free: string, block: string, blockPrice: string, dueDays: number) =>
-      `${perGb} per GB per bulan, dari rata-rata data yang tersimpan. Egress gratis ${free} per bulan, lalu ${blockPrice} per ${block}. Tagihan bulan lalu terbit tiap tanggal 1 dan dibayar dengan QRIS dalam ${dueDays} hari.`,
-    thisMonth: 'Bulan ini sejauh ini',
-    usageSoFar: (gb: string, egress: string) => `${gb} GB-bulan tersimpan · egress ${egress}`,
-    estimate: (amount: string) => `perkiraan ${amount}`,
-    owed: (amount: string) => `Belum dibayar: ${amount}`,
-    dueOn: (date: string) => `jatuh tempo ${date}`,
-    pay: 'Bayar dengan QRIS',
-    payTitle: 'Bayar tagihan Zeiko S3?',
-    payBody: (amount: string) =>
-      `Kamu akan membayar ${amount}. Kalau kreditmu cukup, tagihan langsung lunas tanpa QRIS.`,
-    bills: 'Tagihan',
-    noBills: 'Belum ada tagihan. Tagihan pertama terbit tanggal 1 bulan depan.',
-    billStatus: {
-      open: 'Belum dibayar',
-      paid: 'Lunas',
-      carried: 'Digabung ke bulan berikutnya',
-      waived: 'Dihapuskan',
-    } as Record<string, string>,
-    billDetail: (gb: string, egress: string) => `rata-rata ${gb} GB · egress ${egress}`,
+    plan: 'Paket',
+    prices: (perGb: string, perGb3: string, minGb: number) =>
+      `${perGb} per GB per bulan untuk 1 salinan, ${perGb3} untuk 3 salinan di 3 lokasi. Minimal ${minGb} GB, dibayar di awal dengan QRIS.`,
+    egressRule: (free: string, block: string, blockPrice: string) =>
+      `Egress gratis ${free} per periode; kelebihannya ${blockPrice} per ${block}, ditagih saat perpanjangan.`,
+    buyIntro: 'Pilih ukuran penyimpanan, bayar dengan QRIS, dan Zeiko S3 langsung aktif.',
+    size: 'Ukuran (GB)',
+    sizeHint: (min: number, max: number) => `Bilangan bulat, ${min}–${max} GB.`,
+    copies: 'Salinan',
+    copiesLabel: (n: number) => (n === 3 ? '3 salinan di 3 lokasi' : '1 salinan'),
+    copyOption: (n: number, price: string) =>
+      n === 3 ? `3 salinan di 3 lokasi · ${price}/GB` : `1 salinan · ${price}/GB`,
+    threeUnavailable: '3 salinan belum tersedia di sini.',
+    monthly: (amount: string) => `${amount} per bulan`,
+    buy: (amount: string) => `Beli · ${amount}`,
+    buyTitle: 'Beli paket Zeiko S3?',
+    buyBody: (plan: string, amount: string) =>
+      `${plan} seharga ${amount} untuk sebulan. Kalau kreditmu cukup, langsung aktif tanpa QRIS.`,
+    change: 'Ubah paket',
+    changeTitle: 'Ubah paket Zeiko S3?',
+    changeBody: (plan: string, amount: string) =>
+      `${plan}, ${amount} per bulan. Paket yang lebih mahal langsung aktif dan kamu membayar selisihnya untuk sisa periode ini; yang lebih murah mulai periode berikutnya.`,
+    planLine: (gb: number, copies: string) => `${gb} GB · ${copies}`,
+    activeUntil: (date: string) => `aktif sampai ${date}`,
+    endedOn: (date: string) => `berakhir ${date}, belum diperpanjang`,
+    nextPlan: (plan: string, date: string) => `Mulai ${date}: ${plan}`,
+    renew: (amount: string) => `Perpanjang · ${amount}`,
+    renewTitle: 'Perpanjang paket Zeiko S3?',
+    renewBody: (amount: string) =>
+      `Kamu membayar ${amount} untuk sebulan lagi, termasuk kelebihan egress periode sebelumnya bila ada. Kalau kreditmu cukup, langsung lunas tanpa QRIS.`,
+    granted: 'Ruang ini diberikan tim Zeiko. Kamu juga bisa membeli paket sendiri.',
+    egressNow: (used: string, free: string) => `Egress periode ini: ${used} dari ${free} gratis`,
+    egressPending: (amount: string) => `kelebihan ${amount} ditagih di perpanjangan berikutnya`,
+    tooSmall: (used: string) => `Isi Zeiko S3 kamu sudah ${used}. Pilih ukuran yang lebih besar.`,
+    samePlan: 'Itu paketmu sekarang.',
     readonlyBanner:
-      'Tagihan Zeiko S3 lewat jatuh tempo: upload dan bucket publik berhenti sampai dibayar. Unduh dan hapus tetap bisa.',
+      'Paket Zeiko S3 kamu sudah berakhir: upload dan bucket publik berhenti sampai diperpanjang. Unduh dan hapus tetap bisa.',
     lockedBanner:
-      'Zeiko S3 kamu dikunci karena tagihan belum dibayar. Bayar untuk membukanya lagi.',
-    unpaid: 'Tagihan Zeiko S3 belum dibayar, jadi ini belum bisa.',
+      'Zeiko S3 kamu dikunci karena paketnya belum diperpanjang. Perpanjang untuk membukanya lagi.',
+    unpaid: 'Paket Zeiko S3 belum diperpanjang, jadi ini belum bisa.',
     howTo: 'Cara menyambungkan',
     limits:
       'Satu upload biasa paling besar 100 MB; file yang lebih besar diunggah multipart (aws-cli dan rclone melakukannya sendiri). Semua bagian kecuali yang terakhir harus sama besar, minimal 5 MB.',
@@ -439,7 +451,12 @@ export const t = {
       renewed: 'Paket diperpanjang sebulan lagi.',
       addon: 'Tambahan ruang aktif.',
       compress: 'Kredit kompres ditambahkan.',
-      s3_bills: 'Tagihan Zeiko S3 lunas.',
+      s3_subscribed: 'Paket Zeiko S3 aktif.',
+      s3_upgraded: 'Paket Zeiko S3 sudah diubah.',
+      s3_renewed: 'Paket Zeiko S3 diperpanjang sebulan.',
+      s3_reactivated: 'Paket Zeiko S3 aktif lagi.',
+      s3_change_scheduled: 'Paket baru mulai periode berikutnya.',
+      s3_change_cancelled: 'Perubahan paket dibatalkan.',
       downgrade_scheduled: 'Penurunan paket dijadwalkan.',
       downgrade_cancelled: 'Penurunan paket dibatalkan.',
     } as Record<string, string>,

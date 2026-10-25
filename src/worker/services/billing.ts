@@ -15,7 +15,14 @@ import { log } from '../lib/log';
 import { ensurePersonalSpace } from './accounts';
 import { payCampaignFromWallet } from './ads';
 import { notificationStmt, notify } from './notify';
-import { payS3Bills, quoteS3Bills } from './s3-billing';
+import {
+  buyS3Plan,
+  quoteS3Plan,
+  quoteS3Renew,
+  renewS3Plan,
+  type Replicas,
+  type S3Done,
+} from './s3-billing';
 
 type Stmt = D1PreparedStatement;
 
@@ -494,15 +501,16 @@ export interface PaymentStarted {
 }
 
 /**
- * What a person can buy (ADR-041). `renew` is the next month of the plan they have; `s3_bills` pays
- * Zeiko S3 bills (ADR-047).
+ * What a person can buy (ADR-041). `renew` is the next month of the plan they have; `s3_plan` and
+ * `s3_renew` are Zeiko S3's own plan (ADR-047).
  */
 export type CheckoutItem =
   | { kind: 'plan'; code: string }
   | { kind: 'addon'; code: string }
   | { kind: 'compress'; code: string }
   | { kind: 'renew' }
-  | { kind: 's3_bills'; billIds: string[] };
+  | { kind: 's3_plan'; gb: number; replicas: Replicas }
+  | { kind: 's3_renew' };
 
 /** What a payment is for once it lands. `ad_campaign` is an approved ad campaign (ADR-043). */
 export type DirectPurpose = CheckoutItem | { kind: 'ad_campaign'; campaignId: string };
@@ -580,7 +588,8 @@ export async function openPayment(
 /** What `item` costs this person right now, tax included (0: nothing to pay, e.g. a downgrade). */
 export async function quoteItem(ctx: Ctx, userId: string, item: CheckoutItem): Promise<number> {
   const now = ctx.now();
-  if (item.kind === 's3_bills') return quoteS3Bills(ctx, userId, item.billIds);
+  if (item.kind === 's3_plan') return quoteS3Plan(ctx, userId, item.gb, item.replicas);
+  if (item.kind === 's3_renew') return quoteS3Renew(ctx, userId);
   if (item.kind === 'compress') {
     const pack = await ctx.env.DB.prepare(
       'SELECT price_idr FROM compress_packs WHERE code = ?1 AND active = 1',
@@ -635,7 +644,8 @@ export async function quoteItem(ctx: Ctx, userId: string, item: CheckoutItem): P
 
 export type ItemDone =
   | PlanChange
-  | { kind: 'addon' | 'compress' | 'renewed' | 's3_bills'; chargedIdr: number; invoiceId: string };
+  | { kind: 'addon' | 'compress' | 'renewed'; chargedIdr: number; invoiceId: string }
+  | { kind: S3Done; chargedIdr: number; invoiceId: string | null };
 
 /** Makes the purchase from the wallet (the payment, or credit, is already there). */
 export async function performItem(ctx: Ctx, userId: string, item: CheckoutItem): Promise<ItemDone> {
@@ -643,8 +653,8 @@ export async function performItem(ctx: Ctx, userId: string, item: CheckoutItem):
   if (item.kind === 'addon') return { kind: 'addon', ...(await buyAddon(ctx, userId, item.code)) };
   if (item.kind === 'compress')
     return { kind: 'compress', ...(await buyCompressPack(ctx, userId, item.code)) };
-  if (item.kind === 's3_bills')
-    return { kind: 's3_bills', ...(await payS3Bills(ctx, userId, item.billIds)) };
+  if (item.kind === 's3_plan') return buyS3Plan(ctx, userId, item.gb, item.replicas);
+  if (item.kind === 's3_renew') return renewS3Plan(ctx, userId);
   return renewNow(ctx, userId);
 }
 
@@ -690,8 +700,14 @@ async function doneSummary(ctx: Ctx, done: ItemDone, item: DirectPurpose): Promi
       return 'Tambahan ruang sudah aktif.';
     case 'compress':
       return 'Kredit kompres sudah ditambahkan.';
-    case 's3_bills':
-      return 'Tagihan Zeiko S3 sudah lunas.';
+    case 's3_subscribed':
+      return 'Paket Zeiko S3 aktif.';
+    case 's3_upgraded':
+      return 'Paket Zeiko S3 sudah diubah.';
+    case 's3_renewed':
+      return 'Paket Zeiko S3 diperpanjang sebulan.';
+    case 's3_reactivated':
+      return 'Paket Zeiko S3 aktif lagi.';
     default:
       return 'Pembelianmu sudah jadi.';
   }

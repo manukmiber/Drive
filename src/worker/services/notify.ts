@@ -23,7 +23,7 @@ export type NotificationType =
   | 'plan_changed'
   | 'family_invite'
   | 'account_delete'
-  | 's3_bill'
+  | 's3_reminder'
   | 's3_dunning';
 
 export function notificationStmt(
@@ -107,45 +107,39 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
         cta: { label: 'Perpanjang paket', url: `${app}/paket` },
       };
     }
-    case 's3_bill': {
-      const s3 = { label: 'Buka Zeiko S3', url: `${app}/s3` };
-      if (p.paid)
-        return {
-          title: `Tagihan Zeiko S3 ${String(p.period)} sudah dibayar`,
-          paragraphs: [
-            `Tagihan ${formatRupiah(Number(p.totalIdr))} dibayar dari kreditmu. Tidak perlu melakukan apa-apa.`,
-          ],
-          cta: s3,
-        };
+    case 's3_reminder':
       return {
-        title: `Tagihan Zeiko S3 ${String(p.period)}: ${formatRupiah(Number(p.totalIdr))}`,
+        title: `Paket Zeiko S3 berakhir ${p.days === 1 ? 'besok' : `${String(p.days)} hari lagi`}`,
         paragraphs: [
-          `Bayar dengan QRIS dari halaman Zeiko S3 sebelum ${formatDateTime(Number(p.dueAt))}.`,
-          'Rinciannya (penyimpanan rata-rata dan egress) ada di halaman yang sama.',
+          `Paketmu berakhir pada ${formatDateTime(Number(p.periodEnd))}.`,
+          p.creditCovers
+            ? 'Kreditmu cukup untuk sebulan lagi, jadi paket diperpanjang otomatis. Tidak perlu melakukan apa-apa.'
+            : `Perpanjang sebulan lagi sebesar ${formatRupiah(Number(p.amountIdr))} dengan QRIS dari halaman Zeiko S3.`,
         ],
-        cta: { label: 'Bayar tagihan', url: `${app}/s3` },
+        cta: { label: 'Perpanjang', url: `${app}/s3` },
       };
-    }
     case 's3_dunning': {
-      const stage = String(p.stage ?? 'due');
+      const stage = String(p.stage ?? 'grace');
       const text: Record<string, string> = {
-        due: 'Tagihan Zeiko S3 kamu sudah lewat jatuh tempo. Semua masih jalan normal untuk sementara.',
+        grace:
+          'Paket Zeiko S3 kamu sudah berakhir dan belum diperpanjang. Semua masih jalan normal untuk sementara.',
         readonly:
           'Zeiko S3 kamu sekarang mode baca saja: upload dan bucket publik berhenti. Unduh dan hapus tetap bisa.',
-        locked: 'Akses ke Zeiko S3 kamu sekarang dikunci. Bayar kapan saja untuk membukanya lagi.',
+        locked:
+          'Akses ke Zeiko S3 kamu sekarang dikunci. Perpanjang kapan saja untuk membukanya lagi.',
         delete_warning:
-          'Isi Zeiko S3 kamu akan dihapus permanen sebentar lagi kalau tagihan belum dibayar.',
+          'Isi Zeiko S3 kamu akan dihapus permanen sebentar lagi kalau paket belum diperpanjang.',
       };
       return {
         title:
           stage === 'delete_warning'
             ? 'Peringatan terakhir: isi Zeiko S3 akan dihapus'
-            : 'Tagihan Zeiko S3 belum dibayar',
+            : 'Paket Zeiko S3 belum diperpanjang',
         paragraphs: [
-          text[stage] ?? text.due!,
-          `Belum dibayar: ${formatRupiah(Number(p.owedIdr))}. Batas akhir sebelum dihapus: ${formatDateTime(Number(p.deleteAt))}.`,
+          text[stage] ?? text.grace!,
+          `Batas akhir sebelum dihapus: ${formatDateTime(Number(p.deleteAt))}.`,
         ],
-        cta: { label: 'Bayar tagihan', url: `${app}/s3` },
+        cta: { label: 'Perpanjang', url: `${app}/s3` },
       };
     }
     case 'quota': {
@@ -315,7 +309,7 @@ export const MANDATORY_EMAIL: readonly string[] = [
   'renewal_failed',
   'dunning',
   'account_delete',
-  's3_bill',
+  's3_reminder',
   's3_dunning',
 ];
 export const PREF_TYPES = [

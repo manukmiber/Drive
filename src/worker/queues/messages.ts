@@ -39,7 +39,10 @@ export type CleanupMessage =
   | { type: 'rebuild_manifest'; userId: string }
   | { type: 'purge_pool'; poolId: string; dryRun: boolean }
   // Account deletion: the rest of a Zeiko S3 account, a batch per message (ADR-044).
-  | { type: 's3_purge'; userId: string };
+  | { type: 's3_purge'; userId: string }
+  // A plan moved to 3 copies or back to 1: copies made or dropped, a batch per message (ADR-047).
+  | { type: 's3_replicate'; userId: string }
+  | { type: 's3_unreplicate'; userId: string };
 
 export type QueueMessage =
   ScanMessage | ArchiveMessage | CompressMessage | NotifyMessage | CleanupMessage;

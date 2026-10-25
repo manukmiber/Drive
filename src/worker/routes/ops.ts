@@ -33,7 +33,7 @@ import {
   updateAccount,
 } from '../services/s3';
 import { indexBindings } from '../services/s3-index';
-import { s3BillingView, waiveS3Bill } from '../services/s3-billing';
+import { s3PlanView } from '../services/s3-billing';
 import type { AppBindings } from '../types';
 
 /** Who the audit log says made an operator's change. */
@@ -188,7 +188,7 @@ export const ops = new Hono<AppBindings>()
     const ctx = c.get('ctx');
     const userId = c.req.param('userId');
     const account = await accountView(ctx, userId);
-    return c.json({ account, billing: await s3BillingView(ctx, userId) });
+    return c.json({ account, plan: await s3PlanView(ctx, userId) });
   })
   .patch(
     '/s3/accounts/:userId',
@@ -224,11 +224,6 @@ export const ops = new Hono<AppBindings>()
       });
     },
   )
-  // A Zeiko S3 bill nobody has to pay (ADR-047); the account leaves read-only/locked if it can.
-  .post('/s3/bills/:id/waive', validate('json', z.object({ reason })), async (c) => {
-    await waiveS3Bill(c.get('ctx'), OPS_ACTOR, c.req.param('id'), c.req.valid('json').reason);
-    return c.body(null, 204);
-  })
   .post(
     '/s3/buckets/:name/block',
     validate('json', z.object({ blocked: z.boolean(), reason })),

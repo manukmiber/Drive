@@ -95,14 +95,15 @@ Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai 
 - Host-nya custom domain Worker ini: `s3.zeiko.biz.id` (production) dan `s3-staging.zeiko.biz.id` (staging),
   ganti lewat `s3Origin` di `deploy/{env}.json`. Subdomain satu tingkat saja (sertifikat universal). Alamat
   virtual-hosted (`bucket.s3.zeiko.biz.id`) butuh sertifikat wildcard tingkat dua, jadi klien memakai path-style.
-- Sebelum dipakai: `node scripts/cf-setup.mjs <env>` (membuat `S3_KEYS_ENC_KEY` yang belum ada), migrasi `0007`
-  dan `0008` (`npm run db:migrate:<env>`), lalu deploy.
-- **Tagihan** (ADR-047): pascabayar per bulan kalender WIB. Cron per jam mencatat penyimpanan; tagihan bulan lalu
-  terbit tanggal 1 pukul 02.00 WIB. Harga di config `s3_price_idr_per_gb_month`, `s3_egress_*`, `s3_bill_*`, dan
-  `s3_dunning`; penghapusan karena menunggak ikut `dunning_delete_mode` (default `dry_run`). Operator bisa
-  menghapuskan tagihan: `POST /api/ops/s3/bills/<id>/waive {"reason": "…"}`.
-- Menyalakan akun: `POST /api/ops/s3/accounts {"zeikoId" | "email", "limitBytes", "reason"}` dengan bearer ops
-  (tombol relay nanti). Orangnya harus sudah pernah masuk Drive.
+- Sebelum dipakai: `node scripts/cf-setup.mjs <env>` (membuat `S3_KEYS_ENC_KEY` yang belum ada dan dua bucket
+  replika `zeiko-s3-replica-a-<env>` di `weur` dan `-b-<env>` di `wnam`, lalu menulis `"s3Replicas": true` ke
+  `deploy/<env>.json`), migrasi `0007` dan `0008` (`npm run db:migrate:<env>`), lalu deploy. Tanpa bucket replika,
+  paket 3 salinan tidak ditawarkan.
+- **Paket** (ADR-047): dibayar di awal di `/s3`, minimal 3 GB. Harga di config `s3_price_idr_per_gb_month` (1
+  salinan), `s3_price_idr_per_gb_month_3x` (3 salinan), `s3_min_gb`, `s3_max_gb`, `s3_egress_*`, dan `s3_dunning`;
+  penghapusan karena tidak diperpanjang ikut `dunning_delete_mode` (default `dry_run`).
+- Menyalakan akun tanpa paket (gratis, diberi operator): `POST /api/ops/s3/accounts {"zeikoId" | "email",
+  "limitBytes", "reason"}` dengan bearer ops (tombol relay nanti). Orangnya harus sudah pernah masuk Drive.
 - **Index sendiri per akun** (opsional, butuh kuota D1: Free 10 database per akun Cloudflare):
   1. `npx wrangler d1 create zeiko-s3-<env>-<nama>`;
   2. tambahkan `{"binding": "S3_DB_<NAMA>", "id": "<database_id>", "name": "zeiko-s3-<env>-<nama>"}` ke

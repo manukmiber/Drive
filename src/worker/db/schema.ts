@@ -3,7 +3,7 @@
 //
 // Auth tables (and `users`) use Date-valued timestamps because Better Auth reads/writes Date objects.
 // Every other table uses plain integer milliseconds (ADR-008).
-import { sqliteTable, text, integer, primaryKey, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 import {
   AD_AREA_LEVELS,
   AD_BOOKING_STATUSES,
@@ -739,36 +739,31 @@ export const s3Buckets = sqliteTable('s3_buckets', {
   createdAt: ms('created_at').notNull(),
 });
 
+export const s3Subscriptions = sqliteTable('s3_subscriptions', {
+  userId: text('user_id').primaryKey(),
+  gb: integer('gb').notNull(),
+  replicas: integer('replicas').notNull(),
+  nextGb: integer('next_gb'),
+  nextReplicas: integer('next_replicas'),
+  anchorDay: integer('anchor_day').notNull(),
+  periodStart: ms('period_start').notNull(),
+  periodEnd: ms('period_end').notNull(),
+  createdAt: ms('created_at').notNull(),
+  updatedAt: ms('updated_at').notNull(),
+});
+
 export const s3Usage = sqliteTable(
   's3_usage',
   {
     userId: text('user_id').notNull(),
-    period: text('period').notNull(),
-    gibHours: real('gib_hours').notNull(),
+    periodStart: ms('period_start').notNull(),
+    billable: bool('billable').notNull(),
     egressBytes: integer('egress_bytes').notNull(),
-    lastHour: integer('last_hour').notNull(),
+    billedBlocks: integer('billed_blocks').notNull(),
     updatedAt: ms('updated_at').notNull(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.period] })],
+  (t) => [primaryKey({ columns: [t.userId, t.periodStart] })],
 );
-
-export const s3Bills = sqliteTable('s3_bills', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
-  period: text('period').notNull(),
-  gibMonths: real('gib_months').notNull(),
-  egressBytes: integer('egress_bytes').notNull(),
-  linesJson: text('lines_json').notNull(),
-  subtotalIdr: integer('subtotal_idr').notNull(),
-  totalIdr: integer('total_idr').notNull(),
-  status: text('status', { enum: ['open', 'paid', 'carried', 'waived'] }).notNull(),
-  dueAt: ms('due_at'),
-  carriedInto: text('carried_into'),
-  invoiceId: text('invoice_id'),
-  paidAt: ms('paid_at'),
-  waivedReason: text('waived_reason'),
-  createdAt: ms('created_at').notNull(),
-});
 
 export const vtVerdicts = sqliteTable('vt_verdicts', {
   sha256: text('sha256').primaryKey(),

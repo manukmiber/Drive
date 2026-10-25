@@ -840,34 +840,46 @@ dan di alur bisnis yang tidak menyumbang file baru; key bisa diblokir kapan saja
 VirusTotal). File yang dikirim lewat Public API dapat dilihat pelanggan VirusTotal. Jalan keluarnya lisensi
 Premium (private scanning), lihat LAUNCH-CHECKLIST.
 
-## ADR-047 — Zeiko S3 pascabayar dari pemakaian
+## ADR-047 — Paket Zeiko S3 dibayar di awal, 1 atau 3 salinan sungguhan
 
 **Konteks:** harga dari pemilik (2026-10-25): "Replicate 1x: 500/Gb", "Replicate 3x: 1250/Gb", "Egress: Free 500Gb
-lalu 5000 / 500Gb". Saat ditanya, pemilik memilih **pascabayar dari pemakaian** dan egress yang **jalan terus,
-ditagih belakangan**.
+lalu 5000 / 500Gb". Tier 3x yang isinya tetap satu salinan tidak dibuat (menjual fitur yang tidak ada). Pemilik
+lalu memutuskan: "Replikasi 3x jadi 1500" (dengan salinan sungguhan) dan "Bayar diawal berapa giga, minimal 3
+giga". Egress tetap "jalan terus, ditagih belakangan" (pilihan pemilik sebelumnya). Model pascabayar yang sempat
+dibuat di commit sebelumnya diganti; migrasi `0007`/`0008` belum pernah dijalankan di database remote mana pun,
+jadi `0008` diubah langsung.
 
 **Keputusan:**
-- Satu bulan tagihan = bulan kalender WIB. Cron per jam menambahkan penyimpanan setiap akun ke `s3_usage` (GiB-jam;
-  sampel yang telat mewakili paling banyak 3 jam, sampel di jam yang sama tidak dihitung dua kali). Setiap GET objek
-  (ber-key atau anonim di bucket publik) menambah egress pemilik bucket, sebanyak byte yang dikirim (Range dihitung
-  panjangnya), lewat `waitUntil`.
-- Tanggal 1 pukul 02.00 WIB tagihan bulan lalu terbit (`s3_bills`): rata-rata GB tersimpan × `s3_price_idr_per_gb_month`
-  (Rp500, dibulatkan ke rupiah terdekat) + egress di atas `s3_egress_free_bytes` (500 GB) per blok
-  `s3_egress_block_bytes` (500 GB) yang dimulai × `s3_egress_block_idr` (Rp5.000), plus pajak `tax_rate_pct`.
-  Tagihan di bawah `s3_bill_min_idr` (Rp1.000) digabung ke bulan berikutnya. Jatuh tempo `s3_bill_due_days` (7).
-- Dibayar seperti pembelian lain (ADR-041): `CheckoutItem { kind: 's3_bills', billIds }`, QRIS untuk sisanya setelah
-  kredit, invoice untuk pembukuan. Kredit yang cukup membayar tagihan saat terbit. Email + lonceng `s3_bill` dan
-  `s3_dunning` wajib (tidak bisa dimatikan).
-- Menunggak (`s3_dunning`, hari setelah jatuh tempo): 3 hari → `billing_state = readonly` (PUT/POST ditolak
-  `AccountProblem`, kecuali DeleteObjects; bucket publik tertutup; baca, list, dan hapus tetap bisa); 14 hari →
-  `locked` (semua request ber-key ditolak); 30 hari → data dihapus (`s3_purge`), hanya bila
-  `dunning_delete_mode = live` dan tidak ada pembayaran yang sedang berjalan. Tagihannya tetap tercatat. Membayar
-  langsung mengembalikan `billing_state`. Operator bisa menghapuskan tagihan dengan alasan
-  (`POST /api/ops/s3/bills/:id/waive`).
-- Akun tetap dinyalakan operator dengan `limit_bytes` (relay); batas itu sekarang juga batas risiko pascabayar.
-- Halaman `/s3`: harga, pemakaian dan perkiraan bulan ini, tagihan, dan tombol bayar QRIS.
-
-**Tidak dibuat: "Replikasi 3x".** Pemilik meminta tier 3x (Rp1.250/GB) yang tetap disimpan satu salinan. Itu
-menjual fitur yang tidak ada kepada pembeli, jadi tidak dibuat. Semua data Zeiko S3 disimpan sekali di R2 (R2 sendiri
-dirancang untuk ketahanan 99,999999999%); hanya ada satu harga. Tier 3x yang jujur butuh salinan sungguhan, misalnya
-dua bucket R2 tambahan di wilayah lain dan antrean replikasi; biaya penyimpanan R2-nya ±3 × $0,015/GB-bulan.
+- **Paket** (`s3_subscriptions`, satu per orang): ukuran dalam GB bulat, minimal `s3_min_gb` (3), maksimal
+  `s3_max_gb` (5.000), dengan 1 salinan (`s3_price_idr_per_gb_month`, Rp500/GB/bulan) atau 3 salinan
+  (`s3_price_idr_per_gb_month_3x`, Rp1.500/GB/bulan). Periode = bulan tagihan seperti paket Drive
+  (`addBillingMonth`, tanggal jangkar WIB). Batas akun (`limit_bytes`) = ukuran paket.
+- **Dibayar di awal** lewat checkout yang sama dengan Drive (ADR-041): `CheckoutItem { kind: 's3_plan', gb, replicas }`
+  dan `{ kind: 's3_renew' }`. QRIS untuk sisanya setelah kredit; invoice untuk pembukuan. Siapa pun yang sudah masuk
+  Drive bisa membeli di `/s3`; akun S3 dibuat saat pembelian pertama. Akun yang dinyalakan operator tanpa paket
+  (relay, ADR-044) tetap ada dan tidak ditagih.
+- **Ubah paket:** yang lebih mahal per bulan langsung berlaku, dibayar selisihnya untuk sisa periode (pro-rata);
+  yang lebih murah dijadwalkan (`next_gb`, `next_replicas`) mulai periode berikutnya, tanpa bayar. Ukuran tidak boleh
+  lebih kecil dari isi yang tersimpan (`S3_TOO_SMALL`).
+- **Perpanjangan manual** seperti Drive: pengingat H-3/H-1 (`billing_reminder_days_before`, notifikasi `s3_reminder`),
+  tombol Perpanjang (dari akhir periode; paket yang sudah berakhir dimulai lagi dari hari bayar). Kredit yang cukup
+  memperpanjang sendiri dalam sehari setelah berakhir (cron per jam).
+- **Egress:** setiap GET objek (ber-key atau anonim di bucket publik) menambah egress pemilik bucket pada periode
+  paketnya (`s3_usage`, lewat `waitUntil`). Gratis `s3_egress_free_bytes` (500 GB) per periode; kelebihannya per blok
+  `s3_egress_block_bytes` (500 GB) yang dimulai × `s3_egress_block_idr` (Rp5.000) ditambahkan ke perpanjangan **setelah
+  periodenya selesai** (periode yang masih berjalan masih bertambah). Kalau kredit/pembayaran tidak menutup semua blok,
+  sisanya menunggu perpanjangan berikutnya (`billed_blocks`), jadi egress yang terjadi di antara harga dan pembayaran
+  tidak pernah menggagalkan pembelian.
+- **3 salinan sungguhan** (`services/s3-replicas.ts`): dua bucket R2 lagi, `zeiko-s3-replica-a-<env>` (lokasi
+  `weur`) dan `-b-<env>` (`wnam`), dibuat `cf-setup` dan diikat sebagai `S3_REPLICA_A/B`. Objek di akun 3 salinan
+  disalin ke keduanya setelah lolos pemindaian (≤ 4 GiB sekali put, lebih besar per bagian), ditandai `replicated` di
+  index (skema index v2). Naik ke 3 salinan menyalin isi yang sudah ada (antrean `s3_replicate`); turun ke 1 salinan
+  menghapus salinan tambahan (`s3_unreplicate`). Hapus selalu ke ketiga bucket (gratis). Baca dari salinan pertama, dan
+  dari salinan lain kalau yang pertama hilang. Sapuan malam menyalin ulang yang gagal. Tanpa kedua binding, pilihan 3
+  salinan tidak ditawarkan dan ditolak (`NO_REPLICAS`).
+- **Tidak diperpanjang** (`s3_dunning`, hari setelah periode berakhir): 0–2 hari jalan normal; 3 hari →
+  `billing_state = readonly` (PUT/POST ditolak `AccountProblem`, kecuali DeleteObjects; bucket publik tertutup; baca,
+  list, dan hapus tetap bisa); 14 hari → `locked` (semua request ber-key ditolak); 30 hari → data dihapus
+  (`s3_purge`), hanya bila `dunning_delete_mode = live` dan tidak ada pembayaran yang sedang berjalan. Memperpanjang
+  langsung mengembalikan `billing_state`. Email + lonceng `s3_reminder` dan `s3_dunning` wajib.
+- Biaya R2 untuk 3 salinan ±3 × $0,015/GB-bulan (±Rp750–810/GB), jadi harga Rp1.500 masih menutupnya.

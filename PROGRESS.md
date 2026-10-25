@@ -128,13 +128,16 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Index per akun di D1 sendiri (`S3_DB_*`, `deploy/{env}.json` → `s3Indexes`), default D1 utama.
 - [x] Halaman `/s3` (key, bucket, endpoint, contoh aws-cli/rclone), dua bahasa.
 - [x] ToS dan Kebijakan Privasi pemilik (ID kata per kata + EN), Kebijakan Iklan EN, Kebijakan Konten → ToS §3.
-- [x] Pascabayar (ADR-047): sampel penyimpanan per jam, egress per GET, tagihan tanggal 1 (Rp500/GB-bulan, egress
-  gratis 500 GB lalu Rp5.000 per 500 GB), bayar QRIS/kredit, menunggak → baca saja → kunci → hapus (ikut
-  `dunning_delete_mode`), waive oleh operator, bagian Biaya di `/s3`.
+- [x] Paket dibayar di awal (ADR-047): minimal 3 GB, 1 salinan Rp500/GB atau 3 salinan Rp1.500/GB per bulan, beli
+  sendiri di `/s3` lewat QRIS/kredit, naik paket pro-rata, turun mulai periode berikutnya, pengingat H-3/H-1,
+  kredit memperpanjang sendiri, tidak diperpanjang → baca saja → kunci → hapus (ikut `dunning_delete_mode`).
+- [x] Egress per GET, gratis 500 GB per periode, kelebihan Rp5.000 per 500 GB ditambahkan ke perpanjangan.
+- [x] 3 salinan sungguhan: dua bucket R2 replika (`weur`, `wnam`), salin setelah scan, backfill/hapus saat paket
+  berubah, baca dari salinan lain kalau yang pertama hilang, sapuan malam.
 - [x] VirusTotal (ADR-046): cek hash tipe berisiko, kirim program/dokumen ber-macro yang belum dikenal, anggaran key
   per menit/hari/orang, tidak pernah menahan file lama. Drive dan Zeiko S3.
 - [ ] Tombol relay "tambah user + binding ke worker" (diagram: "nanti"): buat D1, catat binding, panggil ops API.
-- [ ] Deploy: `cf-setup` (secret `S3_KEYS_ENC_KEY`), `wrangler secret put VIRUSTOTAL_API_KEY`, migrasi 0007 + 0008,
-  custom domain `s3.zeiko.biz.id` / `s3-staging.zeiko.biz.id`: menunggu izin pemilik.
-- [ ] Keputusan pemilik: Hive/Thorn di Kebijakan Privasi; lisensi VirusTotal komersial; alamat dukungan/privasi;
-  retensi log; alur peringatan ToS §6–§7; tier replikasi 3x (hanya dengan salinan sungguhan).
+- [ ] Deploy: `cf-setup` (secret `S3_KEYS_ENC_KEY`, bucket replika), `wrangler secret put VIRUSTOTAL_API_KEY`,
+  migrasi 0007 + 0008, custom domain `s3.zeiko.biz.id` / `s3-staging.zeiko.biz.id`: menunggu izin pemilik.
+- [ ] Pemilik: VirusTotal Premium dan Hive/Thorn (akan ditambahkan pemilik); alamat dukungan/privasi; retensi log;
+  alur peringatan ToS §6–§7.

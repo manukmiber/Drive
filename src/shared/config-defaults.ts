@@ -157,19 +157,18 @@ export const configSchema = z.object({
   s3_multipart_ttl_hours: int().min(1).max(167).default(144),
   /** D1 queries one listing may spend skipping folders (Workers Free allows 50 per request). */
   s3_list_max_queries: int().min(2).max(40).default(10),
-  // Postpaid (ADR-047): a bill per calendar month (WIB) for the average GB stored and the bytes
-  // served past the free allowance, issued on the 1st and paid by QRIS.
+  // Paid upfront (ADR-047): a size in whole GB, 1 copy or 3 (in three R2 buckets), for a month.
   s3_price_idr_per_gb_month: nonNeg().default(500),
+  s3_price_idr_per_gb_month_3x: nonNeg().default(1_500),
+  s3_min_gb: int().min(1).default(3),
+  s3_max_gb: int().min(1).default(5_000),
+  /** Free egress per period; past it, per started block, added to the next renewal. */
   s3_egress_free_bytes: nonNeg().default(500 * GIB),
-  /** Egress past the free allowance is billed per started block. */
   s3_egress_block_bytes: int()
     .min(1)
     .default(500 * GIB),
   s3_egress_block_idr: nonNeg().default(5_000),
-  /** A smaller bill is carried into the next month instead of asking for a tiny QRIS. */
-  s3_bill_min_idr: nonNeg().default(1_000),
-  s3_bill_due_days: int().min(1).default(7),
-  /** Days after the due date: read-only (no uploads, no public links), locked, deleted. */
+  /** Days after a plan ran out: read-only (no uploads, no public links), locked, deleted. */
   s3_dunning: z
     .object({
       readonly_after_days: nonNeg(),

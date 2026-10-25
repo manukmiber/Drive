@@ -9,7 +9,7 @@ import { aesGcmDecrypt, aesGcmEncrypt } from '../lib/crypto';
 import { randomBase62, ulid } from '../lib/ids';
 import { S3Error } from '../lib/s3-errors';
 import { boundIndex, ensureIndex, INDEX_BINDING_RE, indexDb } from './s3-index';
-import { s3BillingView, type S3BillingState } from './s3-billing';
+import { s3PlanView, type S3BillingState } from './s3-billing';
 
 export type S3AccountStatus = 'active' | 'suspended' | 'deleting';
 
@@ -20,8 +20,12 @@ export interface S3Account {
   usedBytes: number;
   reservedBytes: number;
   indexBinding: string | null;
-  /** Unpaid bills (ADR-047): `readonly` takes no uploads, `locked` answers nothing. */
+  /** A plan not renewed (ADR-047): `readonly` takes no uploads, `locked` answers nothing. */
   billingState: S3BillingState;
+  /** Copies kept of every object: 3 on a 3-copy plan (ADR-047). */
+  replicas: number;
+  /** The paid period reads are counted in; null without a plan (granted by the operator). */
+  periodStart: number | null;
 }
 
 /** R2 key of an object's bytes: one folder per account (the owner's diagram). */
@@ -73,6 +77,8 @@ interface AccountRow {
   reserved_bytes: number;
   index_binding: string | null;
   billing_state: S3BillingState;
+  replicas: number | null;
+  period_start: number | null;
 }
 
 const toAccount = (r: AccountRow): S3Account => ({
@@ -83,12 +89,15 @@ const toAccount = (r: AccountRow): S3Account => ({
   reservedBytes: r.reserved_bytes,
   indexBinding: r.index_binding,
   billingState: r.billing_state,
+  replicas: r.replicas ?? 1,
+  periodStart: r.period_start,
 });
 
 export async function getAccount(ctx: Ctx, userId: string): Promise<S3Account | null> {
   const row = await ctx.env.DB.prepare(
-    `SELECT user_id, status, limit_bytes, used_bytes, reserved_bytes, index_binding, billing_state
-     FROM s3_accounts WHERE user_id = ?1`,
+    `SELECT a.user_id, a.status, a.limit_bytes, a.used_bytes, a.reserved_bytes, a.index_binding,
+       a.billing_state, s.replicas, s.period_start
+     FROM s3_accounts a LEFT JOIN s3_subscriptions s ON s.user_id = a.user_id WHERE a.user_id = ?1`,
   )
     .bind(userId)
     .first<AccountRow>();
@@ -425,11 +434,11 @@ export interface AccountView extends S3Account {
 }
 
 const ACCOUNT_VIEW = `SELECT a.user_id, a.status, a.limit_bytes, a.used_bytes, a.reserved_bytes, a.index_binding,
-    a.billing_state, a.created_at, u.email, u.name,
+    a.billing_state, s.replicas, s.period_start, a.created_at, u.email, u.name,
     (SELECT account_id FROM accounts WHERE user_id = a.user_id AND provider_id = 'zeiko' LIMIT 1) AS zeiko_id,
     (SELECT COUNT(*) FROM s3_buckets b WHERE b.user_id = a.user_id) AS buckets,
     (SELECT COUNT(*) FROM s3_keys k WHERE k.user_id = a.user_id AND k.revoked_at IS NULL) AS keys
-  FROM s3_accounts a JOIN users u ON u.id = a.user_id`;
+  FROM s3_accounts a JOIN users u ON u.id = a.user_id LEFT JOIN s3_subscriptions s ON s.user_id = a.user_id`;
 
 type AccountViewRow = AccountRow & {
   created_at: number;
@@ -630,7 +639,7 @@ export async function s3Overview(ctx: Ctx, userId: string) {
             billingState: account.billingState,
           }
         : null,
-    billing: enabled ? await s3BillingView(ctx, userId) : null,
+    plan: configured ? await s3PlanView(ctx, userId) : null,
     keys: enabled ? await listKeys(ctx, userId) : [],
     buckets: enabled
       ? (await listBuckets(ctx, userId)).map((b) => ({

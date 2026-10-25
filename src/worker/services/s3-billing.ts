@@ -1,348 +1,528 @@
-// Zeiko S3 billing (ADR-047), postpaid. Every hour each account's stored bytes are sampled into its
-// month's usage (GiB-hours), and every byte served is added as egress. On the 1st (WIB) the month
-// before is billed: average GB stored × the price, plus egress past the free allowance per started
-// block. A bill under the minimum is carried into the next one. Bills are paid by QRIS like any
-// purchase (CheckoutItem `s3_bills`), or at once from credit. Unpaid past the due date: read-only,
-// then locked, then (dunning_delete_mode `live`) the account's data is deleted.
-import { DAY_MS, GIB, HOUR_MS, WIB_OFFSET_MS } from '../../shared/constants';
-import { formatBytes, formatRupiah } from '../../shared/format';
-import { wibDate } from '../../shared/time';
+// Zeiko S3 plans (ADR-047), paid upfront: a size in whole GB (at least s3_min_gb) with 1 copy or 3
+// (services/s3-replicas.ts), for a billing month, like Drive's plans (ADR-041): QRIS when bought,
+// manual renewal with reminders, credit renews by itself. A bigger plan applies now for the rest of
+// the period; a smaller one from the next. Egress past the free allowance of a period is added to a
+// later renewal. A plan not renewed: read-only, then locked, then (dunning_delete_mode `live`) the
+// account's data is deleted. Accounts the operator granted (no plan) are not billed.
+import { DAY_MS, GIB, WIB_OFFSET_MS } from '../../shared/constants';
+import { formatBytes } from '../../shared/format';
+import { addBillingMonth, wibDate } from '../../shared/time';
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
-import { log } from '../lib/log';
 import {
   invoiceStmts,
   onceKey,
   runMoneyBatch,
   walletBalance,
   walletStmts,
+  wibAnchorDay,
   withTax,
+  type InvoiceLine,
 } from './billing';
 import { notify } from './notify';
+import { getAccount, s3Configured } from './s3';
+import { replicasAvailable } from './s3-replicas';
 
 type Stmt = D1PreparedStatement;
+type Config = Awaited<ReturnType<Ctx['config']>>;
 export type S3BillingState = 'ok' | 'readonly' | 'locked';
-export type S3BillStatus = 'open' | 'paid' | 'carried' | 'waived';
+export type Replicas = 1 | 3;
 
-/** The billing month (WIB) a moment falls in: YYYY-MM. */
-export function s3Period(ms: number): string {
-  return wibDate(ms).slice(0, 7);
+export interface S3SubRow {
+  user_id: string;
+  gb: number;
+  replicas: Replicas;
+  next_gb: number | null;
+  next_replicas: Replicas | null;
+  anchor_day: number;
+  period_start: number;
+  period_end: number;
 }
 
-/** UTC ms where a billing month starts and ends. */
-export function periodBounds(period: string): { start: number; end: number } {
-  const [y, m] = period.split('-').map(Number) as [number, number];
-  return { start: Date.UTC(y, m - 1, 1) - WIB_OFFSET_MS, end: Date.UTC(y, m, 1) - WIB_OFFSET_MS };
-}
-
-export function periodHours(period: string): number {
-  const { start, end } = periodBounds(period);
-  return (end - start) / HOUR_MS;
-}
-
-/** Hours a late sample may stand for (the cron missed a run), so nothing is billed twice. */
-const SAMPLE_GAP_MAX_HOURS = 3;
-
-/** Hourly: what every account stores now counts for one more hour of its month. */
-export async function sampleS3Storage(ctx: Ctx): Promise<number> {
-  const now = ctx.now();
-  const r = await ctx.env.DB.prepare(
-    `INSERT INTO s3_usage (user_id, period, gib_hours, egress_bytes, last_hour, updated_at)
-     SELECT user_id, ?1, used_bytes / ${GIB}.0, 0, ?2, ?3 FROM s3_accounts
-     WHERE used_bytes > 0 AND status != 'deleting'
-     ON CONFLICT (user_id, period) DO UPDATE SET
-       gib_hours = gib_hours + excluded.gib_hours *
-         (CASE WHEN last_hour = 0 THEN 1 ELSE MIN(?4, excluded.last_hour - last_hour) END),
-       last_hour = excluded.last_hour, updated_at = excluded.updated_at
-     WHERE excluded.last_hour > s3_usage.last_hour`,
+export async function getS3Subscription(ctx: Ctx, userId: string): Promise<S3SubRow | null> {
+  return ctx.env.DB.prepare(
+    `SELECT user_id, gb, replicas, next_gb, next_replicas, anchor_day, period_start, period_end
+     FROM s3_subscriptions WHERE user_id = ?1`,
   )
-    .bind(s3Period(now), Math.floor(now / HOUR_MS), now, SAMPLE_GAP_MAX_HOURS)
-    .run();
-  return r.meta.changes;
+    .bind(userId)
+    .first<S3SubRow>();
 }
 
-/** Bytes an object read sent out, on the bucket owner's month. */
-export async function meterS3Egress(ctx: Ctx, userId: string, bytes: number): Promise<void> {
-  if (bytes <= 0) return;
-  const now = ctx.now();
-  await ctx.env.DB.prepare(
-    `INSERT INTO s3_usage (user_id, period, gib_hours, egress_bytes, last_hour, updated_at)
-     VALUES (?1, ?2, 0, ?3, 0, ?4)
-     ON CONFLICT (user_id, period) DO UPDATE SET egress_bytes = egress_bytes + excluded.egress_bytes,
-       updated_at = excluded.updated_at`,
-  )
-    .bind(userId, s3Period(now), bytes, now)
-    .run();
+const monthly = (cfg: Config, gb: number, replicas: number) =>
+  gb * (replicas === 3 ? cfg.s3_price_idr_per_gb_month_3x : cfg.s3_price_idr_per_gb_month);
+
+const planLabel = (gb: number, replicas: number) =>
+  `Zeiko S3 ${gb} GB, ${replicas === 3 ? '3 salinan' : '1 salinan'}, sebulan`;
+
+/** 00:00 WIB on the 1st of the month `ms` falls in. */
+function wibMonthStart(ms: number): number {
+  const d = new Date(ms + WIB_OFFSET_MS);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) - WIB_OFFSET_MS;
 }
 
-export interface S3BillLine {
-  kind: 'storage' | 'egress' | 'carried';
-  label: string;
-  amountIdr: number;
-  gibMonths?: number;
-  egressBytes?: number;
-  blocks?: number;
+/** The period an account's reads count in: its plan's (billable), or the WIB month without one. */
+export function egressPeriod(
+  periodStart: number | null,
+  now: number,
+): { start: number; billable: boolean } {
+  return periodStart !== null
+    ? { start: periodStart, billable: true }
+    : { start: wibMonthStart(now), billable: false };
 }
 
-export interface S3Prices {
-  perGbMonthIdr: number;
-  egressFreeBytes: number;
-  egressBlockBytes: number;
-  egressBlockIdr: number;
-  dueDays: number;
-}
-
-async function prices(ctx: Ctx): Promise<S3Prices> {
-  const cfg = await ctx.config();
-  return {
-    perGbMonthIdr: cfg.s3_price_idr_per_gb_month,
-    egressFreeBytes: cfg.s3_egress_free_bytes,
-    egressBlockBytes: cfg.s3_egress_block_bytes,
-    egressBlockIdr: cfg.s3_egress_block_idr,
-    dueDays: cfg.s3_bill_due_days,
-  };
-}
-
-/** What a month's usage costs before tax, line by line. */
-export function usageLines(
-  period: string,
-  gibHours: number,
-  egressBytes: number,
-  p: S3Prices,
-): { gibMonths: number; lines: S3BillLine[] } {
-  const gibMonths = gibHours / periodHours(period);
-  const over = Math.max(0, egressBytes - p.egressFreeBytes);
-  const blocks = Math.ceil(over / p.egressBlockBytes);
-  return {
-    gibMonths,
-    lines: [
-      {
-        kind: 'storage',
-        label: `Penyimpanan ${period}: rata-rata ${gibMonths.toFixed(2)} GB × ${formatRupiah(p.perGbMonthIdr)}`,
-        amountIdr: Math.round(gibMonths * p.perGbMonthIdr),
-        gibMonths,
-      },
-      {
-        kind: 'egress',
-        label:
-          `Egress ${period}: ${formatBytes(egressBytes)}, gratis ${formatBytes(p.egressFreeBytes)}` +
-          (blocks
-            ? `, ${blocks} × ${formatBytes(p.egressBlockBytes)} × ${formatRupiah(p.egressBlockIdr)}`
-            : ''),
-        amountIdr: blocks * p.egressBlockIdr,
-        egressBytes,
-        blocks,
-      },
-    ],
-  };
-}
-
-const sum = (xs: Array<{ amountIdr: number }>) => xs.reduce((s, x) => s + x.amountIdr, 0);
-
-/**
- * Nightly: bills every finished month that has usage and no bill yet. A bill credit covers is paid
- * at once. Returns how many bills were written.
- */
-export async function issueS3Bills(ctx: Ctx, limit = 200): Promise<number> {
-  const cfg = await ctx.config();
-  const p = await prices(ctx);
-  const now = ctx.now();
-  const DB = ctx.env.DB;
-  const { results } = await DB.prepare(
-    `SELECT u.user_id, u.period, u.gib_hours, u.egress_bytes FROM s3_usage u
-     WHERE u.period < ?1
-       AND NOT EXISTS (SELECT 1 FROM s3_bills b WHERE b.user_id = u.user_id AND b.period = u.period)
-     ORDER BY u.period LIMIT ?2`,
-  )
-    .bind(s3Period(now), limit)
-    .all<{ user_id: string; period: string; gib_hours: number; egress_bytes: number }>();
-  let issued = 0;
-  for (const u of results) {
-    const { gibMonths, lines } = usageLines(u.period, u.gib_hours, u.egress_bytes, p);
-    const { results: carried } = await DB.prepare(
-      `SELECT id, period, subtotal_idr FROM s3_bills
-       WHERE user_id = ?1 AND status = 'carried' AND carried_into IS NULL ORDER BY period`,
-    )
-      .bind(u.user_id)
-      .all<{ id: string; period: string; subtotal_idr: number }>();
-    if (carried.length) {
-      lines.push({
-        kind: 'carried',
-        label: `Sisa tagihan ${carried.map((c) => c.period).join(', ')}`,
-        amountIdr: carried.reduce((s, c) => s + c.subtotal_idr, 0),
-      });
-    }
-    const subtotal = sum(lines);
-    const total = await withTax(ctx, subtotal);
-    const status: S3BillStatus =
-      total === 0 ? 'paid' : total < cfg.s3_bill_min_idr ? 'carried' : 'open';
-    const id = ulid(now);
-    const dueAt = status === 'open' ? now + p.dueDays * DAY_MS : null;
-    const stmts: Stmt[] = [
-      DB.prepare(
-        `INSERT INTO s3_bills (id, user_id, period, gib_months, egress_bytes, lines_json, subtotal_idr,
-           total_idr, status, due_at, paid_at, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
-      ).bind(
-        id,
-        u.user_id,
-        u.period,
-        gibMonths,
-        u.egress_bytes,
-        JSON.stringify(lines),
-        subtotal,
-        total,
-        status,
-        dueAt,
-        status === 'paid' ? now : null,
-        now,
-      ),
-    ];
-    if (carried.length) {
-      stmts.push(
-        DB.prepare(
-          `UPDATE s3_bills SET carried_into = ?1
-           WHERE user_id = ?2 AND status = 'carried' AND carried_into IS NULL AND id != ?1`,
-        ).bind(id, u.user_id),
-      );
-    }
-    try {
-      await DB.batch(stmts);
-    } catch (e) {
-      // Another run billed this month first (UNIQUE user_id, period).
-      log.warn('s3_bill_skipped', { userId: u.user_id, period: u.period, error: String(e) });
-      continue;
-    }
-    issued++;
-    if (status !== 'open') continue;
-    let paid = false;
-    if ((await walletBalance(ctx, u.user_id)) >= total) {
-      paid = await payS3Bills(ctx, u.user_id, [id]).then(
-        () => true,
-        () => false,
-      );
-    }
-    await notify(ctx, u.user_id, 's3_bill', {
-      billId: id,
-      period: u.period,
-      totalIdr: total,
-      dueAt,
-      paid,
-    });
-  }
-  return issued;
-}
-
-interface OpenBill {
-  id: string;
-  period: string;
-  subtotal_idr: number;
-}
-
-async function openBills(ctx: Ctx, userId: string, billIds: string[]): Promise<OpenBill[]> {
-  const ids = [...new Set(billIds)].slice(0, 24);
-  if (!ids.length) return [];
-  const { results } = await ctx.env.DB.prepare(
-    `SELECT id, period, subtotal_idr FROM s3_bills WHERE user_id = ?1 AND status = 'open'
-       AND id IN (${ids.map((_, i) => `?${i + 2}`).join(', ')}) ORDER BY period`,
-  )
-    .bind(userId, ...ids)
-    .all<OpenBill>();
-  return results;
-}
-
-/** What paying these bills costs now, tax included: the same sum `payS3Bills` takes. */
-export async function quoteS3Bills(ctx: Ctx, userId: string, billIds: string[]): Promise<number> {
-  const bills = await openBills(ctx, userId, billIds);
-  if (!bills.length) throw new AppError('CONFLICT', 'nothing to pay', { reason: 'NO_BILL' });
-  return withTax(
-    ctx,
-    bills.reduce((s, b) => s + b.subtotal_idr, 0),
-  );
-}
-
-/** Pays open bills from the wallet (the payment, or credit, is already there). */
-export async function payS3Bills(
+/** Bytes an object read sent out, on the bucket owner's period. */
+export async function meterS3Egress(
   ctx: Ctx,
   userId: string,
-  billIds: string[],
-): Promise<{ chargedIdr: number; invoiceId: string }> {
-  const bills = await openBills(ctx, userId, billIds);
-  if (!bills.length) throw new AppError('CONFLICT', 'nothing to pay', { reason: 'NO_BILL' });
-  const inv = await invoiceStmts(
-    ctx,
-    userId,
-    bills.map((b) => ({ label: `Zeiko S3 ${b.period}`, amountIdr: b.subtotal_idr })),
-    null,
-  );
+  periodStart: number | null,
+  bytes: number,
+): Promise<void> {
+  if (bytes <= 0) return;
   const now = ctx.now();
+  const p = egressPeriod(periodStart, now);
+  await ctx.env.DB.prepare(
+    `INSERT INTO s3_usage (user_id, period_start, billable, egress_bytes, billed_blocks, updated_at)
+     VALUES (?1, ?2, ?3, ?4, 0, ?5)
+     ON CONFLICT (user_id, period_start) DO UPDATE SET egress_bytes = egress_bytes + excluded.egress_bytes,
+       updated_at = excluded.updated_at`,
+  )
+    .bind(userId, p.start, p.billable ? 1 : 0, bytes, now)
+    .run();
+}
+
+interface OwedEgress {
+  periodStart: number;
+  egressBytes: number;
+  blocks: number;
+}
+
+const blocksFor = (cfg: Config, egress: number) =>
+  Math.ceil(Math.max(0, egress - cfg.s3_egress_free_bytes) / cfg.s3_egress_block_bytes);
+
+/** Egress blocks of paid periods not charged yet; `before`: only periods that started earlier. */
+async function owedEgress(
+  ctx: Ctx,
+  cfg: Config,
+  userId: string,
+  before: number | null,
+): Promise<OwedEgress[]> {
+  const { results } = await ctx.env.DB.prepare(
+    `SELECT period_start, egress_bytes, billed_blocks FROM s3_usage
+     WHERE user_id = ?1 AND billable = 1 AND (?2 IS NULL OR period_start < ?2) ORDER BY period_start`,
+  )
+    .bind(userId, before)
+    .all<{ period_start: number; egress_bytes: number; billed_blocks: number }>();
+  return results
+    .map((r) => ({
+      periodStart: r.period_start,
+      egressBytes: r.egress_bytes,
+      blocks: blocksFor(cfg, r.egress_bytes) - r.billed_blocks,
+    }))
+    .filter((r) => r.blocks > 0);
+}
+
+function egressLines(cfg: Config, owed: OwedEgress[]): InvoiceLine[] {
+  return owed.map((o) => ({
+    label: `Egress periode ${wibDate(o.periodStart)}: ${formatBytes(o.egressBytes)}, ${o.blocks} × ${formatBytes(cfg.s3_egress_block_bytes)} di atas ${formatBytes(cfg.s3_egress_free_bytes)} gratis`,
+    amountIdr: o.blocks * cfg.s3_egress_block_idr,
+  }));
+}
+
+/**
+ * The plan line always; as many egress blocks as the wallet covers (the rest waits for the next
+ * renewal), so egress served between the quote and the payment never fails the purchase.
+ */
+async function fitToWallet(
+  ctx: Ctx,
+  cfg: Config,
+  userId: string,
+  planLines: InvoiceLine[],
+  owed: OwedEgress[],
+): Promise<{ lines: InvoiceLine[]; billed: OwedEgress[] }> {
+  const wallet = await walletBalance(ctx, userId);
+  const billed = owed.map((o) => ({ ...o }));
+  for (;;) {
+    const lines = [...planLines, ...egressLines(cfg, billed)];
+    const total = await withTax(
+      ctx,
+      lines.reduce((s, l) => s + l.amountIdr, 0),
+    );
+    const last = billed[billed.length - 1];
+    if (total <= wallet || !last) return { lines, billed };
+    last.blocks--;
+    if (last.blocks === 0) billed.pop();
+  }
+}
+
+/** The part of a month's price still to run; a period renewed early has not started yet (all of it). */
+function proRata(price: number, sub: S3SubRow, now: number): number {
+  const total = sub.period_end - sub.period_start;
+  const left = Math.min(total, Math.max(0, sub.period_end - now));
+  return total > 0 ? Math.ceil((price * left) / total) : price;
+}
+
+async function gate(ctx: Ctx, userId: string): Promise<void> {
+  if (!s3Configured(ctx.env))
+    throw new AppError('CONFLICT', 'Zeiko S3 is not available here', { reason: 'S3_UNAVAILABLE' });
+  const acc = await getAccount(ctx, userId);
+  if (acc?.status === 'suspended')
+    throw new AppError('FORBIDDEN', 'this Zeiko S3 account is suspended', {
+      reason: 'ACCOUNT_SUSPENDED',
+    });
+  if (acc?.status === 'deleting')
+    throw new AppError('CONFLICT', 'this Zeiko S3 account is being deleted');
+}
+
+function validPlan(cfg: Config, ctx: Ctx, gb: number, replicas: number): void {
+  if (!Number.isInteger(gb) || gb < cfg.s3_min_gb || gb > cfg.s3_max_gb)
+    throw new AppError('VALIDATION', 'size out of range', {
+      field: 'gb',
+      min: cfg.s3_min_gb,
+      max: cfg.s3_max_gb,
+    });
+  if (replicas !== 1 && replicas !== 3)
+    throw new AppError('VALIDATION', 'replicas is 1 or 3', { field: 'replicas' });
+  if (replicas === 3 && !replicasAvailable(ctx.env))
+    throw new AppError('CONFLICT', 'three copies are not available here', {
+      reason: 'NO_REPLICAS',
+    });
+}
+
+type PlanAction = 'new' | 'reactivate' | 'upgrade' | 'schedule' | 'cancel_scheduled';
+
+/** What choosing `gb` × `replicas` does now, and its lines before tax. */
+async function planChange(
+  ctx: Ctx,
+  userId: string,
+  gb: number,
+  replicas: Replicas,
+): Promise<{
+  action: PlanAction;
+  sub: S3SubRow | null;
+  planLines: InvoiceLine[];
+  owed: OwedEgress[];
+}> {
+  const cfg = await ctx.config();
+  validPlan(cfg, ctx, gb, replicas);
+  await gate(ctx, userId);
+  const sub = await getS3Subscription(ctx, userId);
+  const now = ctx.now();
+  const price = monthly(cfg, gb, replicas);
+  const line = { label: planLabel(gb, replicas), amountIdr: price };
+  const active = sub !== null && sub.period_end > now;
+  if (active && gb === sub.gb && replicas === sub.replicas) {
+    if (sub.next_gb !== null) return { action: 'cancel_scheduled', sub, planLines: [], owed: [] };
+    throw new AppError('CONFLICT', 'already on this plan', { reason: 'SAME_PLAN' });
+  }
+  // Never a size below what is stored (an account the operator granted may already hold more).
+  const acc = await getAccount(ctx, userId);
+  const stored = (acc?.usedBytes ?? 0) + (acc?.reservedBytes ?? 0);
+  if (gb * GIB < stored)
+    throw new AppError('CONFLICT', 'more is stored than that', {
+      reason: 'S3_TOO_SMALL',
+      usedBytes: stored,
+    });
+  if (!sub) return { action: 'new', sub, planLines: [line], owed: [] };
+  if (!active)
+    return {
+      action: 'reactivate',
+      sub,
+      planLines: [line],
+      owed: await owedEgress(ctx, cfg, userId, null),
+    };
+  const current = monthly(cfg, sub.gb, sub.replicas);
+  if (price < current) return { action: 'schedule', sub, planLines: [], owed: [] };
+  return {
+    action: 'upgrade',
+    sub,
+    planLines: [
+      {
+        label: `${planLabel(gb, replicas)}: sisa periode ini`,
+        amountIdr: proRata(price - current, sub, now),
+      },
+    ],
+    owed: [],
+  };
+}
+
+async function quote(ctx: Ctx, planLines: InvoiceLine[], owed: OwedEgress[]): Promise<number> {
+  const cfg = await ctx.config();
+  const lines = [...planLines, ...egressLines(cfg, owed)];
+  return lines.length
+    ? withTax(
+        ctx,
+        lines.reduce((s, l) => s + l.amountIdr, 0),
+      )
+    : 0;
+}
+
+export async function quoteS3Plan(
+  ctx: Ctx,
+  userId: string,
+  gb: number,
+  replicas: Replicas,
+): Promise<number> {
+  const c = await planChange(ctx, userId, gb, replicas);
+  return quote(ctx, c.planLines, c.owed);
+}
+
+export type S3Done =
+  | 's3_subscribed'
+  | 's3_reactivated'
+  | 's3_upgraded'
+  | 's3_renewed'
+  | 's3_change_scheduled'
+  | 's3_change_cancelled';
+
+/** Copies to make or drop once a plan's number of copies changed. */
+async function afterReplicas(ctx: Ctx, userId: string, from: number, to: number): Promise<void> {
+  if (from === to) return;
+  await ctx.env.CLEANUP_QUEUE.send({
+    type: to === 3 ? 's3_replicate' : 's3_unreplicate',
+    userId,
+  });
+}
+
+/** Statements that charge `lines` and mark the egress in `billed` as charged. */
+async function chargeStmts(
+  ctx: Ctx,
+  userId: string,
+  lines: InvoiceLine[],
+  billed: OwedEgress[],
+): Promise<{ total: number; invoiceId: string; stmts: Stmt[] }> {
+  const inv = await invoiceStmts(ctx, userId, lines, null);
   const DB = ctx.env.DB;
-  await runMoneyBatch(
-    ctx,
-    [
-      ...walletStmts(ctx, userId, -inv.total, 's3_bill', inv.id),
-      ...bills.map((b) =>
+  return {
+    total: inv.total,
+    invoiceId: inv.id,
+    stmts: [
+      ...walletStmts(ctx, userId, -inv.total, 's3_plan', inv.id),
+      ...billed.map((o) =>
         DB.prepare(
-          `UPDATE s3_bills SET status = 'paid', paid_at = ?2, invoice_id = ?3 WHERE id = ?1 AND status = 'open'`,
-        ).bind(b.id, now, inv.id),
+          `UPDATE s3_usage SET billed_blocks = billed_blocks + ?3 WHERE user_id = ?1 AND period_start = ?2`,
+        ).bind(userId, o.periodStart, o.blocks),
       ),
       ...inv.stmts,
     ],
-    inv.total,
+  };
+}
+
+function limitStmt(ctx: Ctx, userId: string, gb: number): Stmt {
+  return ctx.env.DB.prepare(
+    `UPDATE s3_accounts SET limit_bytes = ?2, billing_state = 'ok', updated_at = ?3 WHERE user_id = ?1`,
+  ).bind(userId, gb * GIB, ctx.now());
+}
+
+/** Buys, changes or brings back a plan, paid from the wallet (the QRIS lands there first). */
+export async function buyS3Plan(
+  ctx: Ctx,
+  userId: string,
+  gb: number,
+  replicas: Replicas,
+): Promise<{ kind: S3Done; chargedIdr: number; invoiceId: string | null }> {
+  const cfg = await ctx.config();
+  const { action, sub, planLines, owed } = await planChange(ctx, userId, gb, replicas);
+  const DB = ctx.env.DB;
+  const now = ctx.now();
+  if (action === 'schedule' || action === 'cancel_scheduled') {
+    const next = action === 'schedule';
+    await DB.prepare(
+      `UPDATE s3_subscriptions SET next_gb = ?2, next_replicas = ?3, updated_at = ?4 WHERE user_id = ?1`,
+    )
+      .bind(userId, next ? gb : null, next ? replicas : null, now)
+      .run();
+    return {
+      kind: next ? 's3_change_scheduled' : 's3_change_cancelled',
+      chargedIdr: 0,
+      invoiceId: null,
+    };
+  }
+  const { lines, billed } = await fitToWallet(ctx, cfg, userId, planLines, owed);
+  const charge = await chargeStmts(ctx, userId, lines, billed);
+  const anchor = wibAnchorDay(now);
+  const fresh = addBillingMonth(now, anchor);
+  const stmts: Stmt[] = [...charge.stmts];
+  if (action === 'new') {
+    stmts.push(
+      DB.prepare(
+        `INSERT INTO s3_accounts (user_id, status, limit_bytes, created_by, created_at, updated_at)
+         VALUES (?1, 'active', ?2, ?1, ?3, ?3)
+         ON CONFLICT (user_id) DO UPDATE SET limit_bytes = excluded.limit_bytes, billing_state = 'ok',
+           updated_at = excluded.updated_at`,
+      ).bind(userId, gb * GIB, now),
+      DB.prepare(
+        `INSERT INTO s3_subscriptions (user_id, gb, replicas, anchor_day, period_start, period_end, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?5, ?5)`,
+      ).bind(userId, gb, replicas, anchor, now, fresh),
+    );
+  } else {
+    stmts.push(
+      action === 'reactivate'
+        ? DB.prepare(
+            `UPDATE s3_subscriptions SET gb = ?2, replicas = ?3, next_gb = NULL, next_replicas = NULL,
+               anchor_day = ?4, period_start = ?5, period_end = ?6, updated_at = ?5
+             WHERE user_id = ?1 AND period_end = ?7`,
+          ).bind(userId, gb, replicas, anchor, now, fresh, sub!.period_end)
+        : DB.prepare(
+            `UPDATE s3_subscriptions SET gb = ?2, replicas = ?3, next_gb = NULL, next_replicas = NULL,
+               updated_at = ?4 WHERE user_id = ?1 AND period_end = ?5`,
+          ).bind(userId, gb, replicas, now, sub!.period_end),
+      limitStmt(ctx, userId, gb),
+    );
+  }
+  await runMoneyBatch(ctx, stmts, charge.total);
+  // A first plan on an account the operator had granted may already hold objects.
+  await afterReplicas(ctx, userId, sub?.replicas ?? 1, replicas);
+  return {
+    kind:
+      action === 'new'
+        ? 's3_subscribed'
+        : action === 'reactivate'
+          ? 's3_reactivated'
+          : 's3_upgraded',
+    chargedIdr: charge.total,
+    invoiceId: charge.invoiceId,
+  };
+}
+
+/** The next month of the plan (or the smaller one waiting), plus egress owed from earlier periods. */
+async function renewal(ctx: Ctx, userId: string) {
+  const cfg = await ctx.config();
+  await gate(ctx, userId);
+  const sub = await getS3Subscription(ctx, userId);
+  if (!sub) throw new AppError('CONFLICT', 'no plan to renew', { reason: 'NO_PLAN' });
+  const gb = sub.next_gb ?? sub.gb;
+  const replicas = (sub.next_replicas ?? sub.replicas) as Replicas;
+  if (replicas === 3 && !replicasAvailable(ctx.env))
+    throw new AppError('CONFLICT', 'three copies are not available here', {
+      reason: 'NO_REPLICAS',
+    });
+  const lapsed = sub.period_end <= ctx.now();
+  return {
+    cfg,
+    sub,
+    gb,
+    replicas,
+    lapsed,
+    planLines: [{ label: planLabel(gb, replicas), amountIdr: monthly(cfg, gb, replicas) }],
+    // A running period's egress is still growing: it waits for the renewal after.
+    owed: await owedEgress(ctx, cfg, userId, lapsed ? null : sub.period_start),
+  };
+}
+
+export async function quoteS3Renew(ctx: Ctx, userId: string): Promise<number> {
+  const r = await renewal(ctx, userId);
+  return quote(ctx, r.planLines, r.owed);
+}
+
+/** Pays the next month: from the end of the period, or from today for a plan that ran out. */
+export async function renewS3Plan(
+  ctx: Ctx,
+  userId: string,
+): Promise<{ kind: S3Done; chargedIdr: number; invoiceId: string | null }> {
+  const { cfg, sub, gb, replicas, lapsed, planLines, owed } = await renewal(ctx, userId);
+  const { lines, billed } = await fitToWallet(ctx, cfg, userId, planLines, owed);
+  const charge = await chargeStmts(ctx, userId, lines, billed);
+  const now = ctx.now();
+  const anchor = lapsed ? wibAnchorDay(now) : sub.anchor_day;
+  const start = lapsed ? now : sub.period_end;
+  await runMoneyBatch(
+    ctx,
+    [
+      ...charge.stmts,
+      ctx.env.DB.prepare(
+        `UPDATE s3_subscriptions SET gb = ?2, replicas = ?3, next_gb = NULL, next_replicas = NULL,
+           anchor_day = ?4, period_start = ?5, period_end = ?6, updated_at = ?7
+         WHERE user_id = ?1 AND period_end = ?8`,
+      ).bind(
+        userId,
+        gb,
+        replicas,
+        anchor,
+        start,
+        addBillingMonth(start, anchor),
+        now,
+        sub.period_end,
+      ),
+      limitStmt(ctx, userId, gb),
+    ],
+    charge.total,
   );
-  await refreshBillingState(ctx, userId);
-  return { chargedIdr: inv.total, invoiceId: inv.id };
+  await afterReplicas(ctx, userId, sub.replicas, replicas);
+  return {
+    kind: lapsed ? 's3_reactivated' : 's3_renewed',
+    chargedIdr: charge.total,
+    invoiceId: charge.invoiceId,
+  };
 }
 
-type Dunning = Awaited<ReturnType<Ctx['config']>>['s3_dunning'];
-
-/** Days since the oldest unpaid bill fell due (negative: not due yet), or null: nothing unpaid. */
-function daysOverdue(due: number | null, now: number): number | null {
-  return due === null ? null : Math.floor((now - due) / DAY_MS);
+/** Hourly: a plan that just ran out renews itself when credit covers it (as Drive's do). */
+export async function renewS3FromCredit(ctx: Ctx): Promise<number> {
+  const now = ctx.now();
+  const { results } = await ctx.env.DB.prepare(
+    `SELECT user_id FROM s3_subscriptions WHERE period_end <= ?1 AND period_end > ?2 LIMIT 200`,
+  )
+    .bind(now, now - DAY_MS)
+    .all<{ user_id: string }>();
+  let renewed = 0;
+  for (const { user_id } of results) {
+    const credit = await walletBalance(ctx, user_id);
+    if (!credit) continue;
+    const price = await quoteS3Renew(ctx, user_id).catch(() => Infinity);
+    if (price > credit) continue;
+    if (
+      await renewS3Plan(ctx, user_id).then(
+        () => true,
+        () => false,
+      )
+    )
+      renewed++;
+  }
+  return renewed;
 }
 
-function stateFor(days: number | null, d: Dunning): S3BillingState {
-  if (days === null) return 'ok';
+/** Nightly: H-3 / H-1 reminders to renew (billing_reminder_days_before), once per period and day. */
+export async function remindS3Renewals(ctx: Ctx): Promise<number> {
+  const cfg = await ctx.config();
+  const now = ctx.now();
+  let sent = 0;
+  for (const day of cfg.billing_reminder_days_before) {
+    const { results } = await ctx.env.DB.prepare(
+      `SELECT user_id, period_end FROM s3_subscriptions WHERE period_end > ?1 AND period_end <= ?2`,
+    )
+      .bind(now + (day - 1) * DAY_MS, now + day * DAY_MS)
+      .all<{ user_id: string; period_end: number }>();
+    for (const s of results) {
+      if (!(await onceKey(ctx, `s3_remind:${s.user_id}:${s.period_end}:${day}`))) continue;
+      const amountIdr = await quoteS3Renew(ctx, s.user_id).catch(() => null);
+      if (amountIdr === null) continue;
+      await notify(ctx, s.user_id, 's3_reminder', {
+        days: day,
+        periodEnd: s.period_end,
+        amountIdr,
+        creditCovers: (await walletBalance(ctx, s.user_id)) >= amountIdr,
+      });
+      sent++;
+    }
+  }
+  return sent;
+}
+
+type Dunning = Config['s3_dunning'];
+
+function stateFor(days: number, d: Dunning): S3BillingState {
   if (days >= d.lock_after_days) return 'locked';
   if (days >= d.readonly_after_days) return 'readonly';
   return 'ok';
 }
 
-async function oldestDue(ctx: Ctx, userId: string): Promise<number | null> {
-  const row = await ctx.env.DB.prepare(
-    `SELECT MIN(due_at) AS due FROM s3_bills WHERE user_id = ?1 AND status = 'open'`,
-  )
-    .bind(userId)
-    .first<{ due: number | null }>();
-  return row?.due ?? null;
-}
-
-/** Puts an account in the state its unpaid bills call for (after a payment or a waiver). */
-export async function refreshBillingState(ctx: Ctx, userId: string): Promise<S3BillingState> {
-  const cfg = await ctx.config();
-  const now = ctx.now();
-  const state = stateFor(daysOverdue(await oldestDue(ctx, userId), now), cfg.s3_dunning);
-  await ctx.env.DB.prepare(
-    `UPDATE s3_accounts SET billing_state = ?2, updated_at = ?3 WHERE user_id = ?1 AND billing_state != ?2`,
-  )
-    .bind(userId, state, now)
-    .run();
-  return state;
-}
-
-async function audit(
-  ctx: Ctx,
-  actor: string | null,
-  action: string,
-  userId: string,
-  meta: unknown,
-) {
+async function audit(ctx: Ctx, action: string, userId: string, meta: unknown) {
   await ctx.env.DB.prepare(
     `INSERT INTO audit_logs (id, actor_id, action, target_type, target_id, meta_json, created_at)
-     VALUES (?1, ?2, ?3, 'user', ?4, ?5, ?6)`,
+     VALUES (?1, NULL, ?2, 'user', ?3, ?4, ?5)`,
   )
-    .bind(ulid(ctx.now()), actor, action, userId, JSON.stringify(meta), ctx.now())
+    .bind(ulid(ctx.now()), action, userId, JSON.stringify(meta), ctx.now())
     .run();
 }
 
@@ -352,34 +532,31 @@ export interface S3DunningReport {
   dryRun: string[];
 }
 
-/** Nightly: unpaid bills move their accounts to read-only, locked, then deleted (ADR-047). */
+/** Nightly: plans not renewed move their accounts to read-only, locked, then deleted (ADR-047). */
 export async function runS3Dunning(ctx: Ctx): Promise<S3DunningReport> {
   const cfg = await ctx.config();
   const d = cfg.s3_dunning;
   const now = ctx.now();
   const DB = ctx.env.DB;
   const report: S3DunningReport = { changed: 0, deleted: 0, dryRun: [] };
-  const { results } = await DB.prepare(
-    `SELECT a.user_id, a.billing_state, a.status,
-       (SELECT MIN(due_at) FROM s3_bills b WHERE b.user_id = a.user_id AND b.status = 'open') AS due,
-       (SELECT COALESCE(SUM(total_idr), 0) FROM s3_bills b WHERE b.user_id = a.user_id AND b.status = 'open') AS owed
-     FROM s3_accounts a
-     WHERE a.billing_state != 'ok'
-        OR EXISTS (SELECT 1 FROM s3_bills b WHERE b.user_id = a.user_id AND b.status = 'open' AND b.due_at <= ?1)
-     LIMIT 500`,
+  // Marked accounts whose plan is gone (deleted by the operator) are let go.
+  await DB.prepare(
+    `UPDATE s3_accounts SET billing_state = 'ok', updated_at = ?1 WHERE billing_state != 'ok'
+       AND user_id NOT IN (SELECT user_id FROM s3_subscriptions)`,
   )
     .bind(now)
-    .all<{
-      user_id: string;
-      billing_state: S3BillingState;
-      status: string;
-      due: number | null;
-      owed: number;
-    }>();
+    .run();
+  const { results } = await DB.prepare(
+    `SELECT s.user_id, s.period_end, a.billing_state, a.status FROM s3_subscriptions s
+     JOIN s3_accounts a ON a.user_id = s.user_id
+     WHERE s.period_end <= ?1 OR a.billing_state != 'ok' LIMIT 500`,
+  )
+    .bind(now)
+    .all<{ user_id: string; period_end: number; billing_state: S3BillingState; status: string }>();
   for (const a of results) {
     if (a.status === 'deleting') continue;
-    const days = daysOverdue(a.due, now);
-    const state = stateFor(days, d);
+    const days = Math.floor((now - a.period_end) / DAY_MS);
+    const state = days < 0 ? 'ok' : stateFor(days, d);
     if (state !== a.billing_state) {
       await DB.prepare(
         `UPDATE s3_accounts SET billing_state = ?2, updated_at = ?3 WHERE user_id = ?1`,
@@ -388,8 +565,8 @@ export async function runS3Dunning(ctx: Ctx): Promise<S3DunningReport> {
         .run();
       report.changed++;
     }
-    if (days === null || a.due === null) continue;
-    const deleteAt = a.due + d.delete_after_days * DAY_MS;
+    if (days < 0) continue;
+    const deleteAt = a.period_end + d.delete_after_days * DAY_MS;
     if (days >= d.delete_after_days) {
       // Never while a payment is on its way.
       const pending = await DB.prepare(
@@ -400,7 +577,7 @@ export async function runS3Dunning(ctx: Ctx): Promise<S3DunningReport> {
       if (pending) continue;
       if (cfg.dunning_delete_mode === 'dry_run') {
         if (await onceKey(ctx, `s3_dunning_dry:${a.user_id}:${wibDate(now)}`))
-          await audit(ctx, null, 's3.dunning.delete.dry_run', a.user_id, { owedIdr: a.owed });
+          await audit(ctx, 's3.dunning.delete.dry_run', a.user_id, { periodEnd: a.period_end });
         report.dryRun.push(a.user_id);
         continue;
       }
@@ -409,14 +586,14 @@ export async function runS3Dunning(ctx: Ctx): Promise<S3DunningReport> {
       )
         .bind(a.user_id, now)
         .run();
-      await audit(ctx, null, 's3.dunning.delete.live', a.user_id, { owedIdr: a.owed });
+      await audit(ctx, 's3.dunning.delete.live', a.user_id, { periodEnd: a.period_end });
       await ctx.env.CLEANUP_QUEUE.send({ type: 's3_purge', userId: a.user_id });
       report.deleted++;
       continue;
     }
     for (const day of d.notify_days_after) {
       if (days < day || days > day + 1) continue;
-      if (!(await onceKey(ctx, `s3_dunning:${a.user_id}:${a.due}:${day}`))) continue;
+      if (!(await onceKey(ctx, `s3_dunning:${a.user_id}:${a.period_end}:${day}`))) continue;
       const stage =
         days >= d.delete_after_days - 1
           ? 'delete_warning'
@@ -424,118 +601,62 @@ export async function runS3Dunning(ctx: Ctx): Promise<S3DunningReport> {
             ? 'locked'
             : days >= d.readonly_after_days
               ? 'readonly'
-              : 'due';
-      await notify(ctx, a.user_id, 's3_dunning', { stage, days, deleteAt, owedIdr: a.owed });
+              : 'grace';
+      await notify(ctx, a.user_id, 's3_dunning', { stage, days, deleteAt });
     }
   }
   return report;
 }
 
-/** Operator: a bill nobody has to pay (with the reason, in the audit log). */
-export async function waiveS3Bill(
-  ctx: Ctx,
-  actor: string,
-  billId: string,
-  reason: string | undefined,
-): Promise<void> {
-  const why = reason?.trim() ?? '';
-  if (why.length < 5) throw new AppError('VALIDATION', 'a reason is required', { field: 'reason' });
-  const row = await ctx.env.DB.prepare(
-    `UPDATE s3_bills SET status = 'waived', waived_reason = ?2
-     WHERE id = ?1 AND status IN ('open', 'carried') RETURNING user_id, total_idr`,
-  )
-    .bind(billId, why.slice(0, 500))
-    .first<{ user_id: string; total_idr: number }>();
-  if (!row) throw new AppError('NOT_FOUND', 'no unpaid bill with this id');
-  await audit(ctx, actor, 's3.bill_waived', row.user_id, {
-    billId,
-    totalIdr: row.total_idr,
-    reason: why,
-  });
-  await refreshBillingState(ctx, row.user_id);
-}
-
-export interface S3BillDto {
-  id: string;
-  period: string;
-  gibMonths: number;
-  egressBytes: number;
-  lines: S3BillLine[];
-  totalIdr: number;
-  status: S3BillStatus;
-  dueAt: number | null;
-  paidAt: number | null;
-  createdAt: number;
-}
-
-/** Prices, this month so far, and the bills: for the /s3 page and the operator. */
-export async function s3BillingView(ctx: Ctx, userId: string) {
-  const p = await prices(ctx);
+/** Prices, the plan and this period's egress: for the /s3 page and the operator. */
+export async function s3PlanView(ctx: Ctx, userId: string) {
+  const cfg = await ctx.config();
   const now = ctx.now();
-  const period = s3Period(now);
-  const DB = ctx.env.DB;
-  const [usage, { results }, account] = await Promise.all([
-    DB.prepare(`SELECT gib_hours, egress_bytes FROM s3_usage WHERE user_id = ?1 AND period = ?2`)
-      .bind(userId, period)
-      .first<{ gib_hours: number; egress_bytes: number }>(),
-    DB.prepare(
-      `SELECT id, period, gib_months, egress_bytes, lines_json, subtotal_idr, total_idr, status, due_at,
-         paid_at, created_at
-       FROM s3_bills WHERE user_id = ?1 ORDER BY period DESC LIMIT 12`,
-    )
-      .bind(userId)
-      .all<{
-        id: string;
-        period: string;
-        gib_months: number;
-        egress_bytes: number;
-        lines_json: string;
-        subtotal_idr: number;
-        total_idr: number;
-        status: S3BillStatus;
-        due_at: number | null;
-        paid_at: number | null;
-        created_at: number;
-      }>(),
-    DB.prepare(`SELECT billing_state FROM s3_accounts WHERE user_id = ?1`)
-      .bind(userId)
-      .first<{ billing_state: S3BillingState }>(),
+  const [sub, account, credit] = await Promise.all([
+    getS3Subscription(ctx, userId),
+    getAccount(ctx, userId),
+    walletBalance(ctx, userId),
   ]);
-  const soFar = usageLines(period, usage?.gib_hours ?? 0, usage?.egress_bytes ?? 0, p);
-  const open = results.filter((b) => b.status === 'open');
+  const period = egressPeriod(sub?.period_start ?? null, now);
+  const usage = await ctx.env.DB.prepare(
+    `SELECT egress_bytes, billed_blocks FROM s3_usage WHERE user_id = ?1 AND period_start = ?2`,
+  )
+    .bind(userId, period.start)
+    .first<{ egress_bytes: number; billed_blocks: number }>();
+  const egressBytes = usage?.egress_bytes ?? 0;
+  const overBlocks = period.billable
+    ? Math.max(0, blocksFor(cfg, egressBytes) - (usage?.billed_blocks ?? 0))
+    : 0;
   return {
-    prices: p,
-    billingState: account?.billing_state ?? 'ok',
-    current: {
-      period,
-      gibMonths: soFar.gibMonths,
-      egressBytes: usage?.egress_bytes ?? 0,
-      estimateIdr: await withTax(ctx, sum(soFar.lines)),
+    prices: {
+      perGbMonthIdr: cfg.s3_price_idr_per_gb_month,
+      perGbMonth3xIdr: cfg.s3_price_idr_per_gb_month_3x,
+      minGb: cfg.s3_min_gb,
+      maxGb: cfg.s3_max_gb,
+      threeCopies: replicasAvailable(ctx.env),
+      egressFreeBytes: cfg.s3_egress_free_bytes,
+      egressBlockBytes: cfg.s3_egress_block_bytes,
+      egressBlockIdr: cfg.s3_egress_block_idr,
     },
-    bills: results.map((b): S3BillDto => ({
-      id: b.id,
-      period: b.period,
-      gibMonths: b.gib_months,
-      egressBytes: b.egress_bytes,
-      lines: JSON.parse(b.lines_json) as S3BillLine[],
-      totalIdr: b.total_idr,
-      status: b.status,
-      dueAt: b.due_at,
-      paidAt: b.paid_at,
-      createdAt: b.created_at,
-    })),
-    outstanding: {
-      billIds: open.map((b) => b.id),
-      totalIdr: open.length
-        ? await withTax(
-            ctx,
-            open.reduce((s, b) => s + b.subtotal_idr, 0),
-          )
-        : 0,
-      dueAt: open.reduce<number | null>(
-        (m, b) => (b.due_at !== null && (m === null || b.due_at < m) ? b.due_at : m),
-        null,
-      ),
+    billingState: account?.billingState ?? 'ok',
+    creditIdr: credit,
+    plan: sub
+      ? {
+          gb: sub.gb,
+          replicas: sub.replicas,
+          periodStart: sub.period_start,
+          periodEnd: sub.period_end,
+          lapsed: sub.period_end <= now,
+          next: sub.next_gb !== null ? { gb: sub.next_gb, replicas: sub.next_replicas } : null,
+          renewIdr: await quoteS3Renew(ctx, userId).catch(() => null),
+        }
+      : null,
+    egress: {
+      periodStart: period.start,
+      bytes: egressBytes,
+      billable: period.billable,
+      /** This period's egress past the free allowance, charged at the renewal after the next. */
+      pendingIdr: overBlocks * cfg.s3_egress_block_idr,
     },
   };
 }

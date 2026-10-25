@@ -113,6 +113,9 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
   const d1 = new ShimD1Database(sqlite);
   const kv = new ShimKV(openSqlite(temp ? ':memory:' : join(dir, 'kv.sqlite')), now);
   const r2 = await new ShimR2Bucket(join(dir, 'r2'), now).init();
+  // Zeiko S3's replica buckets (ADR-047), so 3-copy plans work locally.
+  const replicaA = await new ShimR2Bucket(join(dir, 'r2-replica-a'), now).init();
+  const replicaB = await new ShimR2Bucket(join(dir, 'r2-replica-b'), now).init();
   const analytics = new ShimAnalytics();
   const email = new ShimSendEmail();
 
@@ -142,6 +145,8 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
     ...extraD1,
     DB: d1,
     BUCKET: r2,
+    S3_REPLICA_A: replicaA,
+    S3_REPLICA_B: replicaB,
     CONFIG_KV: kv,
     ASSETS: new ShimAssets(join(ROOT, 'dist', 'web')),
     ...queues,

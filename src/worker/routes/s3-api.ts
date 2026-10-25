@@ -35,6 +35,7 @@ import {
 } from '../lib/s3-xml';
 import { clientIp } from '../middleware/ratelimit';
 import { meterS3Egress } from '../services/s3-billing';
+import { getFromAnyCopy } from '../services/s3-replicas';
 import {
   createBucket,
   getAccount,
@@ -132,8 +133,8 @@ interface Req {
   /** Bytes in and out, for the per-account request log (Analytics Engine). */
   bytesIn: number;
   bytesOut: number;
-  /** Whose month an object read's bytes are billed to (ADR-047): the bucket owner. */
-  egressTo: string | null;
+  /** Whose period an object read's bytes count in (ADR-047): the bucket owner's. */
+  egressTo: { userId: string; periodStart: number | null } | null;
   op: string;
 }
 
@@ -654,7 +655,7 @@ function tagMatches(header: string, etag: string): boolean {
 
 async function readObject(
   r: Req,
-  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  account: Pick<S3Account, 'userId' | 'indexBinding' | 'periodStart'>,
   bucket: BucketRow,
 ): Promise<Response> {
   const head = r.method === 'HEAD';
@@ -705,13 +706,13 @@ async function readObject(
       ActualObjectSize: String(row.size),
     });
   const r2Key = s3BlobKey(account.userId, row.blob_id);
-  r.egressTo = account.userId;
+  r.egressTo = { userId: account.userId, periodStart: account.periodStart };
   if (range.kind === 'single') {
     const length = range.end - range.start + 1;
     headers.set('Content-Range', `bytes ${range.start}-${range.end}/${row.size}`);
     headers.set('Content-Length', String(length));
     if (head) return new Response(null, { status: 206, headers });
-    const obj = await r.ctx.env.BUCKET.get(r2Key, { range: { offset: range.start, length } });
+    const obj = await getFromAnyCopy(r.ctx.env, r2Key, { range: { offset: range.start, length } });
     if (!obj || !('body' in obj))
       throw new S3Error('NoSuchKey', 'The specified key does not exist.');
     r.bytesOut = length;
@@ -719,8 +720,8 @@ async function readObject(
   }
   headers.set('Content-Length', String(row.size));
   if (head || row.size === 0) return new Response(head ? null : '', { status: 200, headers });
-  const obj = await r.ctx.env.BUCKET.get(r2Key);
-  if (!obj || !('body' in obj)) throw new S3Error('NoSuchKey', 'The specified key does not exist.');
+  const obj = await getFromAnyCopy(r.ctx.env, r2Key);
+  if (!obj) throw new S3Error('NoSuchKey', 'The specified key does not exist.');
   r.bytesOut = row.size;
   return new Response(obj.body, { status: 200, headers });
 }
@@ -1034,7 +1035,8 @@ export async function handleS3(
     doubles: [r.bytesIn, r.bytesOut],
   });
   if (r.egressTo && r.bytesOut > 0 && out.status < 300) {
-    const metered = meterS3Egress(ctx, r.egressTo, r.bytesOut).catch((e: unknown) =>
+    const { userId, periodStart } = r.egressTo;
+    const metered = meterS3Egress(ctx, userId, periodStart, r.bytesOut).catch((e: unknown) =>
       log.error('s3_egress_meter_failed', { requestId, message: errorMessage(e) }),
     );
     if (waitUntil) waitUntil(metered);

@@ -30,7 +30,15 @@ function useBilling() {
 }
 
 function errText(e: unknown): string {
-  if (e instanceof ApiError && e.code === 'PAYMENT_UNAVAILABLE') return t.billing.payUnavailable;
+  if (!(e instanceof ApiError)) return t.errors.generic;
+  if (e.code === 'PAYMENT_UNAVAILABLE') return t.billing.payUnavailable;
+  // Zeiko S3 plans (ADR-047) are bought through the same checkout.
+  const reason = e.data?.reason;
+  if (reason === 'S3_TOO_SMALL') return t.s3.tooSmall(formatBytes(Number(e.data?.usedBytes ?? 0)));
+  if (reason === 'SAME_PLAN') return t.s3.samePlan;
+  if (reason === 'NO_REPLICAS') return t.s3.threeUnavailable;
+  if (e.code === 'VALIDATION' && e.data?.field === 'gb')
+    return t.s3.sizeHint(Number(e.data.min), Number(e.data.max));
   return t.errors.generic;
 }
 
@@ -100,13 +108,14 @@ function PayDialog({ pay, onClose }: { pay: Started; onClose: () => void }) {
  */
 export function useCheckout() {
   const qc = useQueryClient();
-  const [confirm, setConfirm] = useState<{ title: string; body: string; item: CheckoutItem } | null>(
-    null,
-  );
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body: string;
+    item: CheckoutItem;
+  } | null>(null);
   const [pay, setPay] = useState<Started | null>(null);
   const run = useMutation({
-    mutationFn: (item: CheckoutItem) =>
-      postJson<CheckoutResult>('/api/billing/checkout', { item }),
+    mutationFn: (item: CheckoutItem) => postJson<CheckoutResult>('/api/billing/checkout', { item }),
     onSuccess: async (r) => {
       if (r.status === 'payment') {
         setPay(r);

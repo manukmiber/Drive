@@ -93,7 +93,16 @@ function bindings(env, nsBase, ids) {
         database_id: x.id,
       })),
     ],
-    r2_buckets: [{ binding: 'BUCKET', bucket_name: `zeiko-${env}` }],
+    r2_buckets: [
+      { binding: 'BUCKET', bucket_name: `zeiko-${env}` },
+      // Zeiko S3's second and third copies (ADR-047), once cf-setup has made the buckets.
+      ...(ids.s3Replicas
+        ? [
+            { binding: 'S3_REPLICA_A', bucket_name: `zeiko-s3-replica-a-${env}` },
+            { binding: 'S3_REPLICA_B', bucket_name: `zeiko-s3-replica-b-${env}` },
+          ]
+        : []),
+    ],
     kv_namespaces: [{ binding: 'CONFIG_KV', id: ids.kv }],
     queues: {
       producers: Q.map((q) => ({
@@ -156,6 +165,7 @@ function envBlock(env, nsBase, defaults) {
       uc,
       s3,
       s3Indexes: d.s3Indexes,
+      s3Replicas: d.s3Replicas,
       d1: d.d1Id,
       kv: d.kvId,
       containers: d.containers,

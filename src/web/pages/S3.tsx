@@ -1,9 +1,9 @@
-// Zeiko S3 (ADR-044): the endpoint, this account's storage, what it costs and its bills (ADR-047),
-// its access keys and buckets. The operator turns Zeiko S3 on and sets its storage (the relay);
-// objects themselves are handled through the S3 API with any S3 tool.
+// Zeiko S3 (ADR-044): buying a plan (ADR-047), the endpoint, this account's storage and plan, its
+// access keys and buckets. Objects themselves are handled through the S3 API with any S3 tool.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Copy, Database, Globe, KeyRound, Lock, Plus, Receipt, Trash2 } from 'lucide-react';
+import type { CheckoutItem } from '../lib/types';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { OPERATOR_EMAIL } from '../../shared/constants';
 import { formatBytes, formatDate, formatRupiah } from '../../shared/format';
@@ -29,27 +29,29 @@ interface S3Bucket {
   createdAt: number;
 }
 
-interface S3Bill {
-  id: string;
-  period: string;
-  gibMonths: number;
-  egressBytes: number;
-  totalIdr: number;
-  status: 'open' | 'paid' | 'carried' | 'waived';
-  dueAt: number | null;
-}
-
-interface S3Billing {
+interface S3Plan {
   prices: {
     perGbMonthIdr: number;
+    perGbMonth3xIdr: number;
+    minGb: number;
+    maxGb: number;
+    threeCopies: boolean;
     egressFreeBytes: number;
     egressBlockBytes: number;
     egressBlockIdr: number;
-    dueDays: number;
   };
-  current: { period: string; gibMonths: number; egressBytes: number; estimateIdr: number };
-  bills: S3Bill[];
-  outstanding: { billIds: string[]; totalIdr: number; dueAt: number | null };
+  billingState: 'ok' | 'readonly' | 'locked';
+  creditIdr: number;
+  plan: {
+    gb: number;
+    replicas: 1 | 3;
+    periodStart: number;
+    periodEnd: number;
+    lapsed: boolean;
+    next: { gb: number; replicas: 1 | 3 } | null;
+    renewIdr: number | null;
+  } | null;
+  egress: { periodStart: number; bytes: number; billable: boolean; pendingIdr: number };
 }
 
 interface S3Overview {
@@ -64,7 +66,7 @@ interface S3Overview {
     reservedBytes: number;
     billingState: 'ok' | 'readonly' | 'locked';
   } | null;
-  billing: S3Billing | null;
+  plan: S3Plan | null;
   keys: S3Key[];
   buckets: S3Bucket[];
 }
@@ -149,82 +151,226 @@ function errorText(e: unknown): string {
   return t.errors.generic;
 }
 
-const gb = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+const monthlyIdr = (p: S3Plan['prices'], gb: number, replicas: 1 | 3) =>
+  gb * (replicas === 3 ? p.perGbMonth3xIdr : p.perGbMonthIdr);
 
-/** Prices, this month so far, what is unpaid (with the QRIS button), and the last bills. */
-function BillingSection({ b }: { b: S3Billing }) {
-  const checkout = useCheckout();
-  const p = b.prices;
-  const owed = b.outstanding;
+/** Size and copies, with what that costs a month. */
+function PlanForm({
+  prices,
+  initial,
+  action,
+  disabled,
+  onSubmit,
+}: {
+  prices: S3Plan['prices'];
+  initial: { gb: number; replicas: 1 | 3 };
+  action: (amount: string) => string;
+  disabled?: boolean;
+  onSubmit: (gb: number, replicas: 1 | 3) => void;
+}) {
+  const [gbText, setGbText] = useState(String(initial.gb));
+  const [replicas, setReplicas] = useState<1 | 3>(initial.replicas);
+  const gb = Number(gbText);
+  const valid = Number.isInteger(gb) && gb >= prices.minGb && gb <= prices.maxGb;
+  const amount = formatRupiah(valid ? monthlyIdr(prices, gb, replicas) : 0);
   return (
-    <Section
-      id="s3-billing"
-      title={t.s3.billing}
-      icon={<Receipt className="h-4 w-4" aria-hidden="true" />}
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (valid) onSubmit(gb, replicas);
+      }}
     >
-      <p className="text-sm text-[var(--fg-muted)]">
-        {t.s3.priceLine(
-          formatRupiah(p.perGbMonthIdr),
+      <label className="block">
+        <span className="text-sm font-medium">{t.s3.size}</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          min={prices.minGb}
+          max={prices.maxGb}
+          step={1}
+          required
+          value={gbText}
+          onChange={(e) => setGbText(e.target.value)}
+          aria-describedby="s3-size-hint"
+          className="mt-1 h-10 w-40 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-3 text-sm"
+        />
+        <span id="s3-size-hint" className="mt-1 block text-xs text-[var(--fg-muted)]">
+          {t.s3.sizeHint(prices.minGb, prices.maxGb)}
+        </span>
+      </label>
+      <fieldset>
+        <legend className="text-sm font-medium">{t.s3.copies}</legend>
+        {([1, 3] as const).map((n) => (
+          <label key={n} className="mt-1 flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="replicas"
+              checked={replicas === n}
+              disabled={n === 3 && !prices.threeCopies}
+              onChange={() => setReplicas(n)}
+            />
+            {t.s3.copyOption(
+              n,
+              formatRupiah(n === 3 ? prices.perGbMonth3xIdr : prices.perGbMonthIdr),
+            )}
+          </label>
+        ))}
+        {!prices.threeCopies && (
+          <p className="mt-1 text-xs text-[var(--fg-muted)]">{t.s3.threeUnavailable}</p>
+        )}
+      </fieldset>
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="text-sm">{t.s3.monthly(amount)}</span>
+        <Button type="submit" className="h-9 px-4" disabled={!valid || disabled}>
+          {action(amount)}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function PriceNotes({ p }: { p: S3Plan['prices'] }) {
+  return (
+    <div className="space-y-1 text-sm text-[var(--fg-muted)]">
+      <p>{t.s3.prices(formatRupiah(p.perGbMonthIdr), formatRupiah(p.perGbMonth3xIdr), p.minGb)}</p>
+      <p>
+        {t.s3.egressRule(
           formatBytes(p.egressFreeBytes),
           formatBytes(p.egressBlockBytes),
           formatRupiah(p.egressBlockIdr),
-          p.dueDays,
         )}
       </p>
-      <div className="mt-3 rounded-xl bg-[var(--bg-subtle)] px-3 py-2 text-sm">
-        <span className="font-medium">{t.s3.thisMonth}</span>
-        {': '}
-        {t.s3.usageSoFar(gb(b.current.gibMonths), formatBytes(b.current.egressBytes))}
-        {' · '}
-        {t.s3.estimate(formatRupiah(b.current.estimateIdr))}
+    </div>
+  );
+}
+
+/** First purchase: nothing of Zeiko S3 yet. */
+function BuyCard({ plan }: { plan: S3Plan }) {
+  const checkout = useCheckout();
+  const buy = (gb: number, replicas: 1 | 3) => {
+    const item: CheckoutItem = { kind: 's3_plan', gb, replicas };
+    checkout.ask(
+      t.s3.buyTitle,
+      t.s3.buyBody(
+        t.s3.planLine(gb, t.s3.copiesLabel(replicas)),
+        formatRupiah(monthlyIdr(plan.prices, gb, replicas)),
+      ),
+      item,
+    );
+  };
+  return (
+    <div className={card}>
+      <p className="text-sm">{t.s3.buyIntro}</p>
+      <div className="mt-3">
+        <PriceNotes p={plan.prices} />
       </div>
-      {owed.totalIdr > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
-          <p className="min-w-[12rem] flex-1 text-sm">
-            <span className="font-medium">{t.s3.owed(formatRupiah(owed.totalIdr))}</span>
-            {owed.dueAt !== null && ` · ${t.s3.dueOn(formatDate(owed.dueAt))}`}
-          </p>
-          <Button
-            className="h-9 px-4"
-            disabled={checkout.busy}
-            onClick={() =>
-              checkout.ask(t.s3.payTitle, t.s3.payBody(formatRupiah(owed.totalIdr)), {
-                kind: 's3_bills',
-                billIds: owed.billIds,
-              })
-            }
-          >
-            {t.s3.pay}
+      <div className="mt-4">
+        <PlanForm
+          prices={plan.prices}
+          initial={{ gb: Math.max(plan.prices.minGb, 10), replicas: 1 }}
+          action={t.s3.buy}
+          disabled={checkout.busy}
+          onSubmit={buy}
+        />
+      </div>
+      {checkout.ui}
+    </div>
+  );
+}
+
+/** The plan, its renewal, a change, and this period's egress. */
+function PlanSection({ plan }: { plan: S3Plan }) {
+  const checkout = useCheckout();
+  const [changing, setChanging] = useState(false);
+  const cur = plan.plan;
+  const p = plan.prices;
+  const change = (gb: number, replicas: 1 | 3) => {
+    setChanging(false);
+    const line = t.s3.planLine(gb, t.s3.copiesLabel(replicas));
+    const amount = formatRupiah(monthlyIdr(p, gb, replicas));
+    if (cur)
+      checkout.ask(t.s3.changeTitle, t.s3.changeBody(line, amount), {
+        kind: 's3_plan',
+        gb,
+        replicas,
+      });
+    else checkout.ask(t.s3.buyTitle, t.s3.buyBody(line, amount), { kind: 's3_plan', gb, replicas });
+  };
+  return (
+    <Section
+      id="s3-plan"
+      title={t.s3.plan}
+      icon={<Receipt className="h-4 w-4" aria-hidden="true" />}
+    >
+      {cur ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-[12rem] flex-1">
+            <p className="text-sm font-medium">
+              {t.s3.planLine(cur.gb, t.s3.copiesLabel(cur.replicas))}
+            </p>
+            <p className={cn('text-xs', cur.lapsed ? 'text-amber-800' : 'text-[var(--fg-muted)]')}>
+              {cur.lapsed
+                ? t.s3.endedOn(formatDate(cur.periodEnd))
+                : t.s3.activeUntil(formatDate(cur.periodEnd))}
+            </p>
+            {cur.next && (
+              <p className="text-xs text-[var(--fg-muted)]">
+                {t.s3.nextPlan(
+                  t.s3.planLine(cur.next.gb, t.s3.copiesLabel(cur.next.replicas)),
+                  formatDate(cur.periodEnd),
+                )}
+              </p>
+            )}
+          </div>
+          {cur.renewIdr !== null && (
+            <Button
+              className="h-9 px-4"
+              disabled={checkout.busy}
+              onClick={() =>
+                checkout.ask(t.s3.renewTitle, t.s3.renewBody(formatRupiah(cur.renewIdr!)), {
+                  kind: 's3_renew',
+                })
+              }
+            >
+              {t.s3.renew(formatRupiah(cur.renewIdr))}
+            </Button>
+          )}
+          <Button variant="secondary" className="h-9 px-3" onClick={() => setChanging((v) => !v)}>
+            {t.s3.change}
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="min-w-[12rem] flex-1 text-sm">{t.s3.granted}</p>
+          <Button variant="secondary" className="h-9 px-3" onClick={() => setChanging((v) => !v)}>
+            {t.s3.change}
           </Button>
         </div>
       )}
-      <h3 className="mt-4 text-sm font-medium">{t.s3.bills}</h3>
-      {b.bills.length === 0 ? (
-        <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.s3.noBills}</p>
-      ) : (
-        <ul className="mt-1 divide-y divide-[var(--border)]">
-          {b.bills.map((bill) => (
-            <li key={bill.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-              <div className="min-w-[10rem] flex-1">
-                <p className="text-sm font-medium">{bill.period}</p>
-                <p className="text-xs text-[var(--fg-muted)]">
-                  {t.s3.billDetail(gb(bill.gibMonths), formatBytes(bill.egressBytes))}
-                </p>
-              </div>
-              <span className="text-sm tabular-nums">{formatRupiah(bill.totalIdr)}</span>
-              <span
-                className={cn(
-                  'rounded-full px-2 py-0.5 text-[11px]',
-                  bill.status === 'open'
-                    ? 'bg-amber-100 text-amber-900'
-                    : 'bg-[var(--bg-subtle)] text-[var(--fg-muted)]',
-                )}
-              >
-                {t.s3.billStatus[bill.status]}
-              </span>
-            </li>
-          ))}
-        </ul>
+      {plan.egress.billable && (
+        <p className="mt-3 rounded-xl bg-[var(--bg-subtle)] px-3 py-2 text-sm">
+          {t.s3.egressNow(formatBytes(plan.egress.bytes), formatBytes(p.egressFreeBytes))}
+          {plan.egress.pendingIdr > 0 &&
+            ` · ${t.s3.egressPending(formatRupiah(plan.egress.pendingIdr))}`}
+        </p>
+      )}
+      {changing && (
+        <div className="mt-4 border-t border-[var(--border)] pt-4">
+          <PriceNotes p={p} />
+          <div className="mt-3">
+            <PlanForm
+              prices={p}
+              initial={{
+                gb: Math.max(p.minGb, cur?.gb ?? 10),
+                replicas: cur?.replicas ?? 1,
+              }}
+              action={() => t.s3.change}
+              disabled={checkout.busy}
+              onSubmit={change}
+            />
+          </div>
+        </div>
       )}
       {checkout.ui}
     </Section>
@@ -315,19 +461,13 @@ export function S3() {
     return (
       <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
         {header}
-        <div className={card}>
-          <p className="text-sm">
-            {d.configured ? t.s3.notEnabled(OPERATOR_EMAIL) : t.s3.notAvailable}
-          </p>
-          {d.configured && (
-            <a
-              href={`mailto:${OPERATOR_EMAIL}?subject=Zeiko%20S3`}
-              className="mt-3 inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium hover:bg-[var(--bg-subtle)]"
-            >
-              {OPERATOR_EMAIL}
-            </a>
-          )}
-        </div>
+        {d.configured && d.plan ? (
+          <BuyCard plan={d.plan} />
+        ) : (
+          <div className={card}>
+            <p className="text-sm">{t.s3.notAvailable}</p>
+          </div>
+        )}
         {terms}
       </div>
     );
@@ -384,7 +524,7 @@ export function S3() {
         </div>
       </Section>
 
-      {d.billing && <BillingSection b={d.billing} />}
+      {d.plan && <PlanSection plan={d.plan} />}
 
       <Section
         id="s3-keys"

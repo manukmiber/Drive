@@ -1,33 +1,38 @@
-// Zeiko S3 billed after the month from usage (ADR-047): hourly storage samples, egress, bills on
-// the 1st, paying them by QRIS or credit, and the dunning cycle for unpaid ones.
+// Zeiko S3 plans paid upfront (ADR-047): a size of at least 3 GB with 1 or 3 copies, changes,
+// renewals with egress past the free allowance, three real copies, and plans not renewed.
 import {
   CreateBucketCommand,
-  DeleteObjectsCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
-  HeadObjectCommand,
   ListBucketsCommand,
-  PutBucketAclCommand,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { describe, expect, it } from 'vitest';
 import type { DevRuntime } from '../../dev/env';
-import { DAY_MS, HOUR_MS, MIB, WIB_OFFSET_MS, GIB } from '../../src/shared/constants';
+import { DAY_MS, GIB, HOUR_MS, MIB, WIB_OFFSET_MS } from '../../src/shared/constants';
+import { addBillingMonth } from '../../src/shared/time';
 import { FakeClock } from '../../src/worker/adapters/clock';
 import { MockPaymentProvider } from '../../src/worker/adapters/payment';
 import { createCtx } from '../../src/worker/context';
 import { invalidateConfigMemo } from '../../src/worker/services/config';
-import { issueS3Bills, runS3Dunning, sampleS3Storage } from '../../src/worker/services/s3-billing';
+import {
+  remindS3Renewals,
+  renewS3FromCredit,
+  renewS3Plan,
+  runS3Dunning,
+} from '../../src/worker/services/s3-billing';
 import { APP, makeRuntime } from '../helpers/runtime';
-import { OPS_KEY, S3_ORIGIN, s3Setup } from '../helpers/s3';
+import { OPS_KEY, S3_ORIGIN, s3Client } from '../helpers/s3';
+import { signIn, type Session } from '../helpers/session';
 
 /** UTC ms of a WIB wall-clock time. */
 const wib = (y: number, m: number, d: number, h = 0) => Date.UTC(y, m - 1, d, h) - WIB_OFFSET_MS;
 
-async function billingRuntime(start: number) {
+async function runtime(start = wib(2026, 11, 1)) {
   const clock = new FakeClock(start);
   const rt = await makeRuntime({ vars: { ZEIKO_OPS_TOKEN: OPS_KEY, S3_ORIGIN }, clock });
-  const setup = await s3Setup({ rt, limitBytes: 10 * GIB, email: 'tagihan@zeiko.test' });
-  return { ...setup, clock, ctx: () => createCtx(rt.env) };
+  const user = await signIn(rt, 'paket@zeiko.test');
+  return { rt, clock, user, ctx: () => createCtx(rt.env) };
 }
 
 function setConfig(rt: DevRuntime, values: Record<string, unknown>) {
@@ -43,55 +48,14 @@ function setConfig(rt: DevRuntime, values: Record<string, unknown>) {
   invalidateConfigMemo(rt.env);
 }
 
-function setUsage(
-  rt: DevRuntime,
-  userId: string,
-  period: string,
-  gibHours: number,
-  egress: number,
-) {
+function fund(rt: DevRuntime, userId: string, idr: number) {
   rt.d1.sqlite
     .prepare(
-      `INSERT INTO s3_usage (user_id, period, gib_hours, egress_bytes, last_hour, updated_at)
-       VALUES (?, ?, ?, ?, 0, 0)
-       ON CONFLICT (user_id, period) DO UPDATE SET gib_hours = excluded.gib_hours, egress_bytes = excluded.egress_bytes`,
+      `INSERT INTO wallets (user_id, balance_idr, updated_at) VALUES (?, ?, 0)
+       ON CONFLICT (user_id) DO UPDATE SET balance_idr = excluded.balance_idr`,
     )
-    .run(userId, period, gibHours, egress);
+    .run(userId, idr);
 }
-
-const usageRow = (rt: DevRuntime, userId: string, period: string) =>
-  rt.d1.sqlite
-    .prepare('SELECT gib_hours, egress_bytes FROM s3_usage WHERE user_id = ? AND period = ?')
-    .get(userId, period) as { gib_hours: number; egress_bytes: number } | undefined;
-
-type BillRow = {
-  id: string;
-  period: string;
-  status: string;
-  subtotal_idr: number;
-  total_idr: number;
-  due_at: number | null;
-  carried_into: string | null;
-  lines_json: string;
-};
-const bills = (rt: DevRuntime, userId: string) =>
-  rt.d1.sqlite
-    .prepare('SELECT * FROM s3_bills WHERE user_id = ? ORDER BY period')
-    .all(userId) as BillRow[];
-
-const state = (rt: DevRuntime, userId: string) =>
-  rt.d1.sqlite
-    .prepare('SELECT status, billing_state FROM s3_accounts WHERE user_id = ?')
-    .get(userId) as { status: string; billing_state: string };
-
-const notices = (rt: DevRuntime, userId: string, type: string) =>
-  (
-    rt.d1.sqlite
-      .prepare(
-        'SELECT payload_json FROM notifications WHERE user_id = ? AND type = ? ORDER BY created_at',
-      )
-      .all(userId, type) as Array<{ payload_json: string }>
-  ).map((n) => JSON.parse(n.payload_json) as Record<string, unknown>);
 
 async function paidWebhook(rt: DevRuntime, paymentId: string, amountIdr: number) {
   const signed = await MockPaymentProvider.signedBody(rt.env.PAYMENT_WEBHOOK_SECRET, {
@@ -108,215 +72,296 @@ async function paidWebhook(rt: DevRuntime, paymentId: string, amountIdr: number)
   );
 }
 
-// 10 GiB all November (720 hours) = Rp5.000; 2.5 MiB egress with 1 MiB free in 1 MiB blocks at
-// Rp5.000 = 2 blocks = Rp10.000.
-const SMALL_EGRESS = {
-  s3_egress_free_bytes: MIB,
-  s3_egress_block_bytes: MIB,
-  s3_egress_block_idr: 5_000,
+type Item = { kind: 's3_plan'; gb: number; replicas: number } | { kind: 's3_renew' };
+
+async function checkout(s: Session, item: Item) {
+  const res = await s.req('POST', '/api/billing/checkout', { item });
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+}
+
+/** Buys by QRIS and pays it: what the QRIS asked for. */
+async function buy(rt: DevRuntime, s: Session, item: Item): Promise<number> {
+  const r = await checkout(s, item);
+  expect(r.status, JSON.stringify(r.body)).toBe(201);
+  const { payment } = r.body as { payment: { paymentId: string; amountIdr: number } };
+  expect((await paidWebhook(rt, payment.paymentId, payment.amountIdr)).status).toBe(200);
+  return payment.amountIdr;
+}
+
+const sub = (rt: DevRuntime, userId: string) =>
+  rt.d1.sqlite
+    .prepare(
+      'SELECT gb, replicas, next_gb, next_replicas, period_start, period_end FROM s3_subscriptions WHERE user_id = ?',
+    )
+    .get(userId) as
+    | {
+        gb: number;
+        replicas: number;
+        next_gb: number | null;
+        next_replicas: number | null;
+        period_start: number;
+        period_end: number;
+      }
+    | undefined;
+
+const account = (rt: DevRuntime, userId: string) =>
+  rt.d1.sqlite
+    .prepare('SELECT status, billing_state, limit_bytes FROM s3_accounts WHERE user_id = ?')
+    .get(userId) as { status: string; billing_state: string; limit_bytes: number } | undefined;
+
+const charges = (rt: DevRuntime, userId: string) =>
+  (
+    rt.d1.sqlite
+      .prepare(
+        `SELECT delta_idr FROM wallet_ledger WHERE user_id = ? AND reason = 's3_plan' ORDER BY created_at`,
+      )
+      .all(userId) as Array<{ delta_idr: number }>
+  ).map((r) => -r.delta_idr);
+
+const notices = (rt: DevRuntime, userId: string, type: string) =>
+  (
+    rt.d1.sqlite
+      .prepare(
+        'SELECT payload_json FROM notifications WHERE user_id = ? AND type = ? ORDER BY created_at',
+      )
+      .all(userId, type) as Array<{ payload_json: string }>
+  ).map((n) => JSON.parse(n.payload_json) as Record<string, unknown>);
+
+async function newKey(s: Session) {
+  const res = await s.req('POST', '/api/s3/keys', { label: 'laptop' });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { key: { id: string; secret: string } }).key;
+}
+
+const blobKey = (rt: DevRuntime, userId: string, key: string) => {
+  const row = rt.d1.sqlite
+    .prepare('SELECT blob_id, replicated FROM s3_objects WHERE user_id = ? AND key = ?')
+    .get(userId, key) as { blob_id: string; replicated: number };
+  return { r2: `s3/${userId}/${row.blob_id}`, replicated: row.replicated };
 };
 
-describe('Zeiko S3 billing (ADR-047)', () => {
-  it('samples stored bytes by the hour and counts every byte served, also to strangers', async () => {
-    const { rt, user, client, clock, ctx } = await billingRuntime(wib(2026, 11, 10, 9));
-    await client.send(new CreateBucketCommand({ Bucket: 'meter' }));
-    await client.send(
-      new PutObjectCommand({ Bucket: 'meter', Key: 'a.bin', Body: new Uint8Array(MIB) }),
-    );
-    await rt.settle();
-
-    expect(await sampleS3Storage(ctx())).toBe(1);
-    await sampleS3Storage(ctx()); // the same hour again changes nothing
-    expect(usageRow(rt, user.userId, '2026-11')?.gib_hours).toBeCloseTo(1 / 1024);
-    clock.advance(HOUR_MS);
-    await sampleS3Storage(ctx());
-    // The cron missed four runs: the late sample stands for at most three hours.
-    clock.advance(5 * HOUR_MS);
-    await sampleS3Storage(ctx());
-    expect(usageRow(rt, user.userId, '2026-11')?.gib_hours).toBeCloseTo(5 / 1024);
-
-    const full = await client.send(new GetObjectCommand({ Bucket: 'meter', Key: 'a.bin' }));
-    await full.Body!.transformToByteArray();
-    const part = await client.send(
-      new GetObjectCommand({ Bucket: 'meter', Key: 'a.bin', Range: 'bytes=0-99' }),
-    );
-    await part.Body!.transformToByteArray();
-    await client.send(new HeadObjectCommand({ Bucket: 'meter', Key: 'a.bin' }));
-    await client.send(new PutBucketAclCommand({ Bucket: 'meter', ACL: 'public-read' }));
-    const anon = await rt.fetch(`${S3_ORIGIN}/meter/a.bin`);
-    expect(anon.status).toBe(200);
-    await anon.arrayBuffer();
-    await rt.settle();
-    expect(usageRow(rt, user.userId, '2026-11')?.egress_bytes).toBe(2 * MIB + 100);
-  });
-
-  it('bills last month on the 1st, once, and the bill is paid by QRIS', async () => {
-    const { rt, user, clock, ctx } = await billingRuntime(wib(2026, 11, 20));
-    setConfig(rt, SMALL_EGRESS);
-    setUsage(rt, user.userId, '2026-11', 720 * 10, 2.5 * MIB);
-    expect(await issueS3Bills(ctx())).toBe(0); // November is not over yet
-
-    clock.set(wib(2026, 12, 1, 2));
-    expect(await issueS3Bills(ctx())).toBe(1);
-    expect(await issueS3Bills(ctx())).toBe(0);
-    const [bill] = bills(rt, user.userId);
-    expect(bill).toMatchObject({
-      period: '2026-11',
-      status: 'open',
-      subtotal_idr: 15_000,
-      total_idr: 15_000,
-      due_at: wib(2026, 12, 1, 2) + 7 * DAY_MS,
-    });
-    expect(
-      (JSON.parse(bill!.lines_json) as Array<{ kind: string; amountIdr: number }>).map((l) => [
-        l.kind,
-        l.amountIdr,
-      ]),
-    ).toEqual([
-      ['storage', 5_000],
-      ['egress', 10_000],
-    ]);
-    expect(notices(rt, user.userId, 's3_bill')).toEqual([
-      expect.objectContaining({ period: '2026-11', totalIdr: 15_000, paid: false }),
-    ]);
-
+describe('Zeiko S3 plans (ADR-047)', () => {
+  it('buys at least 3 GB upfront by QRIS; the account starts with that much storage', async () => {
+    const { rt, user } = await runtime();
     const page = (await (await user.req('GET', '/api/s3')).json()) as {
-      billing: { outstanding: { billIds: string[]; totalIdr: number }; bills: unknown[] };
+      enabled: boolean;
+      plan: { prices: { minGb: number; perGbMonthIdr: number; perGbMonth3xIdr: number } };
     };
-    expect(page.billing.outstanding).toMatchObject({ billIds: [bill!.id], totalIdr: 15_000 });
+    expect(page.enabled).toBe(false);
+    expect(page.plan.prices).toMatchObject({ minGb: 3, perGbMonthIdr: 500, perGbMonth3xIdr: 1500 });
 
-    const started = await user.req('POST', '/api/billing/checkout', {
-      item: { kind: 's3_bills', billIds: page.billing.outstanding.billIds },
+    expect((await checkout(user, { kind: 's3_plan', gb: 2, replicas: 1 })).status).toBe(400);
+    expect((await checkout(user, { kind: 's3_plan', gb: 3.5, replicas: 1 })).status).toBe(400);
+    expect((await checkout(user, { kind: 's3_plan', gb: 3, replicas: 2 })).status).toBe(400);
+    expect(await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 1 })).toBe(1_500);
+    expect(account(rt, user.userId)).toEqual({
+      status: 'active',
+      billing_state: 'ok',
+      limit_bytes: 3 * GIB,
     });
-    expect(started.status).toBe(201);
-    const { payment } = (await started.json()) as {
-      payment: { paymentId: string; amountIdr: number };
-    };
-    expect(payment.amountIdr).toBe(15_000);
-    expect((await paidWebhook(rt, payment.paymentId, payment.amountIdr)).status).toBe(200);
-    expect(bills(rt, user.userId)[0]).toMatchObject({ status: 'paid' });
-    expect(
-      rt.d1.sqlite
-        .prepare(
-          `SELECT reason, delta_idr FROM wallet_ledger WHERE user_id = ? ORDER BY created_at`,
-        )
-        .all(user.userId),
-    ).toEqual([
-      { reason: 'topup', delta_idr: 15_000 },
-      { reason: 's3_bill', delta_idr: -15_000 },
-    ]);
-    // Paid once: the same bills cannot be bought again.
-    expect(
-      (
-        await user.req('POST', '/api/billing/checkout', {
-          item: { kind: 's3_bills', billIds: [bill!.id] },
-        })
-      ).status,
-    ).toBe(409);
+    const now = wib(2026, 11, 1);
+    expect(sub(rt, user.userId)).toMatchObject({
+      gb: 3,
+      replicas: 1,
+      period_start: now,
+      period_end: addBillingMonth(now, 1),
+    });
+    expect(charges(rt, user.userId)).toEqual([1_500]);
+    await newKey(user);
   });
 
-  it('unpaid: read-only after 3 days, locked after 14; paying from credit opens it again', async () => {
-    const { rt, user, client, clock, ctx } = await billingRuntime(wib(2026, 11, 20));
-    setConfig(rt, SMALL_EGRESS);
-    await client.send(new CreateBucketCommand({ Bucket: 'nunggak' }));
-    await client.send(new PutObjectCommand({ Bucket: 'nunggak', Key: 'a.txt', Body: 'isi' }));
-    await client.send(new PutBucketAclCommand({ Bucket: 'nunggak', ACL: 'public-read' }));
+  it('three copies: every object is in both replica buckets, a lost copy is read from another', async () => {
+    const { rt, user } = await runtime();
+    expect(await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 3 })).toBe(4_500);
+    const client = s3Client(rt, await newKey(user));
+    await client.send(new CreateBucketCommand({ Bucket: 'tiga-salinan' }));
+    await client.send(
+      new PutObjectCommand({ Bucket: 'tiga-salinan', Key: 'a.txt', Body: 'aman di tiga tempat' }),
+    );
     await rt.settle();
-    setUsage(rt, user.userId, '2026-11', 720 * 10, 0);
-    clock.set(wib(2026, 12, 1, 2));
-    await issueS3Bills(ctx());
-    const due = bills(rt, user.userId)[0]!.due_at!;
+    const { r2, replicated } = blobKey(rt, user.userId, 'a.txt');
+    expect(replicated).toBe(1);
+    expect(await rt.env.S3_REPLICA_A!.head(r2)).not.toBeNull();
+    expect(await rt.env.S3_REPLICA_B!.head(r2)).not.toBeNull();
 
-    clock.set(due + 3 * DAY_MS + HOUR_MS);
+    await rt.env.BUCKET.delete(r2); // the first copy is lost
+    const read = await client.send(new GetObjectCommand({ Bucket: 'tiga-salinan', Key: 'a.txt' }));
+    expect(await read.Body!.transformToString()).toBe('aman di tiga tempat');
+
+    await client.send(new DeleteObjectCommand({ Bucket: 'tiga-salinan', Key: 'a.txt' }));
+    expect(await rt.env.S3_REPLICA_A!.head(r2)).toBeNull();
+    expect(await rt.env.S3_REPLICA_B!.head(r2)).toBeNull();
+  });
+
+  it('a pricier plan starts now for the rest of the period, a cheaper one next period', async () => {
+    const { rt, clock, user, ctx } = await runtime(wib(2026, 11, 1));
+    await buy(rt, user, { kind: 's3_plan', gb: 10, replicas: 1 });
+    clock.advance(15 * DAY_MS); // half of November
+    // 20 GB costs Rp5.000 more a month: half of it for the half month left.
+    expect(await buy(rt, user, { kind: 's3_plan', gb: 20, replicas: 1 })).toBe(2_500);
+    expect(account(rt, user.userId)?.limit_bytes).toBe(20 * GIB);
+    expect((await checkout(user, { kind: 's3_plan', gb: 20, replicas: 1 })).status).toBe(409);
+
+    // Cheaper: from the next period, nothing to pay now.
+    const later = await checkout(user, { kind: 's3_plan', gb: 4, replicas: 1 });
+    expect(later.status).toBe(200);
+    expect(sub(rt, user.userId)).toMatchObject({ gb: 20, next_gb: 4, next_replicas: 1 });
+    expect(account(rt, user.userId)?.limit_bytes).toBe(20 * GIB);
+
+    // Not smaller than what is stored.
+    rt.d1.sqlite
+      .prepare('UPDATE s3_accounts SET used_bytes = ? WHERE user_id = ?')
+      .run(5 * GIB, user.userId);
+    const tooSmall = await checkout(user, { kind: 's3_plan', gb: 4, replicas: 1 });
+    expect(tooSmall.status).toBe(409);
+    expect(tooSmall.body).toMatchObject({ error: { data: { reason: 'S3_TOO_SMALL' } } });
+    rt.d1.sqlite
+      .prepare('UPDATE s3_accounts SET used_bytes = 0 WHERE user_id = ?')
+      .run(user.userId);
+
+    // The renewal is the smaller plan's month.
+    fund(rt, user.userId, 2_000);
+    clock.set(sub(rt, user.userId)!.period_end - HOUR_MS);
+    expect((await renewS3Plan(ctx(), user.userId)).kind).toBe('s3_renewed');
+    expect(sub(rt, user.userId)).toMatchObject({ gb: 4, next_gb: null });
+    expect(account(rt, user.userId)?.limit_bytes).toBe(4 * GIB);
+    expect(charges(rt, user.userId)).toEqual([5_000, 2_500, 2_000]);
+  });
+
+  it('moving from 3 copies to 1 drops the extra copies at the renewal', async () => {
+    const { rt, clock, user, ctx } = await runtime();
+    await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 3 });
+    const client = s3Client(rt, await newKey(user));
+    await client.send(new CreateBucketCommand({ Bucket: 'turun' }));
+    await client.send(new PutObjectCommand({ Bucket: 'turun', Key: 'b.txt', Body: 'isi' }));
+    await rt.settle();
+    const { r2 } = blobKey(rt, user.userId, 'b.txt');
+    expect(await rt.env.S3_REPLICA_A!.head(r2)).not.toBeNull();
+
+    expect((await checkout(user, { kind: 's3_plan', gb: 3, replicas: 1 })).status).toBe(200);
+    fund(rt, user.userId, 1_500);
+    clock.set(sub(rt, user.userId)!.period_end - HOUR_MS);
+    await renewS3Plan(ctx(), user.userId);
+    await rt.settle();
+    expect(await rt.env.S3_REPLICA_A!.head(r2)).toBeNull();
+    expect(await rt.env.S3_REPLICA_B!.head(r2)).toBeNull();
+    expect(blobKey(rt, user.userId, 'b.txt').replicated).toBe(0);
+    const read = await client.send(new GetObjectCommand({ Bucket: 'turun', Key: 'b.txt' }));
+    expect(await read.Body!.transformToString()).toBe('isi');
+
+    // Back to 3 copies now: what is there is copied again. The renewed month has not started yet,
+    // so the difference is for all of it (Rp4.500 − Rp1.500), never more.
+    expect(await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 3 })).toBe(3_000);
+    await rt.settle();
+    expect(await rt.env.S3_REPLICA_B!.head(r2)).not.toBeNull();
+  });
+
+  it('egress past the free allowance of an earlier period is added to a renewal, once', async () => {
+    const { rt, clock, user, ctx } = await runtime();
+    setConfig(rt, {
+      s3_egress_free_bytes: MIB,
+      s3_egress_block_bytes: MIB,
+      s3_egress_block_idr: 5_000,
+    });
+    await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 1 });
+    const client = s3Client(rt, await newKey(user));
+    await client.send(new CreateBucketCommand({ Bucket: 'unduhan' }));
+    await client.send(
+      new PutObjectCommand({ Bucket: 'unduhan', Key: 'm.bin', Body: new Uint8Array(MIB) }),
+    );
+    await rt.settle();
+    for (let i = 0; i < 3; i++) {
+      const got = await client.send(new GetObjectCommand({ Bucket: 'unduhan', Key: 'm.bin' }));
+      await got.Body!.transformToByteArray();
+    }
+    await rt.settle();
+    const view = (await (await user.req('GET', '/api/s3')).json()) as {
+      plan: { egress: { bytes: number; pendingIdr: number }; plan: { renewIdr: number } };
+    };
+    // 3 MiB served, 1 MiB free: 2 blocks, waiting while the period runs.
+    expect(view.plan.egress).toMatchObject({ bytes: 3 * MIB, pendingIdr: 10_000 });
+    expect(view.plan.plan.renewIdr).toBe(1_500);
+
+    // Renewed early: the running period is not finished, so only the plan.
+    fund(rt, user.userId, 1_500);
+    clock.set(sub(rt, user.userId)!.period_end - DAY_MS);
+    await renewS3Plan(ctx(), user.userId);
+    expect(charges(rt, user.userId)).toEqual([1_500, 1_500]);
+
+    // The next renewal brings that egress; only what the credit covers is taken now.
+    clock.set(sub(rt, user.userId)!.period_end - DAY_MS);
+    fund(rt, user.userId, 6_500);
+    await renewS3Plan(ctx(), user.userId);
+    expect(charges(rt, user.userId)).toEqual([1_500, 1_500, 6_500]);
+    clock.set(sub(rt, user.userId)!.period_end - DAY_MS);
+    fund(rt, user.userId, 20_000);
+    await renewS3Plan(ctx(), user.userId);
+    expect(charges(rt, user.userId)).toEqual([1_500, 1_500, 6_500, 6_500]);
+    clock.set(sub(rt, user.userId)!.period_end - DAY_MS);
+    await renewS3Plan(ctx(), user.userId);
+    expect(charges(rt, user.userId)).toEqual([1_500, 1_500, 6_500, 6_500, 1_500]);
+  });
+
+  it('not renewed: reminders, read-only after 3 days, locked after 14; credit renews by itself', async () => {
+    const { rt, clock, user, ctx } = await runtime();
+    await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 1 });
+    const client = s3Client(rt, await newKey(user));
+    await client.send(new CreateBucketCommand({ Bucket: 'lupa' }));
+    await client.send(new PutObjectCommand({ Bucket: 'lupa', Key: 'a.txt', Body: 'isi' }));
+    await rt.settle();
+    const end = sub(rt, user.userId)!.period_end;
+
+    clock.set(end - 3 * DAY_MS + HOUR_MS);
+    await remindS3Renewals(ctx());
+    await remindS3Renewals(ctx());
+    expect(notices(rt, user.userId, 's3_reminder')).toEqual([
+      expect.objectContaining({ days: 3, amountIdr: 1_500, creditCovers: false }),
+    ]);
+
+    clock.set(end + 3 * DAY_MS + HOUR_MS);
     await runS3Dunning(ctx());
-    expect(state(rt, user.userId)).toEqual({ status: 'active', billing_state: 'readonly' });
+    expect(account(rt, user.userId)?.billing_state).toBe('readonly');
     expect(notices(rt, user.userId, 's3_dunning')).toEqual([
-      expect.objectContaining({ stage: 'readonly', owedIdr: 5_000 }),
+      expect.objectContaining({ stage: 'readonly' }),
     ]);
     await expect(
-      client.send(new PutObjectCommand({ Bucket: 'nunggak', Key: 'b.txt', Body: 'baru' })),
+      client.send(new PutObjectCommand({ Bucket: 'lupa', Key: 'b.txt', Body: 'baru' })),
     ).rejects.toMatchObject({ name: 'AccountProblem', $metadata: { httpStatusCode: 403 } });
-    const read = await client.send(new GetObjectCommand({ Bucket: 'nunggak', Key: 'a.txt' }));
+    const read = await client.send(new GetObjectCommand({ Bucket: 'lupa', Key: 'a.txt' }));
     expect(await read.Body!.transformToString()).toBe('isi');
-    expect((await rt.fetch(`${S3_ORIGIN}/nunggak/a.txt`)).status).toBe(403);
-    const pub = await user.req('PATCH', '/api/s3/buckets/nunggak', { public: true });
-    expect(pub.status).toBe(403);
-    expect(((await pub.json()) as { error: { data?: { reason?: string } } }).error.data).toEqual({
-      reason: 'AccountProblem',
-    });
 
-    clock.set(due + 14 * DAY_MS + HOUR_MS);
+    clock.set(end + 14 * DAY_MS + HOUR_MS);
     await runS3Dunning(ctx());
-    expect(state(rt, user.userId).billing_state).toBe('locked');
+    expect(account(rt, user.userId)?.billing_state).toBe('locked');
     await expect(client.send(new ListBucketsCommand({}))).rejects.toMatchObject({
       name: 'AccountProblem',
     });
 
-    rt.d1.sqlite
-      .prepare(`INSERT INTO wallets (user_id, balance_idr, updated_at) VALUES (?, 5000, 0)`)
-      .run(user.userId);
-    const paid = await user.req('POST', '/api/billing/checkout', {
-      item: { kind: 's3_bills', billIds: [bills(rt, user.userId)[0]!.id] },
-    });
-    expect(paid.status).toBe(200);
-    expect(state(rt, user.userId).billing_state).toBe('ok');
-    await client.send(new PutObjectCommand({ Bucket: 'nunggak', Key: 'b.txt', Body: 'baru' }));
-    await client.send(
-      new DeleteObjectsCommand({
-        Bucket: 'nunggak',
-        Delete: { Objects: [{ Key: 'a.txt' }, { Key: 'b.txt' }] },
-      }),
-    );
+    // Renewing a plan that ran out starts it again from today.
+    fund(rt, user.userId, 1_500);
+    expect((await checkout(user, { kind: 's3_renew' })).status).toBe(200);
+    expect(account(rt, user.userId)?.billing_state).toBe('ok');
+    expect(sub(rt, user.userId)?.period_start).toBe(end + 14 * DAY_MS + HOUR_MS);
+    await client.send(new PutObjectCommand({ Bucket: 'lupa', Key: 'b.txt', Body: 'baru' }));
+
+    // Enough credit at the end of the month: renewed without anyone asking.
+    fund(rt, user.userId, 1_500);
+    clock.set(sub(rt, user.userId)!.period_end + HOUR_MS);
+    expect(await renewS3FromCredit(ctx())).toBe(1);
+    expect(sub(rt, user.userId)!.period_end).toBeGreaterThan(clock.now());
   });
 
-  it('deletes an account 30 days past due only when dunning_delete_mode is live', async () => {
-    const { rt, user, clock, ctx } = await billingRuntime(wib(2026, 11, 20));
-    setUsage(rt, user.userId, '2026-11', 720 * 10, 0);
-    clock.set(wib(2026, 12, 1, 2));
-    await issueS3Bills(ctx());
-    const due = bills(rt, user.userId)[0]!.due_at!;
-    clock.set(due + 30 * DAY_MS + HOUR_MS);
-    const dry = await runS3Dunning(ctx());
-    expect(dry.dryRun).toEqual([user.userId]);
-    expect(state(rt, user.userId)).toEqual({ status: 'active', billing_state: 'locked' });
+  it('deletes an account 30 days after its plan ended, only when dunning_delete_mode is live', async () => {
+    const { rt, clock, user, ctx } = await runtime();
+    await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 1 });
+    clock.set(sub(rt, user.userId)!.period_end + 30 * DAY_MS + HOUR_MS);
+    expect((await runS3Dunning(ctx())).dryRun).toEqual([user.userId]);
+    expect(account(rt, user.userId)?.status).toBe('active');
 
     setConfig(rt, { dunning_delete_mode: 'live' });
     expect((await runS3Dunning(ctx())).deleted).toBe(1);
-    expect(rt.queues.CLEANUP_QUEUE.sent).toContainEqual({ type: 's3_purge', userId: user.userId });
     await rt.settle();
-    expect(state(rt, user.userId)).toBeUndefined();
-    // The debt stays on the books.
-    expect(bills(rt, user.userId)[0]).toMatchObject({ status: 'open', total_idr: 5_000 });
-  });
-
-  it('carries a bill under the minimum into the next month; the operator can waive one', async () => {
-    const { rt, user, clock, ctx, ops } = await billingRuntime(wib(2026, 11, 20));
-    setUsage(rt, user.userId, '2026-11', 720 * 1, 0); // 1 GB-month: Rp500, under Rp1.000
-    clock.set(wib(2026, 12, 1, 2));
-    await issueS3Bills(ctx());
-    expect(bills(rt, user.userId)[0]).toMatchObject({ status: 'carried', total_idr: 500 });
-    expect(notices(rt, user.userId, 's3_bill')).toEqual([]);
-
-    setUsage(rt, user.userId, '2026-12', 744 * 2, 0); // 2 GB-month in December: Rp1.000
-    clock.set(wib(2027, 1, 1, 2));
-    await issueS3Bills(ctx());
-    const [nov, dec] = bills(rt, user.userId);
-    expect(dec).toMatchObject({ status: 'open', subtotal_idr: 1_500, total_idr: 1_500 });
-    expect(nov!.carried_into).toBe(dec!.id);
-    expect((JSON.parse(dec!.lines_json) as Array<{ kind: string }>).map((l) => l.kind)).toEqual([
-      'storage',
-      'egress',
-      'carried',
-    ]);
-
-    expect((await ops('POST', `/s3/bills/${dec!.id}/waive`, { reason: '' })).status).toBe(400);
-    expect(
-      (await ops('POST', `/s3/bills/${dec!.id}/waive`, { reason: 'bulan pertama gratis' })).status,
-    ).toBe(204);
-    expect(bills(rt, user.userId)[1]).toMatchObject({ status: 'waived' });
-    const view = (await (await ops('GET', `/s3/accounts/${user.userId}`)).json()) as {
-      billing: { outstanding: { totalIdr: number } };
-    };
-    expect(view.billing.outstanding.totalIdr).toBe(0);
+    expect(account(rt, user.userId)).toBeUndefined();
+    expect(sub(rt, user.userId)).toBeUndefined();
   });
 });

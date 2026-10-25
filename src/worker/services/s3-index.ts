@@ -51,6 +51,8 @@ const MIGRATIONS: string[][] = [
        PRIMARY KEY (upload_id, part_number)
      ) WITHOUT ROWID`,
   ],
+  // v2: whether the object's bytes are also in both replica buckets (3 copies, ADR-047).
+  [`ALTER TABLE s3_objects ADD COLUMN replicated INTEGER NOT NULL DEFAULT 0`],
 ];
 export const INDEX_SCHEMA_VERSION = MIGRATIONS.length;
 

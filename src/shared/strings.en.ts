@@ -108,8 +108,6 @@ export const en: Strings = {
     intro:
       'Object storage you use through the S3 API, for example with aws-cli, rclone or an AWS SDK in your app. It is separate from your Drive files and Drive plan.',
     notAvailable: 'Zeiko S3 isn’t available here yet.',
-    notEnabled: (email: string) =>
-      `Zeiko S3 isn’t switched on for your account yet. Email ${email} to ask for access and storage; the Zeiko team turns it on.`,
     suspended: (email: string) =>
       `Your Zeiko S3 is suspended: keys don’t work and public buckets are closed. Contact ${email}.`,
     connection: 'Connection',
@@ -160,31 +158,46 @@ export const en: Strings = {
     nameTaken: 'That bucket name is taken. Try another one.',
     notEmpty: 'The bucket still has objects in it. Delete them through the API first.',
     invalidName: 'That bucket name doesn’t follow the rules.',
-    billing: 'Cost',
-    priceLine: (perGb: string, free: string, block: string, blockPrice: string, dueDays: number) =>
-      `${perGb} per GB per month, from the average stored. Egress is free up to ${free} a month, then ${blockPrice} per ${block}. Last month's bill comes out on the 1st and is paid by QRIS within ${dueDays} days.`,
-    thisMonth: 'This month so far',
-    usageSoFar: (gb: string, egress: string) => `${gb} GB-months stored · ${egress} egress`,
-    estimate: (amount: string) => `about ${amount}`,
-    owed: (amount: string) => `Unpaid: ${amount}`,
-    dueOn: (date: string) => `due ${date}`,
-    pay: 'Pay by QRIS',
-    payTitle: 'Pay your Zeiko S3 bill?',
-    payBody: (amount: string) =>
-      `You will pay ${amount}. If your credit covers it, the bill is paid at once without QRIS.`,
-    bills: 'Bills',
-    noBills: 'No bills yet. The first one comes out on the 1st of next month.',
-    billStatus: {
-      open: 'Unpaid',
-      paid: 'Paid',
-      carried: 'Added to next month',
-      waived: 'Waived',
-    } as Record<string, string>,
-    billDetail: (gb: string, egress: string) => `${gb} GB on average · ${egress} egress`,
+    plan: 'Plan',
+    prices: (perGb: string, perGb3: string, minGb: number) =>
+      `${perGb} per GB per month for 1 copy, ${perGb3} for 3 copies in 3 places. At least ${minGb} GB, paid upfront by QRIS.`,
+    egressRule: (free: string, block: string, blockPrice: string) =>
+      `Egress is free up to ${free} a period; past that, ${blockPrice} per ${block}, added to the renewal.`,
+    buyIntro: 'Choose how much storage you need, pay by QRIS, and Zeiko S3 is on right away.',
+    size: 'Size (GB)',
+    sizeHint: (min: number, max: number) => `A whole number, ${min}–${max} GB.`,
+    copies: 'Copies',
+    copiesLabel: (n: number) => (n === 3 ? '3 copies in 3 places' : '1 copy'),
+    copyOption: (n: number, price: string) =>
+      n === 3 ? `3 copies in 3 places · ${price}/GB` : `1 copy · ${price}/GB`,
+    threeUnavailable: '3 copies are not available here yet.',
+    monthly: (amount: string) => `${amount} a month`,
+    buy: (amount: string) => `Buy · ${amount}`,
+    buyTitle: 'Buy a Zeiko S3 plan?',
+    buyBody: (plan: string, amount: string) =>
+      `${plan} for ${amount} for a month. If your credit covers it, it starts without QRIS.`,
+    change: 'Change plan',
+    changeTitle: 'Change your Zeiko S3 plan?',
+    changeBody: (plan: string, amount: string) =>
+      `${plan}, ${amount} a month. A pricier plan starts now and you pay the difference for the rest of this period; a cheaper one starts next period.`,
+    planLine: (gb: number, copies: string) => `${gb} GB · ${copies}`,
+    activeUntil: (date: string) => `active until ${date}`,
+    endedOn: (date: string) => `ended ${date}, not renewed`,
+    nextPlan: (plan: string, date: string) => `From ${date}: ${plan}`,
+    renew: (amount: string) => `Renew · ${amount}`,
+    renewTitle: 'Renew your Zeiko S3 plan?',
+    renewBody: (amount: string) =>
+      `You pay ${amount} for one more month, including egress over the free allowance from earlier periods if any. If your credit covers it, it is paid without QRIS.`,
+    granted: 'This storage was given by the Zeiko team. You can also buy a plan yourself.',
+    egressNow: (used: string, free: string) => `Egress this period: ${used} of ${free} free`,
+    egressPending: (amount: string) => `${amount} over the allowance, added to a later renewal`,
+    tooSmall: (used: string) => `Your Zeiko S3 already holds ${used}. Choose a bigger size.`,
+    samePlan: 'That is your plan already.',
     readonlyBanner:
-      'Your Zeiko S3 bill is overdue: uploads and public buckets are paused until it is paid. Downloads and deletes still work.',
-    lockedBanner: 'Your Zeiko S3 is locked because its bill is unpaid. Pay it to open it again.',
-    unpaid: 'Your Zeiko S3 bill is unpaid, so this has to wait.',
+      'Your Zeiko S3 plan has ended: uploads and public buckets are paused until you renew. Downloads and deletes still work.',
+    lockedBanner:
+      'Your Zeiko S3 is locked because its plan was not renewed. Renew to open it again.',
+    unpaid: 'Your Zeiko S3 plan has not been renewed, so this has to wait.',
     howTo: 'How to connect',
     limits:
       'A plain upload can be 100 MB at most; bigger files go up as multipart uploads (aws-cli and rclone do this on their own). Every part except the last must be the same size, at least 5 MB.',
@@ -438,7 +451,12 @@ export const en: Strings = {
       renewed: 'Your plan is renewed for one more month.',
       addon: 'Extra space added.',
       compress: 'Compress credits added.',
-      s3_bills: 'Zeiko S3 bill paid.',
+      s3_subscribed: 'Your Zeiko S3 plan is active.',
+      s3_upgraded: 'Your Zeiko S3 plan is changed.',
+      s3_renewed: 'Your Zeiko S3 plan is renewed for a month.',
+      s3_reactivated: 'Your Zeiko S3 plan is active again.',
+      s3_change_scheduled: 'The new plan starts next period.',
+      s3_change_cancelled: 'The plan change is cancelled.',
       downgrade_scheduled: 'Downgrade scheduled.',
       downgrade_cancelled: 'Downgrade cancelled.',
     } as Record<string, string>,

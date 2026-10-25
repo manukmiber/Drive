@@ -79,8 +79,11 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
   HTML pengguna tidak boleh berjalan sebagai halaman). Key R2 tidak pernah keluar; byte di `s3/{userId}/{blobId}`.
 - Batasan: checksum trailer (`x-amz-checksum-*`) dan tanda tangan trailer tidak dicek (isi chunk tetap dicek);
   pencabutan key berlaku paling lama 15 detik per isolate (status akun dibaca ulang tiap request).
-- Tagihan menunggak (ADR-047): `readonly` menolak PUT/POST (kecuali DeleteObjects) dan menutup bucket publik;
-  `locked` menolak semua request ber-key. Membayar tagihan orang lain ada di suite IDOR.
+- Paket tidak diperpanjang (ADR-047): `readonly` menolak PUT/POST (kecuali DeleteObjects) dan menutup bucket
+  publik; `locked` menolak semua request ber-key. Harga paket selalu dihitung server (`quoteS3Plan`), sama dengan
+  yang dipotong; ukuran dan jumlah salinan dicek ulang di server.
+- 3 salinan: bucket replika juga privat (dibuat `cf-setup` tanpa akses publik), key-nya sama
+  (`s3/{userId}/{blobId}`), dan penghapusan selalu dikirim ke ketiga bucket.
 
 ## VirusTotal (ADR-046)
 

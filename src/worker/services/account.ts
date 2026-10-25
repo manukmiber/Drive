@@ -97,12 +97,15 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
         'SELECT name, public, created_at FROM s3_buckets WHERE user_id = ?1',
         userId,
       ),
-      usage: await q(
-        'SELECT period, gib_hours, egress_bytes FROM s3_usage WHERE user_id = ?1 ORDER BY period',
-        userId,
-      ),
-      bills: await q(
-        'SELECT period, lines_json, total_idr, status, due_at, paid_at FROM s3_bills WHERE user_id = ?1 ORDER BY period',
+      plan:
+        (
+          await q(
+            'SELECT gb, replicas, period_start, period_end, next_gb, next_replicas FROM s3_subscriptions WHERE user_id = ?1',
+            userId,
+          )
+        )[0] ?? null,
+      egress: await q(
+        'SELECT period_start, egress_bytes, billed_blocks FROM s3_usage WHERE user_id = ?1 ORDER BY period_start',
         userId,
       ),
     },
