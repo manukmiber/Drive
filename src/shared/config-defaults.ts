@@ -336,4 +336,13 @@ export const PUBLIC_CONFIG_KEYS = [
   'ad_price_national_idr',
   'tax_rate_pct',
   'features',
+  // Zeiko S3's prices, for the website's S3 section (ADR-047/048/049).
+  's3_price_idr_per_gb_month',
+  's3_price_idr_per_gb_month_3x',
+  's3_min_gb',
+  's3_egress_free_bytes',
+  's3_egress_block_bytes',
+  's3_egress_block_idr',
+  's3_url_zeiko_idr',
+  's3_url_custom_idr',
 ] as const satisfies readonly ConfigKey[];

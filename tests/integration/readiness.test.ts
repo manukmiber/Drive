@@ -37,6 +37,17 @@ describe('feature readiness', () => {
       s3UrlZeiko: true,
       s3UrlCustom: true,
     });
+    // The website draws its Zeiko S3 section from the same catalog: prices, nothing more.
+    const res = await rt.fetch(new Request(`${APP}/api/public/catalog`));
+    const { config } = (await res.json()) as { config: Record<string, unknown> };
+    expect(config).toMatchObject({
+      s3_price_idr_per_gb_month: 500,
+      s3_price_idr_per_gb_month_3x: 1500,
+      s3_min_gb: 3,
+      s3_egress_block_idr: 5000,
+      s3_url_zeiko_idr: 3000,
+      s3_url_custom_idr: 5000,
+    });
     const f = await features(rt);
     for (const id of ['s3', 's3_three_copies', 's3_url_zeiko', 's3_url_custom'])
       expect(f.get(id)?.ready, id).toBe(true);
