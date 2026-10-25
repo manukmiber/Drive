@@ -123,7 +123,7 @@ Pemetaan node → implementasi:
 | Check D1 storage info → Penuh → Tolak | Reservasi kuota atomik saat upload dimulai (5.2). Kalau tidak cukup → HTTP 413 `QUOTA_FULL` + pesan ramah + tombol upgrade/add-on |
 | Lanjut upload ke R2 folder user | Multipart upload ke `u/{uploaderId}/{blobId}` |
 | Jika sudah, jalankan check | Setelah upload complete → pesan ke Queue `scan` |
-| virustotal | **Diganti** rantai adapter `Scanner` (14.2). Isi file user TIDAK BOLEH dikirim ke VirusTotal. |
+| virustotal | **Diganti** rantai adapter `Scanner` (14.2). Isi file user TIDAK BOLEH dikirim ke VirusTotal. **Diubah pemilik 2026-10-25 (ADR-046):** VirusTotal dipakai, lihat 14.2. |
 | Berbahaya → Hapus | Hapus objek R2, status `infected`, reservasi kuota dilepas, notifikasi ke user, hash masuk blocklist |
 | Aman → Update index.txt dan storage info | Blob `clean`, node `ready`, reservasi berubah jadi pemakaian, storage info diperbarui |
 | 1 folder 1 user | Semua blob user di prefix `u/{uploaderId}/` |
@@ -601,6 +601,10 @@ Default (semua angka config):
 - Test IDOR untuk setiap endpoint.
 
 ### 14.2 Pemindai keamanan (pengganti "virustotal" di diagram)
+
+> **Diubah pemilik 2026-10-25 (ADR-046, sesuai Kebijakan Privasi §4):** dengan key VirusTotal pemilik, hash file
+> bertipe berisiko dicek ke VirusTotal, dan program/dokumen ber-macro yang belum dikenal dikirim utuh (≤ 32 MB).
+> Larangan di bawah tetap berlaku untuk semua file lain dan semua layanan luar lain.
 
 **Jangan mengunggah isi file user ke VirusTotal.** API publiknya dilarang dipakai untuk produk atau layanan komersial, dan file yang dikirim ke sana dibagikan ke partner VirusTotal. Artinya dokumen pribadi user (KTP, foto, dsb.) bisa ikut tersebar, dan ini bertentangan dengan UU PDP.
 

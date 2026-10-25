@@ -16,13 +16,13 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 
 ## 14.2 Pemindai
 
-| Item                                                        | Status | Bukti                                                                                       |
-| ----------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------- |
-| Tidak pernah mengunggah isi file ke VirusTotal/layanan luar | ✅     | tidak ada klien VirusTotal; `features.virustotal_hash_lookup` hanya placeholder hash-lookup |
-| SHA-256 + CRC32 semua file, blocklist hash                  | ✅     | `containers/scanner`, `services/scan.ts`, `tests/integration/scan.test.ts`                  |
-| ClamAV ≤ `scan_max_bytes`, retry 3× lalu alert              | ✅     | container scanner + `scan_max_attempts`                                                     |
-| File `pending` hanya untuk pemilik, tidak bisa di-share     | ✅     | `assertDownloadable`, `createShare` mewajibkan `ready`                                      |
-| Hasil kompres mewarisi status `clean`                       | ✅     | ADR-031 (dibuat transcoder kita sendiri dari file yang sudah dipindai)                      |
+| Item                                                                                                 | Status | Bukti                                                                                                                         |
+| ---------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| Isi file keluar hanya ke VirusTotal, hanya executable/dokumen ber-macro yang belum dikenal (ADR-046) | ✅     | `services/virustotal.ts` (`vtKind`, `UPLOADED_KINDS`), nama file diganti `file.<ext>`, `tests/integration/virustotal.test.ts` |
+| SHA-256 + CRC32 semua file, blocklist hash                                                           | ✅     | `containers/scanner`, `services/scan.ts`, `tests/integration/scan.test.ts`                                                    |
+| ClamAV ≤ `scan_max_bytes`, retry 3× lalu alert                                                       | ✅     | container scanner + `scan_max_attempts`                                                                                       |
+| File `pending` hanya untuk pemilik, tidak bisa di-share                                              | ✅     | `assertDownloadable`, `createShare` mewajibkan `ready`                                                                        |
+| Hasil kompres mewarisi status `clean`                                                                | ✅     | ADR-031 (dibuat transcoder kita sendiri dari file yang sudah dipindai)                                                        |
 
 ## 14.3 Anti-CSAM
 
@@ -79,6 +79,18 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
   HTML pengguna tidak boleh berjalan sebagai halaman). Key R2 tidak pernah keluar; byte di `s3/{userId}/{blobId}`.
 - Batasan: checksum trailer (`x-amz-checksum-*`) dan tanda tangan trailer tidak dicek (isi chunk tetap dicek);
   pencabutan key berlaku paling lama 15 detik per isolate (status akun dibaca ulang tiap request).
+- Tagihan menunggak (ADR-047): `readonly` menolak PUT/POST (kecuali DeleteObjects) dan menutup bucket publik;
+  `locked` menolak semua request ber-key. Membayar tagihan orang lain ada di suite IDOR.
+
+## VirusTotal (ADR-046)
+
+- Key gratis milik pemilik. **Ketentuan VirusTotal melarang Public API dipakai di produk/layanan komersial**;
+  dipakai "untuk sekarang" atas keputusan pemilik. Kalau VirusTotal memblokir key, pemindaian jalan terus tanpa
+  VirusTotal dan operator mendapat email.
+- Hash dicek hanya untuk tipe berisiko (program, skrip Windows, dokumen Office/PDF, arsip). Isi file dikirim
+  hanya untuk program dan dokumen ber-macro yang belum dikenal, ≤ 32 MB. File yang dikirim lewat Public API bisa
+  dilihat pelanggan VirusTotal; Kebijakan Privasi §4 menyebut ini. Skrip teks (`.bat`, `.ps1`, `.js`, `.sh`, …)
+  tidak pernah dikirim karena sering berisi kredensial.
 
 ## Temuan lain yang diperbaiki saat audit
 

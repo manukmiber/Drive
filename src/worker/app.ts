@@ -48,7 +48,14 @@ export function createApp() {
   // Zeiko S3 has a host of its own and speaks S3, not this app's API (ADR-044).
   app.use('*', async (c, next) => {
     if (!isS3Host(new URL(c.req.url), c.env)) return next();
-    return handleS3(c.req.raw, createCtx(c.env));
+    let waitUntil: ((p: Promise<unknown>) => void) | undefined;
+    try {
+      const exec = c.executionCtx;
+      waitUntil = (p) => exec.waitUntil(p);
+    } catch {
+      // No execution context (tests): handleS3 awaits instead.
+    }
+    return handleS3(c.req.raw, createCtx(c.env), waitUntil);
   });
   app.use('*', userContentGuard, requestContext);
 

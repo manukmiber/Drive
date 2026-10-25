@@ -22,7 +22,9 @@ export type NotificationType =
   | 'invoice'
   | 'plan_changed'
   | 'family_invite'
-  | 'account_delete';
+  | 'account_delete'
+  | 's3_bill'
+  | 's3_dunning';
 
 export function notificationStmt(
   ctx: Ctx,
@@ -105,6 +107,47 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
         cta: { label: 'Perpanjang paket', url: `${app}/paket` },
       };
     }
+    case 's3_bill': {
+      const s3 = { label: 'Buka Zeiko S3', url: `${app}/s3` };
+      if (p.paid)
+        return {
+          title: `Tagihan Zeiko S3 ${String(p.period)} sudah dibayar`,
+          paragraphs: [
+            `Tagihan ${formatRupiah(Number(p.totalIdr))} dibayar dari kreditmu. Tidak perlu melakukan apa-apa.`,
+          ],
+          cta: s3,
+        };
+      return {
+        title: `Tagihan Zeiko S3 ${String(p.period)}: ${formatRupiah(Number(p.totalIdr))}`,
+        paragraphs: [
+          `Bayar dengan QRIS dari halaman Zeiko S3 sebelum ${formatDateTime(Number(p.dueAt))}.`,
+          'Rinciannya (penyimpanan rata-rata dan egress) ada di halaman yang sama.',
+        ],
+        cta: { label: 'Bayar tagihan', url: `${app}/s3` },
+      };
+    }
+    case 's3_dunning': {
+      const stage = String(p.stage ?? 'due');
+      const text: Record<string, string> = {
+        due: 'Tagihan Zeiko S3 kamu sudah lewat jatuh tempo. Semua masih jalan normal untuk sementara.',
+        readonly:
+          'Zeiko S3 kamu sekarang mode baca saja: upload dan bucket publik berhenti. Unduh dan hapus tetap bisa.',
+        locked: 'Akses ke Zeiko S3 kamu sekarang dikunci. Bayar kapan saja untuk membukanya lagi.',
+        delete_warning:
+          'Isi Zeiko S3 kamu akan dihapus permanen sebentar lagi kalau tagihan belum dibayar.',
+      };
+      return {
+        title:
+          stage === 'delete_warning'
+            ? 'Peringatan terakhir: isi Zeiko S3 akan dihapus'
+            : 'Tagihan Zeiko S3 belum dibayar',
+        paragraphs: [
+          text[stage] ?? text.due!,
+          `Belum dibayar: ${formatRupiah(Number(p.owedIdr))}. Batas akhir sebelum dihapus: ${formatDateTime(Number(p.deleteAt))}.`,
+        ],
+        cta: { label: 'Bayar tagihan', url: `${app}/s3` },
+      };
+    }
     case 'quota': {
       const pct = Number(p.pct);
       return {
@@ -156,7 +199,9 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
                 `Iklanmu sudah kami cek dan aman untuk tayang. Scan QRIS di bawah ini dari aplikasi bank atau e-wallet dan bayar tepat ${amount}, paling lambat ${String(p.startDate)}.`,
                 'Nominalnya punya kode unik supaya pembayaranmu mudah kami kenali. Setelah kami terima, iklanmu tayang sesuai jadwal; tidak perlu membuka website.',
                 ...(Number(p.creditUsedIdr) > 0
-                  ? [`Kreditmu ${formatRupiah(Number(p.creditUsedIdr))} sudah dipotong dari tagihan ini.`]
+                  ? [
+                      `Kreditmu ${formatRupiah(Number(p.creditUsedIdr))} sudah dipotong dari tagihan ini.`,
+                    ]
                   : []),
                 'Kalau belum dibayar sampai hari itu lewat, pesanan ini batal dengan sendirinya.',
               ]
@@ -170,7 +215,9 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
       }
       const paragraphs =
         status === 'paid'
-          ? ['Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya sudah dibayar dari kreditmu, jadi iklanmu tayang sesuai jadwal.']
+          ? [
+              'Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya sudah dibayar dari kreditmu, jadi iklanmu tayang sesuai jadwal.',
+            ]
           : status === 'approved'
             ? ['Materi iklanmu sudah kami cek dan aman untuk tayang.']
             : [
@@ -268,6 +315,8 @@ export const MANDATORY_EMAIL: readonly string[] = [
   'renewal_failed',
   'dunning',
   'account_delete',
+  's3_bill',
+  's3_dunning',
 ];
 export const PREF_TYPES = [
   'file_rejected',

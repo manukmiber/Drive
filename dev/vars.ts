@@ -15,6 +15,8 @@ export const DEV_DEFAULTS: Record<string, string> = {
   ADAPTER_CSAM: 'mock',
   ADAPTER_MEDIA: 'mock',
   ADAPTER_ARCHIVER: 'mock',
+  // VirusTotal stand-in: the real key goes to `wrangler secret put VIRUSTOTAL_API_KEY` (ADR-046).
+  ADAPTER_VIRUSTOTAL: 'mock',
   // Insecure, dev-only secrets. Real ones come from `wrangler secret put`.
   BETTER_AUTH_SECRET: 'dev-only-better-auth-secret-change-me-0000000000',
   DOWNLOAD_SECRET: 'dev-only-download-secret',

@@ -1,8 +1,32 @@
 // Queue payloads carry IDs only; consumers re-read state from D1 and must be idempotent (ADR-012).
+
+/**
+ * A file waiting on VirusTotal (ADR-046): where to pick up, and what our own scanner already found
+ * (hashes and sniffed type, nothing about the person), so the object is not read again.
+ */
+export interface ScanCarry {
+  n: number;
+  analysisId: string | null;
+  base: {
+    status: 'clean' | 'skipped';
+    sha256: string;
+    crc32: number | null;
+    sniffedMime: string | null;
+    detail: string | null;
+  };
+}
+
 export type ScanMessage =
-  | { type: 'scan'; blobId: string }
+  | { type: 'scan'; blobId: string; vt?: ScanCarry }
   // A Zeiko S3 object (ADR-044): checked again against the index, so a replaced object is skipped.
-  | { type: 's3_scan'; userId: string; bucket: string; key: string; blobId: string };
+  | {
+      type: 's3_scan';
+      userId: string;
+      bucket: string;
+      key: string;
+      blobId: string;
+      vt?: ScanCarry;
+    };
 export type ArchiveMessage = { type: 'archive'; jobId: string };
 export type CompressMessage = { type: 'compress'; jobId: string };
 export type NotifyMessage =

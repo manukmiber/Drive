@@ -160,6 +160,32 @@ export const t = {
     nameTaken: 'Nama bucket itu sudah dipakai. Coba nama lain.',
     notEmpty: 'Bucket masih berisi objek. Hapus isinya dulu lewat API.',
     invalidName: 'Nama bucket tidak sesuai aturan.',
+    billing: 'Biaya',
+    priceLine: (perGb: string, free: string, block: string, blockPrice: string, dueDays: number) =>
+      `${perGb} per GB per bulan, dari rata-rata data yang tersimpan. Egress gratis ${free} per bulan, lalu ${blockPrice} per ${block}. Tagihan bulan lalu terbit tiap tanggal 1 dan dibayar dengan QRIS dalam ${dueDays} hari.`,
+    thisMonth: 'Bulan ini sejauh ini',
+    usageSoFar: (gb: string, egress: string) => `${gb} GB-bulan tersimpan · egress ${egress}`,
+    estimate: (amount: string) => `perkiraan ${amount}`,
+    owed: (amount: string) => `Belum dibayar: ${amount}`,
+    dueOn: (date: string) => `jatuh tempo ${date}`,
+    pay: 'Bayar dengan QRIS',
+    payTitle: 'Bayar tagihan Zeiko S3?',
+    payBody: (amount: string) =>
+      `Kamu akan membayar ${amount}. Kalau kreditmu cukup, tagihan langsung lunas tanpa QRIS.`,
+    bills: 'Tagihan',
+    noBills: 'Belum ada tagihan. Tagihan pertama terbit tanggal 1 bulan depan.',
+    billStatus: {
+      open: 'Belum dibayar',
+      paid: 'Lunas',
+      carried: 'Digabung ke bulan berikutnya',
+      waived: 'Dihapuskan',
+    } as Record<string, string>,
+    billDetail: (gb: string, egress: string) => `rata-rata ${gb} GB · egress ${egress}`,
+    readonlyBanner:
+      'Tagihan Zeiko S3 lewat jatuh tempo: upload dan bucket publik berhenti sampai dibayar. Unduh dan hapus tetap bisa.',
+    lockedBanner:
+      'Zeiko S3 kamu dikunci karena tagihan belum dibayar. Bayar untuk membukanya lagi.',
+    unpaid: 'Tagihan Zeiko S3 belum dibayar, jadi ini belum bisa.',
     howTo: 'Cara menyambungkan',
     limits:
       'Satu upload biasa paling besar 100 MB; file yang lebih besar diunggah multipart (aws-cli dan rclone melakukannya sendiri). Semua bagian kecuali yang terakhir harus sama besar, minimal 5 MB.',
@@ -413,6 +439,7 @@ export const t = {
       renewed: 'Paket diperpanjang sebulan lagi.',
       addon: 'Tambahan ruang aktif.',
       compress: 'Kredit kompres ditambahkan.',
+      s3_bills: 'Tagihan Zeiko S3 lunas.',
       downgrade_scheduled: 'Penurunan paket dijadwalkan.',
       downgrade_cancelled: 'Penurunan paket dibatalkan.',
     } as Record<string, string>,

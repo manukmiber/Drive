@@ -31,6 +31,8 @@ export interface Env {
   APP_BASE_PATH?: string;
   ADAPTER_SCANNER: 'mock' | 'container';
   ADAPTER_CSAM: 'mock';
+  /** VirusTotal without a key (ADR-046): `mock` answers from a fixed list (dev, tests); unset = off. */
+  ADAPTER_VIRUSTOTAL?: 'mock';
   /** `mock-nocontainer` = mock without Container `media` (tests the "too large" path). */
   ADAPTER_MEDIA?: 'mock' | 'mock-nocontainer' | 'cloudflare';
   /** `none` = no Container `archiver`: TAR.ZST and large deflate ZIPs are unavailable. */
@@ -65,6 +67,8 @@ export interface Env {
   CF_ANALYTICS_TOKEN?: string;
   /** 32 bytes (base64): seals Zeiko S3 secret keys at rest (ADR-044). */
   S3_KEYS_ENC_KEY?: string;
+  /** VirusTotal API key (ADR-046), set by the owner. Unset = no VirusTotal. */
+  VIRUSTOTAL_API_KEY?: string;
 
   // ── bindings ──
   DB: D1Database;

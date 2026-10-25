@@ -85,6 +85,7 @@ Cloudflare tidak mencakup `a.b.zeiko.biz.id`). Setelah alamat berubah, ganti jug
 | `CF_ANALYTICS_TOKEN`, `CF_ACCOUNT_ID` | untuk tab R2 storage di relay (ADR-037): token API Cloudflare dengan izin **Account Analytics: Read**. Isi di kolom "R2 analytics token" pada Setup yang sama; relay memasangnya ke Worker ini bersama account id, tanpa menyimpannya. Tanpa keduanya, tab itu memakai hitungan Drive sendiri dan operasi A/B tidak diketahui. |
 
 | `S3_KEYS_ENC_KEY` | otomatis (acak, `cf-setup`): menyegel secret key Zeiko S3 (ADR-044). Mengganti nilainya membuat **semua** key S3 tidak bisa dipakai. |
+| `VIRUSTOTAL_API_KEY` | kamu (ADR-046): `npx wrangler secret put VIRUSTOTAL_API_KEY --env <env>`. Tanpa secret ini pemindaian berjalan tanpa VirusTotal. Key gratis: 4 request/menit, 500/hari; atur di config `virustotal`. |
 
 Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai lamanya dipindah ke
 `SHARE_LINK_SECRET_PREV` dulu.
@@ -95,7 +96,11 @@ Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai 
   ganti lewat `s3Origin` di `deploy/{env}.json`. Subdomain satu tingkat saja (sertifikat universal). Alamat
   virtual-hosted (`bucket.s3.zeiko.biz.id`) butuh sertifikat wildcard tingkat dua, jadi klien memakai path-style.
 - Sebelum dipakai: `node scripts/cf-setup.mjs <env>` (membuat `S3_KEYS_ENC_KEY` yang belum ada), migrasi `0007`
-  (`npm run db:migrate:<env>`), lalu deploy.
+  dan `0008` (`npm run db:migrate:<env>`), lalu deploy.
+- **Tagihan** (ADR-047): pascabayar per bulan kalender WIB. Cron per jam mencatat penyimpanan; tagihan bulan lalu
+  terbit tanggal 1 pukul 02.00 WIB. Harga di config `s3_price_idr_per_gb_month`, `s3_egress_*`, `s3_bill_*`, dan
+  `s3_dunning`; penghapusan karena menunggak ikut `dunning_delete_mode` (default `dry_run`). Operator bisa
+  menghapuskan tagihan: `POST /api/ops/s3/bills/<id>/waive {"reason": "…"}`.
 - Menyalakan akun: `POST /api/ops/s3/accounts {"zeikoId" | "email", "limitBytes", "reason"}` dengan bearer ops
   (tombol relay nanti). Orangnya harus sudah pernah masuk Drive.
 - **Index sendiri per akun** (opsional, butuh kuota D1: Free 10 database per akun Cloudflare):

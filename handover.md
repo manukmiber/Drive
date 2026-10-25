@@ -68,7 +68,8 @@ ulang pembayaran yang masih terbuka.
 ## 4. Aturan yang wajib diikuti (dari pemilik)
 
 - Jangan commit secret. Pakai `wrangler secret put` dan `.dev.vars` (di-ignore).
-- Jangan kirim isi file user ke VirusTotal atau layanan luar mana pun.
+- Jangan kirim isi file user ke layanan luar mana pun. Satu-satunya pengecualian (pemilik, 2026-10-25, ADR-046):
+  program dan dokumen ber-macro yang belum dikenal VirusTotal dikirim ke VirusTotal.
 - Jangan beri klien kredensial S3 atau presigned URL R2.
 - Jangan dedup blob lintas pool/user.
 - Jangan pasang iklan di jalur upload/download.

@@ -3,7 +3,7 @@
 //
 // Auth tables (and `users`) use Date-valued timestamps because Better Auth reads/writes Date objects.
 // Every other table uses plain integer milliseconds (ADR-008).
-import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, primaryKey, real } from 'drizzle-orm/sqlite-core';
 import {
   AD_AREA_LEVELS,
   AD_BOOKING_STATUSES,
@@ -715,6 +715,7 @@ export const s3Accounts = sqliteTable('s3_accounts', {
   reservedBytes: integer('reserved_bytes').notNull(),
   indexBinding: text('index_binding'),
   sweptAt: ms('swept_at').notNull(),
+  billingState: text('billing_state', { enum: ['ok', 'readonly', 'locked'] }).notNull(),
   createdBy: text('created_by'),
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
@@ -736,6 +737,53 @@ export const s3Buckets = sqliteTable('s3_buckets', {
   public: bool('public').notNull(),
   blockedAt: ms('blocked_at'),
   createdAt: ms('created_at').notNull(),
+});
+
+export const s3Usage = sqliteTable(
+  's3_usage',
+  {
+    userId: text('user_id').notNull(),
+    period: text('period').notNull(),
+    gibHours: real('gib_hours').notNull(),
+    egressBytes: integer('egress_bytes').notNull(),
+    lastHour: integer('last_hour').notNull(),
+    updatedAt: ms('updated_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.period] })],
+);
+
+export const s3Bills = sqliteTable('s3_bills', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  period: text('period').notNull(),
+  gibMonths: real('gib_months').notNull(),
+  egressBytes: integer('egress_bytes').notNull(),
+  linesJson: text('lines_json').notNull(),
+  subtotalIdr: integer('subtotal_idr').notNull(),
+  totalIdr: integer('total_idr').notNull(),
+  status: text('status', { enum: ['open', 'paid', 'carried', 'waived'] }).notNull(),
+  dueAt: ms('due_at'),
+  carriedInto: text('carried_into'),
+  invoiceId: text('invoice_id'),
+  paidAt: ms('paid_at'),
+  waivedReason: text('waived_reason'),
+  createdAt: ms('created_at').notNull(),
+});
+
+export const vtVerdicts = sqliteTable('vt_verdicts', {
+  sha256: text('sha256').primaryKey(),
+  verdict: text('verdict', { enum: ['malicious', 'clean', 'unknown'] }).notNull(),
+  malicious: integer('malicious').notNull(),
+  engines: integer('engines').notNull(),
+  label: text('label'),
+  uploaded: bool('uploaded').notNull(),
+  checkedAt: ms('checked_at').notNull(),
+});
+
+export const vtBudget = sqliteTable('vt_budget', {
+  slot: text('slot').primaryKey(),
+  used: integer('used').notNull(),
+  expiresAt: ms('expires_at').notNull(),
 });
 
 export type NodeRow = typeof nodes.$inferSelect;

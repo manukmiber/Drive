@@ -112,6 +112,42 @@ export const configSchema = z.object({
   // ── Scan ──
   scan_max_bytes: nonNeg().default(512 * MIB),
   scan_max_attempts: int().min(1).default(3),
+  /**
+   * VirusTotal (ADR-046), on when the VIRUSTOTAL_API_KEY secret is set. Only risky types are looked
+   * up by hash; with `upload`, executables and macro documents VirusTotal has never seen are sent
+   * whole (≤ upload_max_bytes, its 32 MB direct-upload limit). The budget is the key's: a free
+   * key gives 4 requests a minute and 500 a day. Past it, files go through without VirusTotal.
+   */
+  virustotal: z
+    .object({
+      enabled: z.boolean(),
+      upload: z.boolean(),
+      per_minute: int().min(1),
+      per_day: int().min(1),
+      /** One person's share of the day, so a folder of a thousand DLLs cannot use it all up. */
+      per_user_day: int().min(1),
+      /** Engines that must call a file malicious before it is rejected. */
+      malicious_min: int().min(1),
+      upload_max_bytes: nonNeg().max(32 * MIB),
+      poll_seconds: int().min(15).max(3600),
+      max_polls: int().min(1).max(100),
+      /** Times a file waits for a free minute of budget before it goes through unchecked. */
+      max_waits: int().min(0).max(200),
+      cache_days: int().min(1),
+    })
+    .default({
+      enabled: true,
+      upload: true,
+      per_minute: 4,
+      per_day: 500,
+      per_user_day: 50,
+      malicious_min: 3,
+      upload_max_bytes: 32 * MIB,
+      poll_seconds: 60,
+      max_polls: 10,
+      max_waits: 30,
+      cache_days: 30,
+    }),
 
   // ── Zeiko S3 (ADR-044) ──
   s3_max_buckets_per_account: int().min(1).default(100),
@@ -121,6 +157,32 @@ export const configSchema = z.object({
   s3_multipart_ttl_hours: int().min(1).max(167).default(144),
   /** D1 queries one listing may spend skipping folders (Workers Free allows 50 per request). */
   s3_list_max_queries: int().min(2).max(40).default(10),
+  // Postpaid (ADR-047): a bill per calendar month (WIB) for the average GB stored and the bytes
+  // served past the free allowance, issued on the 1st and paid by QRIS.
+  s3_price_idr_per_gb_month: nonNeg().default(500),
+  s3_egress_free_bytes: nonNeg().default(500 * GIB),
+  /** Egress past the free allowance is billed per started block. */
+  s3_egress_block_bytes: int()
+    .min(1)
+    .default(500 * GIB),
+  s3_egress_block_idr: nonNeg().default(5_000),
+  /** A smaller bill is carried into the next month instead of asking for a tiny QRIS. */
+  s3_bill_min_idr: nonNeg().default(1_000),
+  s3_bill_due_days: int().min(1).default(7),
+  /** Days after the due date: read-only (no uploads, no public links), locked, deleted. */
+  s3_dunning: z
+    .object({
+      readonly_after_days: nonNeg(),
+      lock_after_days: nonNeg(),
+      delete_after_days: nonNeg(),
+      notify_days_after: z.array(nonNeg()),
+    })
+    .default({
+      readonly_after_days: 3,
+      lock_after_days: 14,
+      delete_after_days: 30,
+      notify_days_after: [0, 3, 14, 29],
+    }),
 
   // ── Billing ──
   /** Unused since ADR-041 (no top-ups); kept so a stored config still reads. */
@@ -231,7 +293,6 @@ export const configSchema = z.object({
       telegram_bot: z.boolean(),
       email_share: z.boolean(),
       csam_scan: z.boolean(),
-      virustotal_hash_lookup: z.boolean(),
       ads: z.boolean(),
     })
     .default({
@@ -239,7 +300,6 @@ export const configSchema = z.object({
       telegram_bot: true,
       email_share: true,
       csam_scan: false,
-      virustotal_hash_lookup: false,
       ads: true,
     }),
 });

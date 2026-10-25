@@ -4,6 +4,7 @@
 // after, like Drive's quota (SPEC §4), on the account's row in the main database. A replaced or
 // deleted object's bytes are removed from R2 right away: nothing is shared between objects.
 import { GIB, R2_MAX_PARTS, R2_MIN_PART_BYTES } from '../../shared/constants';
+import type { ScanResult } from '../adapters/scanner';
 import type { Ctx } from '../context';
 import { randomBase62, ulid } from '../lib/ids';
 import { S3Error } from '../lib/s3-errors';
@@ -20,6 +21,8 @@ import {
 } from './s3';
 import { indexDb } from './s3-index';
 import { notify } from './notify';
+import type { ScanCarry } from '../queues/messages';
+import { afterVirusTotal } from './scan';
 
 export const MAX_KEY_BYTES = 1024;
 /** One PUT or CopyObject (Amazon's limit too; bigger objects are multipart). */
@@ -1058,9 +1061,9 @@ export async function purgeS3Account(ctx: Ctx, userId: string, batches = 8): Pro
 /** Queue `scan`, `s3_scan` messages: the same scanner chain as Drive (SPEC §14.2). */
 export async function processS3Scan(
   ctx: Ctx,
-  msg: { userId: string; bucket: string; key: string; blobId: string },
+  msg: { userId: string; bucket: string; key: string; blobId: string; vt?: ScanCarry },
   attempts: number,
-): Promise<'clean' | 'skipped' | 'infected' | 'error' | 'noop'> {
+): Promise<'clean' | 'skipped' | 'infected' | 'error' | 'noop' | 'pending'> {
   const account = await getAccount(ctx, msg.userId);
   if (!account || account.status === 'deleting') return 'noop';
   const db = await indexDb(ctx.env, account.indexBinding);
@@ -1073,11 +1076,14 @@ export async function processS3Scan(
   // Replaced or deleted since: nothing to scan.
   if (!row || (row.scan_status !== 'pending' && row.scan_status !== 'error')) return 'noop';
   const cfg = await ctx.config();
-  const result = await ctx.adapters.scanner.scan({
-    key: s3BlobKey(msg.userId, msg.blobId),
-    size: row.size,
-    maxScanBytes: cfg.scan_max_bytes,
-  });
+  const r2Key = s3BlobKey(msg.userId, msg.blobId);
+  const result: ScanResult = msg.vt
+    ? msg.vt.base
+    : await ctx.adapters.scanner.scan({
+        key: r2Key,
+        size: row.size,
+        maxScanBytes: cfg.scan_max_bytes,
+      });
   const same = `bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`;
   if (result.status === 'error') {
     if (attempts >= cfg.scan_max_attempts) {
@@ -1103,6 +1109,35 @@ export async function processS3Scan(
       status = 'infected';
       detail = `blocked hash: ${blocked.reason}`;
     }
+  }
+  if ((status === 'clean' || status === 'skipped') && result.sha256) {
+    const vt = await afterVirusTotal(
+      ctx,
+      {
+        userId: msg.userId,
+        sha256: result.sha256,
+        size: row.size,
+        name: msg.key,
+        sniffedMime: result.sniffedMime,
+        r2Key,
+      },
+      { ...result, status, sha256: result.sha256 },
+      msg.vt,
+      (vt, delaySeconds) =>
+        ctx.env.SCAN_QUEUE.send(
+          {
+            type: 's3_scan',
+            userId: msg.userId,
+            bucket: msg.bucket,
+            key: msg.key,
+            blobId: msg.blobId,
+            vt,
+          },
+          { delaySeconds },
+        ),
+    );
+    if (vt === 'wait') return 'pending';
+    ({ status, detail } = vt);
   }
   if (status !== 'infected') {
     await db

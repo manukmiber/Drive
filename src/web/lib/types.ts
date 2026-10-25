@@ -120,7 +120,8 @@ export interface BillingSummary {
 /** What can be bought (ADR-041); `renew` is the next month of one's plan. */
 export type CheckoutItem =
   | { kind: 'plan' | 'addon' | 'compress'; code: string }
-  | { kind: 'renew' };
+  | { kind: 'renew' }
+  | { kind: 's3_bills'; billIds: string[] };
 
 export interface Topup {
   paymentId: string;

@@ -9,6 +9,7 @@ import { aesGcmDecrypt, aesGcmEncrypt } from '../lib/crypto';
 import { randomBase62, ulid } from '../lib/ids';
 import { S3Error } from '../lib/s3-errors';
 import { boundIndex, ensureIndex, INDEX_BINDING_RE, indexDb } from './s3-index';
+import { s3BillingView, type S3BillingState } from './s3-billing';
 
 export type S3AccountStatus = 'active' | 'suspended' | 'deleting';
 
@@ -19,6 +20,8 @@ export interface S3Account {
   usedBytes: number;
   reservedBytes: number;
   indexBinding: string | null;
+  /** Unpaid bills (ADR-047): `readonly` takes no uploads, `locked` answers nothing. */
+  billingState: S3BillingState;
 }
 
 /** R2 key of an object's bytes: one folder per account (the owner's diagram). */
@@ -69,6 +72,7 @@ interface AccountRow {
   used_bytes: number;
   reserved_bytes: number;
   index_binding: string | null;
+  billing_state: S3BillingState;
 }
 
 const toAccount = (r: AccountRow): S3Account => ({
@@ -78,11 +82,13 @@ const toAccount = (r: AccountRow): S3Account => ({
   usedBytes: r.used_bytes,
   reservedBytes: r.reserved_bytes,
   indexBinding: r.index_binding,
+  billingState: r.billing_state,
 });
 
 export async function getAccount(ctx: Ctx, userId: string): Promise<S3Account | null> {
   const row = await ctx.env.DB.prepare(
-    `SELECT user_id, status, limit_bytes, used_bytes, reserved_bytes, index_binding FROM s3_accounts WHERE user_id = ?1`,
+    `SELECT user_id, status, limit_bytes, used_bytes, reserved_bytes, index_binding, billing_state
+     FROM s3_accounts WHERE user_id = ?1`,
   )
     .bind(userId)
     .first<AccountRow>();
@@ -369,6 +375,8 @@ export async function setBucketPublic(
   const b = await ownBucket(ctx, userId, name);
   if (isPublic && b.blocked_at !== null)
     throw new S3Error('AccessDenied', 'Zeiko turned off public access for this bucket.');
+  if (isPublic && (await getAccount(ctx, userId))?.billingState !== 'ok')
+    throw new S3Error('AccountProblem', 'Public buckets wait until the Zeiko S3 bill is paid.');
   await ctx.env.DB.prepare(`UPDATE s3_buckets SET public = ?3 WHERE name = ?1 AND user_id = ?2`)
     .bind(name, userId, isPublic ? 1 : 0)
     .run();
@@ -417,7 +425,7 @@ export interface AccountView extends S3Account {
 }
 
 const ACCOUNT_VIEW = `SELECT a.user_id, a.status, a.limit_bytes, a.used_bytes, a.reserved_bytes, a.index_binding,
-    a.created_at, u.email, u.name,
+    a.billing_state, a.created_at, u.email, u.name,
     (SELECT account_id FROM accounts WHERE user_id = a.user_id AND provider_id = 'zeiko' LIMIT 1) AS zeiko_id,
     (SELECT COUNT(*) FROM s3_buckets b WHERE b.user_id = a.user_id) AS buckets,
     (SELECT COUNT(*) FROM s3_keys k WHERE k.user_id = a.user_id AND k.revoked_at IS NULL) AS keys
@@ -619,8 +627,10 @@ export async function s3Overview(ctx: Ctx, userId: string) {
             limitBytes: account.limitBytes,
             usedBytes: account.usedBytes,
             reservedBytes: account.reservedBytes,
+            billingState: account.billingState,
           }
         : null,
+    billing: enabled ? await s3BillingView(ctx, userId) : null,
     keys: enabled ? await listKeys(ctx, userId) : [],
     buckets: enabled
       ? (await listBuckets(ctx, userId)).map((b) => ({

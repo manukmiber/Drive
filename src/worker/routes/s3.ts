@@ -32,6 +32,7 @@ function asAppError(e: S3Error): AppError {
     case 'NoSuchBucket':
       return new AppError('NOT_FOUND', e.message);
     case 'AccessDenied':
+    case 'AccountProblem':
       return new AppError('FORBIDDEN', e.message, { reason: e.code });
     default:
       return new AppError('BAD_REQUEST', e.message, { reason: e.code });

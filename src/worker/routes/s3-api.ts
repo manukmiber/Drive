@@ -34,6 +34,7 @@ import {
   type XmlObject,
 } from '../lib/s3-xml';
 import { clientIp } from '../middleware/ratelimit';
+import { meterS3Egress } from '../services/s3-billing';
 import {
   createBucket,
   getAccount,
@@ -131,6 +132,8 @@ interface Req {
   /** Bytes in and out, for the per-account request log (Analytics Engine). */
   bytesIn: number;
   bytesOut: number;
+  /** Whose month an object read's bytes are billed to (ADR-047): the bucket owner. */
+  egressTo: string | null;
   op: string;
 }
 
@@ -181,6 +184,14 @@ async function authenticate(
     );
   if (account.status !== 'active' || key.userStatus !== 'active')
     throw new S3Error('AccountProblem', 'This Zeiko S3 account is suspended.');
+  // Unpaid bills (ADR-047): read-only still reads, lists and deletes; locked does nothing.
+  if (account.billingState === 'locked')
+    throw new S3Error('AccountProblem', 'This Zeiko S3 account is locked until its bill is paid.');
+  if (
+    account.billingState === 'readonly' &&
+    (req.method === 'PUT' || (req.method === 'POST' && !pairs.some(([k]) => k === 'delete')))
+  )
+    throw new S3Error('AccountProblem', 'Uploads are paused until the Zeiko S3 bill is paid.');
   await touchKey(ctx, parsed.accessKeyId, key);
   return { accessKeyId: parsed.accessKeyId, userId: key.userId, account, parsed, verified };
 }
@@ -694,6 +705,7 @@ async function readObject(
       ActualObjectSize: String(row.size),
     });
   const r2Key = s3BlobKey(account.userId, row.blob_id);
+  r.egressTo = account.userId;
   if (range.kind === 'single') {
     const length = range.end - range.start + 1;
     headers.set('Content-Range', `bytes ${range.start}-${range.end}/${row.size}`);
@@ -818,7 +830,8 @@ async function objectOp(r: Req): Promise<Response> {
     if (!bucket.public || bucket.blocked_at !== null)
       throw new S3Error('AccessDenied', 'Access Denied');
     const account = await getAccount(r.ctx, bucket.user_id);
-    if (!account || account.status !== 'active') throw new S3Error('AccessDenied', 'Access Denied');
+    if (!account || account.status !== 'active' || account.billingState !== 'ok')
+      throw new S3Error('AccessDenied', 'Access Denied');
     const user = await r.ctx.env.DB.prepare(`SELECT status FROM users WHERE id = ?1`)
       .bind(bucket.user_id)
       .first<{ status: string }>();
@@ -965,8 +978,15 @@ async function dispatch(r: Req): Promise<Response> {
   return r.key === null ? bucketOp(r) : objectOp(r);
 }
 
-/** Entry point for every request on the S3 host. */
-export async function handleS3(raw: Request, ctx: Ctx): Promise<Response> {
+/**
+ * Entry point for every request on the S3 host. `waitUntil` lets the egress count finish after the
+ * response has gone (it is awaited without one).
+ */
+export async function handleS3(
+  raw: Request,
+  ctx: Ctx,
+  waitUntil?: (p: Promise<unknown>) => void,
+): Promise<Response> {
   const requestId =
     raw.headers.get('cf-ray') ?? crypto.randomUUID().replace(/-/g, '').slice(0, 16).toUpperCase();
   const url = new URL(raw.url);
@@ -982,6 +1002,7 @@ export async function handleS3(raw: Request, ctx: Ctx): Promise<Response> {
     requestId,
     bytesIn: 0,
     bytesOut: 0,
+    egressTo: null,
     op: 'Unknown',
   };
   let res: Response;
@@ -1012,5 +1033,12 @@ export async function handleS3(raw: Request, ctx: Ctx): Promise<Response> {
     blobs: [r.op, String(out.status), r.bucket ?? ''],
     doubles: [r.bytesIn, r.bytesOut],
   });
+  if (r.egressTo && r.bytesOut > 0 && out.status < 300) {
+    const metered = meterS3Egress(ctx, r.egressTo, r.bytesOut).catch((e: unknown) =>
+      log.error('s3_egress_meter_failed', { requestId, message: errorMessage(e) }),
+    );
+    if (waitUntil) waitUntil(metered);
+    else await metered;
+  }
   return out;
 }

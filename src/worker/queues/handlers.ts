@@ -11,7 +11,7 @@ import { processArchiveJob } from '../services/archives';
 import { processS3Scan, purgeS3Account } from '../services/s3-objects';
 
 registerQueueHandler('scan', async (ctx, body, attempts) => {
-  if (body.type === 'scan') await processScan(ctx, body.blobId);
+  if (body.type === 'scan') await processScan(ctx, body.blobId, body.vt);
   if (body.type === 's3_scan') await processS3Scan(ctx, body, attempts);
 });
 

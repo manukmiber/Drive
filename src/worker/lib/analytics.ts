@@ -8,7 +8,8 @@ export type AnalyticsEvent =
   | 'ad_click'
   | 'scan_result'
   /** One Zeiko S3 API request: account, operation, status, bytes in/out (ADR-044). */
-  | 's3_request';
+  | 's3_request'
+  | 'virustotal';
 
 export function track(
   dataset: AnalyticsEngineDataset | undefined,

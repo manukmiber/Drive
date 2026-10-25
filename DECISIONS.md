@@ -802,3 +802,72 @@ otomatis, lokasi dari IP).
   baru dicatat, belum ditegakkan, karena paket Zeiko S3 belum punya harga.
 - Kebijakan Privasi tidak menyebut kota/kode pos untuk iklan lokal (SPEC §10.3 meminta itu dijelaskan); penjelasannya
   masih ada di Kebijakan Iklan.
+
+## ADR-046 — VirusTotal dengan key pemilik: cek hash, kirim program yang belum dikenal
+
+**Konteks:** ADR-045 mencatat Kebijakan Privasi §4 menyebut VirusTotal (hash, dan file yang belum dikenal "dapat
+diunggah utuh"), sementara SPEC §14.2 dan `CLAUDE.md` melarang mengirim isi file ke VirusTotal. Pemilik
+(2026-10-25): "Untuk sekarang pakai API Key Virus total ini", dan saat ditanya memilih **mengunggah executable yang
+belum dikenal**. Key yang diberikan adalah key gratis (Public API: 4 request/menit, 500/hari, 15.500/bulan, tanpa
+private scanning; dicek ke `/users/{key}/overall_quotas`).
+
+**Keputusan:**
+- Langkah baru di pemindaian Drive dan Zeiko S3, setelah scanner sendiri dan blocklist hash
+  (`services/virustotal.ts`, adapter `adapters/virustotal.ts`). Hanya tipe berisiko yang dicek (`vtKind`, dari
+  ekstensi lalu byte awal): program/installer/APK dan skrip dropper Windows, dokumen ber-macro, skrip `.bat/.cmd/.ps1`,
+  arsip, dokumen Office/PDF. Foto, video, teks, dan kode sumber tidak dicek sama sekali.
+- **Dikirim utuh** hanya program dan dokumen ber-macro yang belum dikenal VirusTotal, ≤ 32 MB (batas upload
+  langsung), dengan nama `file.<ext>` (nama asli tidak ikut). Skrip teks tidak pernah dikirim (sering berisi
+  kredensial); arsip, PDF, dan dokumen biasa hanya dicek hash-nya. Ini sejalan dengan Kebijakan Privasi §4 dan
+  peringatannya tentang .exe/.apk/dokumen ber-macro.
+- Ditolak bila ≥ `malicious_min` (default 3) mesin menyebutnya berbahaya: jalur `infected` biasa (hapus, kuota
+  kembali, hash diblokir dengan alasan `VirusTotal: <label> (n/m)`, notifikasi).
+- **Anggaran key** di D1 (`vt_budget`): per menit, per hari (UTC), dan per orang per hari (`per_user_day` 50), supaya
+  satu folder berisi seribu DLL tidak menghabiskan jatah semua orang. Jawaban per hash disimpan (`vt_verdicts`):
+  berbahaya selamanya, bersih `cache_days`, belum dikenal sehari.
+- **VirusTotal tidak pernah menahan file lama.** Jatah menit habis atau HTTP 429 → pesan scan dikirim lagi
+  menit berikutnya (maks `max_waits`); analisis upload dibaca tiap `poll_seconds` (maks `max_polls`). Jatah harian
+  habis, key ditolak (operator mendapat email), error berulang, atau analisis terlalu lama → file lolos dengan
+  putusan scanner sendiri, alasannya di `scan_detail`. Selama menunggu, pesan antrean membawa hash dan tipe hasil
+  scanner (bukan data orang), supaya objek tidak dibaca ulang.
+- Aktif bila secret `VIRUSTOTAL_API_KEY` ada dan config `virustotal.enabled`; `virustotal.upload` mematikan
+  pengiriman file. Dev/test memakai `MockVirusTotal` (`ADAPTER_VIRUSTOTAL=mock`). Flag lama
+  `features.virustotal_hash_lookup` dihapus.
+- Aturan proyek diubah: isi file boleh keluar **hanya** ke VirusTotal, **hanya** untuk tipe di atas.
+
+**Risiko yang diterima pemilik:** ketentuan VirusTotal melarang Public API dipakai di produk/layanan komersial
+dan di alur bisnis yang tidak menyumbang file baru; key bisa diblokir kapan saja (pemindaian tetap jalan tanpa
+VirusTotal). File yang dikirim lewat Public API dapat dilihat pelanggan VirusTotal. Jalan keluarnya lisensi
+Premium (private scanning), lihat LAUNCH-CHECKLIST.
+
+## ADR-047 — Zeiko S3 pascabayar dari pemakaian
+
+**Konteks:** harga dari pemilik (2026-10-25): "Replicate 1x: 500/Gb", "Replicate 3x: 1250/Gb", "Egress: Free 500Gb
+lalu 5000 / 500Gb". Saat ditanya, pemilik memilih **pascabayar dari pemakaian** dan egress yang **jalan terus,
+ditagih belakangan**.
+
+**Keputusan:**
+- Satu bulan tagihan = bulan kalender WIB. Cron per jam menambahkan penyimpanan setiap akun ke `s3_usage` (GiB-jam;
+  sampel yang telat mewakili paling banyak 3 jam, sampel di jam yang sama tidak dihitung dua kali). Setiap GET objek
+  (ber-key atau anonim di bucket publik) menambah egress pemilik bucket, sebanyak byte yang dikirim (Range dihitung
+  panjangnya), lewat `waitUntil`.
+- Tanggal 1 pukul 02.00 WIB tagihan bulan lalu terbit (`s3_bills`): rata-rata GB tersimpan × `s3_price_idr_per_gb_month`
+  (Rp500, dibulatkan ke rupiah terdekat) + egress di atas `s3_egress_free_bytes` (500 GB) per blok
+  `s3_egress_block_bytes` (500 GB) yang dimulai × `s3_egress_block_idr` (Rp5.000), plus pajak `tax_rate_pct`.
+  Tagihan di bawah `s3_bill_min_idr` (Rp1.000) digabung ke bulan berikutnya. Jatuh tempo `s3_bill_due_days` (7).
+- Dibayar seperti pembelian lain (ADR-041): `CheckoutItem { kind: 's3_bills', billIds }`, QRIS untuk sisanya setelah
+  kredit, invoice untuk pembukuan. Kredit yang cukup membayar tagihan saat terbit. Email + lonceng `s3_bill` dan
+  `s3_dunning` wajib (tidak bisa dimatikan).
+- Menunggak (`s3_dunning`, hari setelah jatuh tempo): 3 hari → `billing_state = readonly` (PUT/POST ditolak
+  `AccountProblem`, kecuali DeleteObjects; bucket publik tertutup; baca, list, dan hapus tetap bisa); 14 hari →
+  `locked` (semua request ber-key ditolak); 30 hari → data dihapus (`s3_purge`), hanya bila
+  `dunning_delete_mode = live` dan tidak ada pembayaran yang sedang berjalan. Tagihannya tetap tercatat. Membayar
+  langsung mengembalikan `billing_state`. Operator bisa menghapuskan tagihan dengan alasan
+  (`POST /api/ops/s3/bills/:id/waive`).
+- Akun tetap dinyalakan operator dengan `limit_bytes` (relay); batas itu sekarang juga batas risiko pascabayar.
+- Halaman `/s3`: harga, pemakaian dan perkiraan bulan ini, tagihan, dan tombol bayar QRIS.
+
+**Tidak dibuat: "Replikasi 3x".** Pemilik meminta tier 3x (Rp1.250/GB) yang tetap disimpan satu salinan. Itu
+menjual fitur yang tidak ada kepada pembeli, jadi tidak dibuat. Semua data Zeiko S3 disimpan sekali di R2 (R2 sendiri
+dirancang untuk ketahanan 99,999999999%); hanya ada satu harga. Tier 3x yang jujur butuh salinan sungguhan, misalnya
+dua bucket R2 tambahan di wilayah lain dan antrean replikasi; biaya penyimpanan R2-nya ±3 × $0,015/GB-bulan.

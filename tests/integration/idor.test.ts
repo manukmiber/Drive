@@ -119,6 +119,13 @@ describe('IDOR (SPEC §14.1)', () => {
       }
     ).key;
     expect((await a.req('POST', '/api/s3/buckets', { name: 'milik-a' })).status).toBe(201);
+    // A's unpaid Zeiko S3 bill (ADR-047): B paying it would be B's money, but must never be B's call.
+    rt.d1.sqlite
+      .prepare(
+        `INSERT INTO s3_bills (id, user_id, period, gib_months, egress_bytes, lines_json, subtotal_idr, total_idr, status, due_at, created_at)
+         VALUES ('bill_a', ?, '2026-09', 2, 0, '[]', 1000, 1000, 'open', 0, 0)`,
+      )
+      .run(a.userId);
     const payment = 'pay_a';
     rt.d1.sqlite
       .prepare(
@@ -150,6 +157,7 @@ describe('IDOR (SPEC §14.1)', () => {
         rt.d1.sqlite.prepare('SELECT node_id FROM node_stars WHERE user_id = ?').all(b.userId),
         rt.d1.sqlite.prepare('SELECT id, revoked_at FROM s3_keys ORDER BY id').all(),
         rt.d1.sqlite.prepare('SELECT name, user_id, public FROM s3_buckets ORDER BY name').all(),
+        rt.d1.sqlite.prepare('SELECT id, status, paid_at FROM s3_bills ORDER BY id').all(),
       ]);
     const before = snapshot();
     const body = (bytes: Uint8Array) => ({
@@ -214,6 +222,7 @@ describe('IDOR (SPEC §14.1)', () => {
       ['PATCH', '/api/s3/buckets/milik-a', { public: true }],
       ['DELETE', '/api/s3/buckets/milik-a'],
       ['POST', '/api/s3/buckets', { name: 'milik-a' }],
+      ['POST', '/api/billing/checkout', { item: { kind: 's3_bills', billIds: ['bill_a'] } }],
     ];
 
     const leaks: string[] = [];

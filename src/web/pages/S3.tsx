@@ -1,17 +1,19 @@
-// Zeiko S3 (ADR-044): the endpoint, this account's storage, its access keys and buckets. The
-// operator turns Zeiko S3 on and sets its storage (the relay); objects themselves are handled through
-// the S3 API with any S3 tool.
+// Zeiko S3 (ADR-044): the endpoint, this account's storage, what it costs and its bills (ADR-047),
+// its access keys and buckets. The operator turns Zeiko S3 on and sets its storage (the relay);
+// objects themselves are handled through the S3 API with any S3 tool.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Copy, Database, Globe, KeyRound, Lock, Plus, Trash2 } from 'lucide-react';
+import { Copy, Database, Globe, KeyRound, Lock, Plus, Receipt, Trash2 } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { OPERATOR_EMAIL } from '../../shared/constants';
-import { formatBytes, formatDate } from '../../shared/format';
+import { formatBytes, formatDate, formatRupiah } from '../../shared/format';
 import { Button } from '../components/Button';
 import { Dialog, PromptDialog } from '../components/ui/Dialog';
 import { toast } from '../components/ui/Toast';
 import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { t } from '../lib/i18n';
+import { cn } from '../lib/cn';
+import { useCheckout } from './Billing';
 
 interface S3Key {
   id: string;
@@ -27,6 +29,29 @@ interface S3Bucket {
   createdAt: number;
 }
 
+interface S3Bill {
+  id: string;
+  period: string;
+  gibMonths: number;
+  egressBytes: number;
+  totalIdr: number;
+  status: 'open' | 'paid' | 'carried' | 'waived';
+  dueAt: number | null;
+}
+
+interface S3Billing {
+  prices: {
+    perGbMonthIdr: number;
+    egressFreeBytes: number;
+    egressBlockBytes: number;
+    egressBlockIdr: number;
+    dueDays: number;
+  };
+  current: { period: string; gibMonths: number; egressBytes: number; estimateIdr: number };
+  bills: S3Bill[];
+  outstanding: { billIds: string[]; totalIdr: number; dueAt: number | null };
+}
+
 interface S3Overview {
   configured: boolean;
   enabled: boolean;
@@ -37,7 +62,9 @@ interface S3Overview {
     limitBytes: number;
     usedBytes: number;
     reservedBytes: number;
+    billingState: 'ok' | 'readonly' | 'locked';
   } | null;
+  billing: S3Billing | null;
   keys: S3Key[];
   buckets: S3Bucket[];
 }
@@ -115,10 +142,93 @@ function errorText(e: unknown): string {
       return t.s3.nameTaken;
     if (reason === 'BucketNotEmpty') return t.s3.notEmpty;
     if (reason === 'InvalidBucketName') return t.s3.invalidName;
+    if (reason === 'AccountProblem') return t.s3.unpaid;
     if (e.code === 'CONFLICT' && typeof e.data?.max === 'number')
       return t.s3.tooManyKeys(e.data.max);
   }
   return t.errors.generic;
+}
+
+const gb = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+/** Prices, this month so far, what is unpaid (with the QRIS button), and the last bills. */
+function BillingSection({ b }: { b: S3Billing }) {
+  const checkout = useCheckout();
+  const p = b.prices;
+  const owed = b.outstanding;
+  return (
+    <Section
+      id="s3-billing"
+      title={t.s3.billing}
+      icon={<Receipt className="h-4 w-4" aria-hidden="true" />}
+    >
+      <p className="text-sm text-[var(--fg-muted)]">
+        {t.s3.priceLine(
+          formatRupiah(p.perGbMonthIdr),
+          formatBytes(p.egressFreeBytes),
+          formatBytes(p.egressBlockBytes),
+          formatRupiah(p.egressBlockIdr),
+          p.dueDays,
+        )}
+      </p>
+      <div className="mt-3 rounded-xl bg-[var(--bg-subtle)] px-3 py-2 text-sm">
+        <span className="font-medium">{t.s3.thisMonth}</span>
+        {': '}
+        {t.s3.usageSoFar(gb(b.current.gibMonths), formatBytes(b.current.egressBytes))}
+        {' · '}
+        {t.s3.estimate(formatRupiah(b.current.estimateIdr))}
+      </div>
+      {owed.totalIdr > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-amber-900">
+          <p className="min-w-[12rem] flex-1 text-sm">
+            <span className="font-medium">{t.s3.owed(formatRupiah(owed.totalIdr))}</span>
+            {owed.dueAt !== null && ` · ${t.s3.dueOn(formatDate(owed.dueAt))}`}
+          </p>
+          <Button
+            className="h-9 px-4"
+            disabled={checkout.busy}
+            onClick={() =>
+              checkout.ask(t.s3.payTitle, t.s3.payBody(formatRupiah(owed.totalIdr)), {
+                kind: 's3_bills',
+                billIds: owed.billIds,
+              })
+            }
+          >
+            {t.s3.pay}
+          </Button>
+        </div>
+      )}
+      <h3 className="mt-4 text-sm font-medium">{t.s3.bills}</h3>
+      {b.bills.length === 0 ? (
+        <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.s3.noBills}</p>
+      ) : (
+        <ul className="mt-1 divide-y divide-[var(--border)]">
+          {b.bills.map((bill) => (
+            <li key={bill.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+              <div className="min-w-[10rem] flex-1">
+                <p className="text-sm font-medium">{bill.period}</p>
+                <p className="text-xs text-[var(--fg-muted)]">
+                  {t.s3.billDetail(gb(bill.gibMonths), formatBytes(bill.egressBytes))}
+                </p>
+              </div>
+              <span className="text-sm tabular-nums">{formatRupiah(bill.totalIdr)}</span>
+              <span
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-[11px]',
+                  bill.status === 'open'
+                    ? 'bg-amber-100 text-amber-900'
+                    : 'bg-[var(--bg-subtle)] text-[var(--fg-muted)]',
+                )}
+              >
+                {t.s3.billStatus[bill.status]}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {checkout.ui}
+    </Section>
+  );
 }
 
 export function S3() {
@@ -241,6 +351,14 @@ export function S3() {
           {t.s3.suspended(OPERATOR_EMAIL)}
         </p>
       )}
+      {!suspended && acc.billingState !== 'ok' && (
+        <p
+          role="alert"
+          className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          {acc.billingState === 'locked' ? t.s3.lockedBanner : t.s3.readonlyBanner}
+        </p>
+      )}
 
       <Section
         id="s3-conn"
@@ -265,6 +383,8 @@ export function S3() {
           </p>
         </div>
       </Section>
+
+      {d.billing && <BillingSection b={d.billing} />}
 
       <Section
         id="s3-keys"

@@ -1,4 +1,5 @@
-// /api/billing — the plan, add-ons, compress packs and paying for them (SPEC §12, ADR-041).
+// /api/billing — the plan, add-ons, compress packs, Zeiko S3 bills and paying for them (SPEC §12,
+// ADR-041, ADR-047).
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { validate } from '../lib/validate';
@@ -13,6 +14,10 @@ const item = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('addon'), code }),
   z.object({ kind: z.literal('compress'), code }),
   z.object({ kind: z.literal('renew') }),
+  z.object({
+    kind: z.literal('s3_bills'),
+    billIds: z.array(z.string().min(1).max(40)).min(1).max(24),
+  }),
 ]);
 
 export const billing = new Hono<AppBindings>()

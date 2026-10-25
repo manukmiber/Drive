@@ -44,7 +44,9 @@ halaman `/s3`. Index objek per akun di D1 sendiri (`S3_DB_*`, daftar di `deploy/
 di D1 utama kalau belum ada; tabelnya dibuat `services/s3-index.ts`, bukan `migrations/`. Coba lokal:
 `curl http://s3.localhost:8790/` atau `aws --endpoint-url http://s3.localhost:8790 s3 ls` (key dari `/s3`
 setelah akun dinyalakan lewat ops API). ToS dan Kebijakan Privasi pemilik ada di `src/web/legal/` (ADR-045):
-teks Indonesia kata per kata, jangan diubah tanpa pemilik; kontak di `contacts.ts`.
+teks Indonesia kata per kata, jangan diubah tanpa pemilik; kontak di `contacts.ts`. S3 **pascabayar** (ADR-047):
+`services/s3-billing.ts` (sampel per jam, tagihan tanggal 1, checkout `s3_bills`, menunggak → baca saja → kunci).
+Hanya ada satu salinan R2 per objek: jangan menjual atau menyebut "replikasi 3x" tanpa salinan sungguhan.
 
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.
@@ -70,7 +72,9 @@ Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.
 
 ## Larangan
 - Jangan commit secret. Pakai `wrangler secret put` dan `.dev.vars` (di-ignore).
-- Jangan kirim isi file user ke VirusTotal atau layanan luar mana pun.
+- Jangan kirim isi file user ke layanan luar mana pun. Satu-satunya pengecualian (pemilik, 2026-10-25, ADR-046):
+  program dan dokumen ber-macro yang belum dikenal VirusTotal dikirim ke VirusTotal (`services/virustotal.ts`).
+  Jangan menambah tipe atau layanan lain tanpa pemilik.
 - Jangan beri klien kredensial S3 atau presigned URL **R2**. (Key Zeiko S3 milik Zeiko sendiri dan dicek Worker,
   ADR-044; itu boleh.)
 - Jangan dedup blob lintas pool/user.

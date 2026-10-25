@@ -48,6 +48,8 @@ const OWNER_SECRETS = [
   'ZEIKO_OPS_TOKEN',
   'TELEGRAM_BOT_TOKEN',
   'TURNSTILE_SECRET_KEY',
+  // The owner's VirusTotal key (ADR-046); without it the scan simply skips VirusTotal.
+  'VIRUSTOTAL_API_KEY',
 ];
 
 function wrangler(argv, { json = false, allowFail = false, input } = {}) {

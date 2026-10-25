@@ -15,6 +15,7 @@ import { log } from '../lib/log';
 import { ensurePersonalSpace } from './accounts';
 import { payCampaignFromWallet } from './ads';
 import { notificationStmt, notify } from './notify';
+import { payS3Bills, quoteS3Bills } from './s3-billing';
 
 type Stmt = D1PreparedStatement;
 
@@ -492,12 +493,16 @@ export interface PaymentStarted {
   expiresAt: number;
 }
 
-/** What a person can buy (ADR-041). `renew` is the next month of the plan they have. */
+/**
+ * What a person can buy (ADR-041). `renew` is the next month of the plan they have; `s3_bills` pays
+ * Zeiko S3 bills (ADR-047).
+ */
 export type CheckoutItem =
   | { kind: 'plan'; code: string }
   | { kind: 'addon'; code: string }
   | { kind: 'compress'; code: string }
-  | { kind: 'renew' };
+  | { kind: 'renew' }
+  | { kind: 's3_bills'; billIds: string[] };
 
 /** What a payment is for once it lands. `ad_campaign` is an approved ad campaign (ADR-043). */
 export type DirectPurpose = CheckoutItem | { kind: 'ad_campaign'; campaignId: string };
@@ -575,6 +580,7 @@ export async function openPayment(
 /** What `item` costs this person right now, tax included (0: nothing to pay, e.g. a downgrade). */
 export async function quoteItem(ctx: Ctx, userId: string, item: CheckoutItem): Promise<number> {
   const now = ctx.now();
+  if (item.kind === 's3_bills') return quoteS3Bills(ctx, userId, item.billIds);
   if (item.kind === 'compress') {
     const pack = await ctx.env.DB.prepare(
       'SELECT price_idr FROM compress_packs WHERE code = ?1 AND active = 1',
@@ -629,18 +635,16 @@ export async function quoteItem(ctx: Ctx, userId: string, item: CheckoutItem): P
 
 export type ItemDone =
   | PlanChange
-  | { kind: 'addon' | 'compress' | 'renewed'; chargedIdr: number; invoiceId: string };
+  | { kind: 'addon' | 'compress' | 'renewed' | 's3_bills'; chargedIdr: number; invoiceId: string };
 
 /** Makes the purchase from the wallet (the payment, or credit, is already there). */
-export async function performItem(
-  ctx: Ctx,
-  userId: string,
-  item: CheckoutItem,
-): Promise<ItemDone> {
+export async function performItem(ctx: Ctx, userId: string, item: CheckoutItem): Promise<ItemDone> {
   if (item.kind === 'plan') return choosePlan(ctx, userId, item.code);
   if (item.kind === 'addon') return { kind: 'addon', ...(await buyAddon(ctx, userId, item.code)) };
   if (item.kind === 'compress')
     return { kind: 'compress', ...(await buyCompressPack(ctx, userId, item.code)) };
+  if (item.kind === 's3_bills')
+    return { kind: 's3_bills', ...(await payS3Bills(ctx, userId, item.billIds)) };
   return renewNow(ctx, userId);
 }
 
@@ -667,9 +671,11 @@ export async function checkout(
 /** One sentence about what a payment bought, for its notice. */
 async function doneSummary(ctx: Ctx, done: ItemDone, item: DirectPurpose): Promise<string> {
   const planName = async (code: string) =>
-    (await ctx.env.DB.prepare('SELECT name FROM plans WHERE code = ?1')
-      .bind(code)
-      .first<{ name: string }>())?.name ?? code;
+    (
+      await ctx.env.DB.prepare('SELECT name FROM plans WHERE code = ?1')
+        .bind(code)
+        .first<{ name: string }>()
+    )?.name ?? code;
   switch (done.kind) {
     case 'subscribed':
     case 'reactivated':
@@ -684,6 +690,8 @@ async function doneSummary(ctx: Ctx, done: ItemDone, item: DirectPurpose): Promi
       return 'Tambahan ruang sudah aktif.';
     case 'compress':
       return 'Kredit kompres sudah ditambahkan.';
+    case 's3_bills':
+      return 'Tagihan Zeiko S3 sudah lunas.';
     default:
       return 'Pembelianmu sudah jadi.';
   }
@@ -967,7 +975,7 @@ export async function sendRenewalReminders(ctx: Ctx): Promise<number> {
 }
 
 /** Idempotency marker for cron side effects; true the first time only. */
-async function onceKey(ctx: Ctx, key: string): Promise<boolean> {
+export async function onceKey(ctx: Ctx, key: string): Promise<boolean> {
   const res = await ctx.env.DB.prepare(
     'INSERT INTO usage_counters (key, count, window_start, expires_at) VALUES (?1, 1, ?2, ?3) ON CONFLICT (key) DO NOTHING',
   )

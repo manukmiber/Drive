@@ -19,6 +19,7 @@ import type { Clock } from './clock';
 import { CloudflareMediaProcessor, MockMediaProcessor, type MediaProcessor } from './media';
 import { ContainerArchiver, MockArchiver, NoArchiver, type Archiver } from './archiver';
 import { GraphqlR2Metrics, NoR2Metrics, type R2Metrics } from './r2-metrics';
+import { HttpVirusTotal, MockVirusTotal, type VirusTotal } from './virustotal';
 
 export interface Adapters {
   email: EmailSender;
@@ -29,6 +30,8 @@ export interface Adapters {
   archiver: Archiver;
   accounts: ZeikoAccounts;
   r2metrics: R2Metrics;
+  /** Null: VirusTotal is not set up here (ADR-046). */
+  virustotal: VirusTotal | null;
 }
 
 /** Zeiko Accounts is set up: the door's address and the app token. */
@@ -79,5 +82,10 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
     env.CF_ACCOUNT_ID && env.CF_ANALYTICS_TOKEN
       ? new GraphqlR2Metrics(env.CF_ACCOUNT_ID, env.CF_ANALYTICS_TOKEN)
       : new NoR2Metrics();
-  return { email, payment, scanner, csam, media, archiver, accounts, r2metrics };
+  const virustotal: VirusTotal | null = env.VIRUSTOTAL_API_KEY
+    ? new HttpVirusTotal(env.VIRUSTOTAL_API_KEY)
+    : env.ADAPTER_VIRUSTOTAL === 'mock' && env.APP_ENV !== 'production'
+      ? new MockVirusTotal()
+      : null;
+  return { email, payment, scanner, csam, media, archiver, accounts, r2metrics, virustotal };
 }

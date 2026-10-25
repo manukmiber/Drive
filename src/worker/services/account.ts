@@ -85,7 +85,7 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
       account:
         (
           await q(
-            'SELECT status, limit_bytes, used_bytes, created_at FROM s3_accounts WHERE user_id = ?1',
+            'SELECT status, billing_state, limit_bytes, used_bytes, created_at FROM s3_accounts WHERE user_id = ?1',
             userId,
           )
         )[0] ?? null,
@@ -95,6 +95,14 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
       ),
       buckets: await q(
         'SELECT name, public, created_at FROM s3_buckets WHERE user_id = ?1',
+        userId,
+      ),
+      usage: await q(
+        'SELECT period, gib_hours, egress_bytes FROM s3_usage WHERE user_id = ?1 ORDER BY period',
+        userId,
+      ),
+      bills: await q(
+        'SELECT period, lines_json, total_idr, status, due_at, paid_at FROM s3_bills WHERE user_id = ?1 ORDER BY period',
         userId,
       ),
     },
