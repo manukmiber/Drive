@@ -1,6 +1,6 @@
-// /alat — the photo, video and PDF tools for files from this device (ADR-050). Drive files open in
-// the same tools from their ⋮ menu or the preview.
-import { Clapperboard, FileImage, FilePen, ImageIcon } from 'lucide-react';
+// /alat — the editors for files from this device (ADR-050, ADR-051), or a new empty file. Drive
+// files open in the same editors from their ⋮ menu or the preview.
+import { Clapperboard, FileCode2, FileImage, FilePen, ImageIcon } from 'lucide-react';
 import { useRef, useState, type ComponentType } from 'react';
 import { formatBytes } from '../../shared/format';
 import { Button } from '../components/Button';
@@ -19,6 +19,8 @@ interface Card {
   accept: string;
   multiple: boolean;
   fromImages?: boolean;
+  /** Can start from nothing: the new file's name (saved to My Drive). */
+  blank?: string;
 }
 
 const CARDS: Card[] = [
@@ -59,6 +61,16 @@ const CARDS: Card[] = [
     multiple: true,
     fromImages: true,
   },
+  {
+    id: 'text',
+    tool: 'text',
+    icon: FileCode2,
+    title: t.editor.text,
+    body: t.editor.textDesc,
+    accept: 'text/*,.md,.json,.xml,.yml,.yaml,.toml,.ini,.env,.conf,.log,.srt,.vtt,.csv,.tsv',
+    multiple: false,
+    blank: t.editor.untitledText,
+  },
 ];
 
 export function Tools() {
@@ -91,9 +103,26 @@ export function Tools() {
               <h2 className="font-semibold">{c.title}</h2>
             </div>
             <p className="flex-1 text-sm text-[var(--fg-muted)]">{c.body}</p>
-            <Button variant="secondary" onClick={() => inputs.current.get(c.id)?.click()}>
-              {t.editor.fromDevice}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => inputs.current.get(c.id)?.click()}
+              >
+                {t.editor.fromDevice}
+              </Button>
+              {c.blank && (
+                <Button
+                  variant="ghost"
+                  className="flex-1"
+                  onClick={() =>
+                    setEditing({ tool: c.tool, nodes: [], files: [], blank: { name: c.blank! } })
+                  }
+                >
+                  {t.editor.newBlank}
+                </Button>
+              )}
+            </div>
             <input
               ref={(el) => {
                 if (el) inputs.current.set(c.id, el);

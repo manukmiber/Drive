@@ -246,10 +246,16 @@ export const configSchema = z.object({
   media_binding_max_seconds: int().min(1).default(60),
   standalone_compress_max_bytes: nonNeg().default(2 * GIB),
 
-  // ── Editors (ADR-050): everything runs in the person's browser, in its memory ──
+  // ── Editors (ADR-050, ADR-051): everything runs in the person's browser, in its memory ──
   editor_image_max_bytes: nonNeg().default(50 * MIB),
   editor_video_max_bytes: nonNeg().default(1 * GIB),
   editor_pdf_max_bytes: nonNeg().default(200 * MIB),
+  editor_text_max_bytes: nonNeg().default(5 * MIB),
+  editor_doc_max_bytes: nonNeg().default(50 * MIB),
+  editor_sheet_max_bytes: nonNeg().default(30 * MIB),
+  editor_zip_max_bytes: nonNeg().default(500 * MIB),
+  /** All the files taken out of one ZIP together (a ZIP bomb stops here). */
+  editor_zip_extract_max_bytes: nonNeg().default(1 * GIB),
 
   // ── Ads (ADR-043: campaigns, no slots, a 15-second rotation) ──
   /** A day in one city; two cities are two of these, up to one bundle. */
@@ -334,6 +340,11 @@ export const PUBLIC_CONFIG_KEYS = [
   'editor_image_max_bytes',
   'editor_video_max_bytes',
   'editor_pdf_max_bytes',
+  'editor_text_max_bytes',
+  'editor_doc_max_bytes',
+  'editor_sheet_max_bytes',
+  'editor_zip_max_bytes',
+  'editor_zip_extract_max_bytes',
   'min_topup_idr',
   'upgrade_ratio_hint_pct',
   'ad_image_max_bytes',

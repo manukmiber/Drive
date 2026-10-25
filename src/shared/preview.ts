@@ -3,7 +3,8 @@
 export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text';
 
 const RASTER = /^image\/(jpeg|png|webp|avif|gif|bmp|heic|heif)$/;
-const TEXT_EXT = new Set([
+/** Text kept as text: previewed as source, edited in the text editor (ADR-051). */
+export const TEXT_EXT = new Set([
   'txt',
   'md',
   'csv',

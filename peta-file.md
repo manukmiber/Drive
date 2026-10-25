@@ -21,6 +21,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | Upload | `src/web/upload/*`, `src/worker/routes/uploads.ts`, `src/worker/services/uploads.ts` | — | — |
 | Download / share | `src/worker/routes/{download,share-public,shares,archive-download}.ts`, `src/worker/services/{download,shares,share-send}.ts` | — | link share diteruskan oleh `src/worker.js` |
 | Editor foto/video/PDF (ADR-050, di browser) | `src/web/editors/*`, `src/web/pages/Tools.tsx` (`/alat`), menu di `components/explorer/useNodeActions.tsx`, tombol Edit + pdf.js di `Preview.tsx`, aset pdf.js di `vite.config.ts` | — | — |
+| Editor teks/kode, file baru (ADR-051) | `src/web/editors/text/*`, `editors/sanitize.ts`, `editors/prose.css`, Baru → File teks di `components/NewMenu.tsx` | — | — |
 
 ## B. Zeiko Drive — `/root/zeiko-cloud-storage`
 
@@ -133,6 +134,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `editors/{files,ui,EditorHost}.ts(x)` | Editor (ADR-050): ambil bytes lewat URL pratinjau, simpan lewat antrean upload (baru / ganti asli → Sampah) atau unduh; bingkai layar penuh, dialog simpan; editor dimuat saat dibuka. |
 | `editors/photo/*` | `adjust.ts` (warna per piksel), `geometry.ts` (potong/putar/balik), `render.ts` (kanvas), `PhotoEditor.tsx`. |
 | `editors/video/*` | `engine.ts` (mediabunny: cepat = salin paket, tepat = encode ulang WebCodecs), `timeline.ts`, `VideoEditor.tsx`. |
+| `editors/text/*` | `codec.ts` (UTF-8, BOM, CRLF), `markdown.ts` (marked + DOMPurify), `TextEditor.tsx` (CodeMirror 6, bahasa dimuat saat dipakai), `text.css` (warna kode). `editors/sanitize.ts`: DOMPurify untuk HTML dari file orang. |
 | `editors/pdf/*` | `ops.ts` (pdf-lib: halaman, stempel, gambar→PDF, kompres JPEG), `pdfjs.ts` (build legacy), `PdfView.tsx` (juga pratinjau), `PdfEditor.tsx`, `SignaturePad.tsx`, `stamps.ts`. |
 | `pages/Tools.tsx` | `/alat`: editor untuk file dari perangkat. |
 

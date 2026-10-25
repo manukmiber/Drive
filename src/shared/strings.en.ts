@@ -29,6 +29,7 @@ export const en: Strings = {
   nav: {
     newButton: 'New',
     newFolder: 'New folder',
+    newTextFile: 'Text file',
     uploadFile: 'Upload files',
     uploadFolder: 'Upload a folder',
     myDrive: 'My Drive',
@@ -647,7 +648,7 @@ export const en: Strings = {
   },
   editor: {
     tools: 'Tools',
-    toolsTitle: 'Photo, video & PDF tools',
+    toolsTitle: 'Tools & editors',
     toolsSubtitle:
       'Edit right in your browser. Your files aren’t sent anywhere until you save them to your Drive yourself.',
     photo: 'Edit photo',
@@ -660,7 +661,8 @@ export const en: Strings = {
     imagesToPdfDesc: 'Put several photos or pictures into one PDF file.',
     fromDevice: 'Choose from this device',
     fromDriveHint:
-      'Already in your Drive? Open the ⋮ menu on the file, then choose Edit photo, Edit video or PDF tools.',
+      'Already in your Drive? Open the ⋮ menu on the file and choose an editor, or tap Edit in its preview. New → Text file starts a new one in the folder you’re in.',
+    newBlank: 'New empty file',
     edit: 'Edit',
     editPhoto: 'Edit photo',
     editVideo: 'Edit video',
@@ -815,6 +817,19 @@ export const en: Strings = {
     compressResult: (before: string, after: string, pct: number) =>
       `${before} → ${after} (${pct}% smaller)`,
     notSmaller: 'It didn’t get any smaller, so this file is already lean.',
+    // Text & code (ADR-051)
+    text: 'Text & code',
+    textDesc: 'Notes, Markdown, code and config files, with find & replace and a Markdown preview.',
+    editText: 'Edit text',
+    untitledText: 'Untitled.txt',
+    notText: 'This file isn’t UTF-8 text, so it can’t be edited here without breaking its letters.',
+    findReplace: 'Find & replace',
+    wrapLines: 'Wrap long lines',
+    mdPreview: 'Preview',
+    cursorAt: (line: number, col: number) => `Line ${line}, column ${col}`,
+    textFormat: (crlf: boolean) => (crlf ? 'UTF-8 · Windows line endings' : 'UTF-8'),
+    /** CodeMirror's own words; English is its default. */
+    codePhrases: {} as Record<string, string>,
   },
   ads: {
     hide: 'Hide this ad',

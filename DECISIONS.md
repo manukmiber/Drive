@@ -1000,3 +1000,56 @@ lewat `capabilities` sampai siap.
 - Mode Tepat dan HEIC bergantung pada browser.
 - `pdfjs-dist` membawa cmaps, font standar, dan decoder wasm sebagai aset statis di `/pdfjs-<versi>/`. Aset ini
   disalin oleh plugin kecil di `vite.config.ts`.
+
+## ADR-051 — Editor teks/kode, dokumen, spreadsheet, dan ZIP di browser
+
+**Status:** diterima (pemilik, 2026-10-25). **Konteks:** pemilik: "memperbanyak fitur editing, file, beserta menambahkan
+spreadsheet, docs, dll? ambil dari github boleh kok gausah bikin dari awal".
+
+**Keputusan:**
+- Aturannya sama dengan ADR-050:
+  - semuanya jalan di browser, isi file tidak dikirim ke mana pun;
+  - library open source dibundel dan baru dimuat saat editor dibuka;
+  - bytes lewat URL pratinjau, hasil lewat antrean upload (file baru, ganti asli → Sampah, atau unduh).
+- **Teks dan kode** (`.txt`, `.md`, `.json`, kode, config, subtitle; daftar `TEXT_EXT` pratinjau): CodeMirror 6 (MIT).
+  - Bahasa dipilih dari ekstensi (`@codemirror/language-data`; mode bahasanya juga baru dimuat saat dipakai).
+  - Ada cari & ganti, nomor baris, dan bungkus baris.
+  - Markdown punya tampilan pratinjau: `marked` (MIT), dibersihkan `DOMPurify` (Apache-2.0/MPL-2.0).
+  - Hanya UTF-8. BOM dan akhir baris (CRLF/LF) dipertahankan. File yang bukan UTF-8 ditolak, tidak diubah diam-diam.
+- **Dokumen** (`.docx`, dokumen baru): TipTap 3 (MIT, di atas ProseMirror).
+  - Isinya: judul, tebal/miring/garis bawah/coret, warna sorot, daftar, daftar centang, perataan, tautan, tabel,
+    gambar.
+  - `.docx` dibuka dengan `mammoth` (BSD-2-Clause) menjadi HTML yang dibersihkan DOMPurify. Tata letak halaman,
+    header/footer, komentar, dan lacak perubahan tidak ikut. Editor menyebutkannya saat file dibuka, dan "ganti asli"
+    tetap mengirim yang lama ke Sampah.
+  - Disimpan sebagai `.docx` (`docx`, MIT; pengubah dari dokumen TipTap kita tulis sendiri), Markdown
+    (`@tiptap/markdown`), atau HTML.
+  - Pratinjau `.docx` memakai `docx-preview` (Apache-2.0), dibersihkan DOMPurify. Tautan hanya http(s)/mailto, dan
+    CSP app tetap menolak skrip inline.
+- **Spreadsheet** (`.xlsx`, `.csv`, `.tsv`, spreadsheet baru): FortuneSheet (MIT), dengan `@corbe30/fortune-excel`
+  (MIT, memakai `exceljs`) untuk `.xlsx`.
+  - Isinya: rumus, format angka, gabung sel, bekukan baris, urut, filter, beberapa lembar.
+  - Disimpan sebagai `.xlsx`, atau `.csv` (lembar yang sedang dibuka). `.xls` lama (biner) tidak didukung.
+  - Teks UI FortuneSheet hanya ada dalam bahasa Inggris (dan beberapa bahasa lain, tanpa Indonesia). Untuk bahasa
+    Indonesia, teks bagian yang kita tampilkan ditimpa terjemahan kita di `strings.*`. Bantuan fungsi rumus (SUM,
+    VLOOKUP, …) tetap bahasa Inggris, karena nama fungsinya pun bahasa Inggris.
+  - FortuneSheet memakai `new Function` saat menyisipkan baris, dan itu ditolak CSP app (tanpa `unsafe-eval`).
+    Plugin kecil di `vite.config.ts` menggantinya dengan `JSON.parse`. Build gagal kalau kode aslinya berubah, supaya
+    ketahuan saat versi naik.
+- **ZIP:** isi `.zip` dilihat dan dibongkar di browser dengan `fflate` (MIT). Pilihannya: unduh satu file, bongkar
+  yang dipilih, atau bongkar semua ke folder baru bernama sama di Drive (lewat antrean upload, folder dibuat seperti
+  upload folder). ZIP bersandi tidak didukung. Nama dengan `..` atau path absolut dibuang bagian berbahayanya.
+- **Baru → File teks / Dokumen / Spreadsheet** di menu Baru: editor dibuka dengan file kosong, lalu disimpan ke folder
+  yang sedang dibuka (atau Drive Saya kalau tidak boleh menambah file di sana).
+- **Batas ukuran** di config, dikirim lewat katalog publik: `editor_text_max_bytes`, `editor_doc_max_bytes`,
+  `editor_sheet_max_bytes`, `editor_zip_max_bytes`. Total hasil bongkar dibatasi `editor_zip_extract_max_bytes`
+  (melindungi memori HP dari ZIP bom). Seperti ADR-050, tidak ada yang dibutuhkan dari pemilik, jadi tidak masuk
+  `readiness.ts`.
+
+**Konsekuensi:**
+- Bundel app bertambah besar, tapi hanya untuk orang yang membuka editornya. FortuneSheet + exceljs adalah yang
+  terbesar.
+- `.docx` yang rumit bisa berubah tampilannya setelah disimpan dari editor.
+- `npm audit` saat ditambahkan: `uuid` 8 di FortuneSheet/exceljs (moderat; celahnya di v3/v5/v6 dengan `buf`, yang
+  tidak dipakai, keduanya hanya `v4`). Temuan `undici` (tinggi) ada di `wrangler`/`miniflare`, alat dev, sudah ada
+  sebelumnya.

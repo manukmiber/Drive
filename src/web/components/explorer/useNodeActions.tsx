@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   Eye,
+  FileCode2,
   FilePen,
   FileImage,
   FolderInput,
@@ -36,7 +37,15 @@ import {
 } from '../../lib/files';
 import { isCompressible } from '../../lib/compress';
 import { EditorHost } from '../../editors/EditorHost';
-import { editable, isImage, isPdf, isVideo, toolFor, type EditRequest } from '../../editors/files';
+import {
+  editable,
+  isImage,
+  isPdf,
+  isText,
+  isVideo,
+  toolFor,
+  type EditRequest,
+} from '../../editors/files';
 import { useMe } from '../../lib/session';
 import { Button } from '../Button';
 import { Dialog, PromptDialog } from '../ui/Dialog';
@@ -249,6 +258,12 @@ export function useNodeActions(items: NodeDto[]) {
         label: t.editor.imagesToPdf,
         icon: FileImage,
         onSelect: () => setEditing({ tool: 'pdf', nodes: files, files: [], fromImages: true }),
+      });
+    if (single && all(isText) && toolFor(single.mime, single.name) === 'text')
+      list.push({
+        label: t.editor.editText,
+        icon: FileCode2,
+        onSelect: () => setEditing({ tool: 'text', nodes: files, files: [] }),
       });
     list.push({ label: t.files.moveTo, icon: FolderInput, onSelect: () => setMoving(ids) });
     if (single)

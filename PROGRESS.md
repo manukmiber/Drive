@@ -157,3 +157,11 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   tanda tangan (gambar/ketik/foto, ingat di perangkat), teks, tanggal, kompres seimbang/paling kecil, gambar → PDF.
 - [x] Dites di Chrome (dev): semua alur di atas, hasil diperiksa (ukuran foto, durasi video, isi PDF dirender ulang).
 - [ ] Uji di HP Android/iPhone sungguhan (memori untuk video besar, WebCodecs di Safari, HEIC).
+
+## Editor teks/kode, dokumen, spreadsheet, ZIP (ADR-051, 2026-10-25)
+- [x] Teks & kode: CodeMirror 6, bahasa dari nama file, cari & ganti, bungkus baris, pratinjau Markdown (dibersihkan
+  DOMPurify), UTF-8 saja dengan BOM/CRLF dipertahankan. Baru → File teks dan "Buat file kosong" di `/alat`; simpan
+  berikutnya langsung menawarkan "ganti" file yang sama. Dites di Chrome (dev), terang/gelap, Indonesia/Inggris.
+- [ ] Dokumen (.docx, TipTap) + pratinjau .docx.
+- [ ] Spreadsheet (.xlsx/.csv, FortuneSheet).
+- [ ] ZIP: lihat isi, bongkar ke Drive.

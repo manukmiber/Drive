@@ -1,12 +1,13 @@
 // Getting a file into an editor and the result back out (ADR-050). Drive files come through the
 // preview URL (USERCONTENT_ORIGIN, CORS for the app), so the same access and scan checks apply;
 // results go through the normal upload queue (quota, scan, thumbnail, folder permission).
+import { TEXT_EXT } from '../../shared/preview';
 import { api } from '../lib/api';
 import { nodeInfo, previewInfo, type NodeDto } from '../lib/files';
 import type { Catalog, Me } from '../lib/types';
 import { uploads } from '../upload/useUploads';
 
-export type Tool = 'photo' | 'video' | 'pdf';
+export type Tool = 'photo' | 'video' | 'pdf' | 'text';
 
 /** What an editor opens: Drive files, files from this device, or both. */
 export interface EditRequest {
@@ -15,6 +16,8 @@ export interface EditRequest {
   files: File[];
   /** PDF tools: start from these pictures made into one PDF. */
   fromImages?: boolean;
+  /** A new, empty file (the New menu, ADR-051); saved into `folderId`, or My Drive without one. */
+  blank?: { name: string; folderId?: string };
 }
 
 /** One file the editor works on. */
@@ -23,6 +26,10 @@ export interface Source {
   blob: Blob;
   /** Null for a file from this device. */
   node: NodeDto | null;
+  /** A file without a node: the folder it goes to (a new file, or one saved from the editor). */
+  folderId?: string;
+  /** Already saved to Drive under `name` in `folderId`, so saving again can replace it. */
+  saved?: boolean;
 }
 
 export class TooLargeError extends Error {
@@ -41,6 +48,11 @@ export const isVideo = (mime: string | null, name: string) =>
   (mime ?? '').startsWith('video/') || VIDEO_EXT.test(name);
 export const isPdf = (mime: string | null, name: string) =>
   mime === 'application/pdf' || /\.pdf$/i.test(name);
+export const isText = (mime: string | null, name: string) =>
+  TEXT_EXT.has(extOf(name)) ||
+  /^text\//.test(mime ?? '') ||
+  mime === 'application/json' ||
+  mime === 'application/xml';
 
 /** Drive files an editor can open: ready (scanned) files only. */
 export const editable = (n: NodeDto) => n.kind === 'file' && n.status === 'ready';
@@ -49,16 +61,19 @@ export function toolFor(mime: string | null, name: string): Tool | null {
   if (isPdf(mime, name)) return 'pdf';
   if (isVideo(mime, name)) return 'video';
   if (isImage(mime, name)) return 'photo';
+  if (isText(mime, name)) return 'text';
   return null;
 }
 
 export function maxBytes(c: Catalog['config'] | undefined, tool: Tool): number {
   if (!c) return 0;
-  return tool === 'photo'
-    ? c.editor_image_max_bytes
-    : tool === 'video'
-      ? c.editor_video_max_bytes
-      : c.editor_pdf_max_bytes;
+  const max: Record<Tool, number> = {
+    photo: c.editor_image_max_bytes,
+    video: c.editor_video_max_bytes,
+    pdf: c.editor_pdf_max_bytes,
+    text: c.editor_text_max_bytes,
+  };
+  return max[tool];
 }
 
 /** Downloads a Drive file's bytes into memory, reporting 0…1. */
@@ -98,7 +113,7 @@ const splitName = (name: string): [string, string] => {
 /** "liburan.jpg" → "liburan (edit).webp"; `suffix` is the words in the brackets. */
 export function resultName(name: string, ext: string, suffix: string): string {
   const [base] = splitName(name);
-  return `${base} (${suffix}).${ext}`;
+  return ext ? `${base} (${suffix}).${ext}` : `${base} (${suffix})`;
 }
 
 export const extOf = (name: string) => splitName(name)[1].toLowerCase();
@@ -109,19 +124,19 @@ export function withExt(name: string, ext: string): string {
 }
 
 /**
- * Where a result is saved: next to the Drive file when this person may add files there, else in
- * their own Drive (a family folder they can only read, or a file from this device).
+ * Where a result is saved: next to the Drive file (or in the folder a new file was made in) when
+ * this person may add files there, else in their own Drive (a family folder they can only read,
+ * or a file from this device).
  */
 export async function saveFolder(
-  node: NodeDto | null,
+  source: Pick<Source, 'node' | 'folderId'> | null,
 ): Promise<{ parentId: string; same: boolean }> {
   const me = await api<Me>('/api/me');
   const root = me.space.personalRootId;
-  if (!node?.parentId) return { parentId: root, same: false };
-  const parent = await nodeInfo(node.parentId).catch(() => null);
-  return parent?.access.edit
-    ? { parentId: node.parentId, same: true }
-    : { parentId: root, same: false };
+  const folderId = source?.node ? source.node.parentId : source?.folderId;
+  if (!folderId) return { parentId: root, same: false };
+  const parent = await nodeInfo(folderId).catch(() => null);
+  return parent?.access.edit ? { parentId: folderId, same: true } : { parentId: root, same: false };
 }
 
 /** Queues the result for upload; `replace` sends the old file of the same name to the Trash. */

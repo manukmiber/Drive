@@ -46,6 +46,11 @@ export interface Catalog {
     editor_image_max_bytes: number;
     editor_video_max_bytes: number;
     editor_pdf_max_bytes: number;
+    editor_text_max_bytes: number;
+    editor_doc_max_bytes: number;
+    editor_sheet_max_bytes: number;
+    editor_zip_max_bytes: number;
+    editor_zip_extract_max_bytes: number;
     features: Record<string, boolean>;
   } & Record<string, unknown>;
 }

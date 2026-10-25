@@ -99,6 +99,7 @@ export function Preview({
           <button
             type="button"
             onClick={() => onEdit(node)}
+            aria-label={t.editor.edit}
             className="flex items-center gap-1.5 rounded-full px-3 py-2 text-sm hover:bg-white/10"
           >
             <Pencil className="h-4 w-4" />

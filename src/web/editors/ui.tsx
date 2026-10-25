@@ -65,6 +65,7 @@ export function useSources(req: EditRequest, tool: Tool) {
         out.push({ name: node.name, blob, node });
       }
       for (const f of req.files) out.push(fromFile(f, max));
+      if (req.blank) out.push({ blob: new Blob([]), node: null, ...req.blank });
       if (!ac.signal.aborted) setState({ sources: out, progress: 1, error: null });
     })().catch((e: unknown) => {
       if (!ac.signal.aborted) setState({ sources: null, progress: 0, error: errorMessage(e) });
@@ -92,7 +93,9 @@ export function EditorFrame({
   const close = () => (dirty ? setAsking(true) : onClose());
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || (e.target as HTMLElement).closest('dialog')) return;
+      // An editor that used the key itself (closing its search box, leaving a cell) says so.
+      if (e.key !== 'Escape' || e.defaultPrevented || (e.target as HTMLElement).closest('dialog'))
+        return;
       if (dirty) setAsking(true);
       else onClose();
     };
@@ -220,10 +223,61 @@ export function ToolButton({
   );
 }
 
+/** A round icon button for the editor's top bar. */
+export function BarButton({
+  icon: Icon,
+  label,
+  onClick,
+  active,
+  disabled = false,
+  className,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
+  onClick: () => void;
+  /** A switch (wrap lines, preview): shown pressed when on. */
+  active?: boolean;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-pressed={active}
+      aria-label={label}
+      title={label}
+      className={cn(
+        'rounded-full p-2 hover:bg-[var(--bg-subtle)] disabled:opacity-40',
+        active && 'bg-[var(--accent-soft)] text-[var(--accent)]',
+        className,
+      )}
+    >
+      <Icon className="h-5 w-5" />
+    </button>
+  );
+}
+
 export interface Result {
   blob: Blob;
   name: string;
 }
+
+/** Where a single result went in Drive, so the editor can save over it next time. */
+export interface Saved {
+  name: string;
+  parentId: string;
+}
+
+/** The source after its result was saved to Drive: saving again replaces that file. */
+export const savedSource = (source: Source, saved: Saved): Source => ({
+  name: saved.name,
+  blob: source.blob,
+  node: null,
+  folderId: saved.parentId,
+  saved: true,
+});
 
 /**
  * Saving: one result can get a new name, or replace the original when it keeps its type; several
@@ -235,51 +289,55 @@ export function SaveDialog({
   onClose,
   onSaved,
   replaceable = true,
+  preferReplace = false,
 }: {
   results: Result[] | null;
   /** The file the results came from (for "replace" and the folder). */
   source: Source | null;
   onClose: () => void;
-  /** After the result went to Drive or this device (closing the editor needs no question then). */
-  onSaved?: () => void;
+  /**
+   * After the result went to Drive (where, for one result) or to this device (null); closing the
+   * editor needs no question then.
+   */
+  onSaved?: (saved: Saved | null) => void;
   /** False when the result is more than the source (joined files, pages taken out). */
   replaceable?: boolean;
+  /** Start on "replace the original" (documents saved again and again). */
+  preferReplace?: boolean;
 }) {
   const one = results?.length === 1 ? results[0]! : null;
   const [name, setName] = useState('');
   const [replace, setReplace] = useState(false);
   const [busy, setBusy] = useState(false);
   const canReplace = Boolean(
-    replaceable && one && source?.node && extOf(one.name) === extOf(source.name),
+    replaceable && one && (source?.node || source?.saved) && extOf(one.name) === extOf(source.name),
   );
   // New results start from their own name (state from the previous render, not an effect).
   const [shown, setShown] = useState(results);
   if (results !== shown) {
     setShown(results);
     setName(one?.name ?? '');
-    setReplace(false);
+    setReplace(preferReplace);
   }
 
   async function toDrive() {
     if (!results) return;
     setBusy(true);
     try {
-      const { parentId, same } = await saveFolder(source?.node ?? null);
+      const { parentId, same } = await saveFolder(source);
+      let saved: Saved | null = null;
       if (one) {
         const asReplace = replace && canReplace && same;
-        saveToDrive(
-          one.blob,
-          asReplace ? source!.name : name.trim() || one.name,
-          parentId,
-          asReplace,
-        );
+        const to = asReplace ? source!.name : name.trim() || one.name;
+        saveToDrive(one.blob, to, parentId, asReplace);
+        saved = { name: to, parentId };
       } else for (const r of results) saveToDrive(r.blob, r.name, parentId, false);
       toast(
-        !same && source?.node
+        !same && (source?.node || source?.folderId)
           ? t.editor.savingToMyDrive(results.length)
           : t.editor.saving(results.length),
       );
-      onSaved?.();
+      onSaved?.(saved);
       onClose();
     } catch {
       toast(t.errors.generic, { tone: 'error' });
@@ -292,7 +350,7 @@ export function SaveDialog({
     if (!results) return;
     if (one) downloadBlob(one.blob, name.trim() || one.name);
     else results.forEach((r, i) => setTimeout(() => downloadBlob(r.blob, r.name), i * 400));
-    onSaved?.();
+    onSaved?.(null);
   }
 
   // Before → after only compares like with like: one file made from one file.

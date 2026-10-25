@@ -1,0 +1,73 @@
+/* Code colours for the text editor (ADR-051), on the `tok-*` classes its highlighter puts on the
+   text. Light and dark follow the app, like its tokens. */
+.z-code {
+  --syn-keyword: #cf222e;
+  --syn-string: #0a3069;
+  --syn-number: #0550ae;
+  --syn-comment: #6e7781;
+  --syn-def: #8250df;
+  --syn-type: #953800;
+  --syn-tag: #116329;
+  --syn-link: #0969da;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) .z-code {
+    --syn-keyword: #ff7b72;
+    --syn-string: #a5d6ff;
+    --syn-number: #79c0ff;
+    --syn-comment: #8b949e;
+    --syn-def: #d2a8ff;
+    --syn-type: #ffa657;
+    --syn-tag: #7ee787;
+    --syn-link: #58a6ff;
+  }
+}
+:root.dark .z-code {
+  --syn-keyword: #ff7b72;
+  --syn-string: #a5d6ff;
+  --syn-number: #79c0ff;
+  --syn-comment: #8b949e;
+  --syn-def: #d2a8ff;
+  --syn-type: #ffa657;
+  --syn-tag: #7ee787;
+  --syn-link: #58a6ff;
+}
+
+.z-code .tok-keyword {
+  color: var(--syn-keyword);
+}
+.z-code .tok-string {
+  color: var(--syn-string);
+}
+.z-code :is(.tok-number, .tok-prop) {
+  color: var(--syn-number);
+}
+.z-code .tok-comment {
+  color: var(--syn-comment);
+  font-style: italic;
+}
+.z-code .tok-def {
+  color: var(--syn-def);
+}
+.z-code .tok-type {
+  color: var(--syn-type);
+}
+.z-code .tok-tag {
+  color: var(--syn-tag);
+}
+.z-code .tok-heading {
+  font-weight: 650;
+}
+.z-code .tok-link {
+  color: var(--syn-link);
+  text-decoration: underline;
+}
+.z-code .tok-strong {
+  font-weight: 650;
+}
+.z-code .tok-emphasis {
+  font-style: italic;
+}
+.z-code .tok-invalid {
+  color: var(--syn-keyword);
+}

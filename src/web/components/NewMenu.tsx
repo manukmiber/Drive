@@ -1,6 +1,8 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { FileUp, FolderPlus, FolderUp, Plus } from 'lucide-react';
+import { FileText, FileUp, FolderPlus, FolderUp, Plus } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { EditorHost } from '../editors/EditorHost';
+import type { EditRequest, Tool } from '../editors/files';
 import { t } from '../lib/i18n';
 import { ApiError } from '../lib/api';
 import { useCurrentFolder } from '../lib/explorer-store';
@@ -8,7 +10,7 @@ import { createFolder, filesKeys } from '../lib/files';
 import { fromInput, resolveTargets } from '../upload/folders';
 import { uploads } from '../upload/useUploads';
 import { PromptDialog } from './ui/Dialog';
-import { Menu } from './ui/Menu';
+import { Menu, type MenuItem } from './ui/Menu';
 import { toast } from './ui/Toast';
 
 export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
@@ -16,6 +18,8 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
   const qc = useQueryClient();
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [naming, setNaming] = useState(false);
+  // A new, empty file opens in its editor and is saved into this folder (ADR-051).
+  const [blank, setBlank] = useState<EditRequest | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dirInput = useRef<HTMLInputElement>(null);
 
@@ -30,10 +34,23 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
     }
   }
 
+  const create = (tool: Tool, name: string) => () =>
+    folder && setBlank({ tool, nodes: [], files: [], blank: { name, folderId: folder.id } });
+
+  const items: MenuItem[] = [
+    { label: t.nav.newFolder, icon: FolderPlus, onSelect: () => setNaming(true) },
+    { label: t.nav.newTextFile, icon: FileText, onSelect: create('text', t.editor.untitledText) },
+    { label: t.nav.uploadFile, icon: FileUp, onSelect: () => fileInput.current?.click() },
+    { label: t.nav.uploadFolder, icon: FolderUp, onSelect: () => dirInput.current?.click() },
+  ];
+
   const open = (e: React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    // Above the button on phones: about 37px a row.
     setMenu(
-      variant === 'fab' ? { x: r.right - 200, y: r.top - 150 } : { x: r.left, y: r.bottom + 4 },
+      variant === 'fab'
+        ? { x: r.right - 200, y: r.top - 12 - items.length * 37 }
+        : { x: r.left, y: r.bottom + 4 },
     );
   };
 
@@ -74,22 +91,8 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
           )}
         </>
       )}
-      {menu && (
-        <Menu
-          x={menu.x}
-          y={menu.y}
-          onClose={() => setMenu(null)}
-          items={[
-            { label: t.nav.newFolder, icon: FolderPlus, onSelect: () => setNaming(true) },
-            { label: t.nav.uploadFile, icon: FileUp, onSelect: () => fileInput.current?.click() },
-            {
-              label: t.nav.uploadFolder,
-              icon: FolderUp,
-              onSelect: () => dirInput.current?.click(),
-            },
-          ]}
-        />
-      )}
+      {menu && <Menu x={menu.x} y={menu.y} onClose={() => setMenu(null)} items={items} />}
+      {blank && <EditorHost request={blank} onClose={() => setBlank(null)} />}
       <input
         ref={fileInput}
         type="file"

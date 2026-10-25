@@ -1,8 +1,8 @@
-// Opens the right editor full screen (ADR-050). Each editor and its library (pdf.js, pdf-lib,
-// mediabunny) loads only now.
+// Opens the right editor full screen (ADR-050, ADR-051). Each editor and its library (pdf.js,
+// pdf-lib, mediabunny, CodeMirror, …) loads only now.
 import { Component, lazy, Suspense, type ReactNode } from 'react';
 import { t } from '../lib/i18n';
-import type { EditRequest } from './files';
+import type { EditRequest, Tool } from './files';
 import { Busy, EditorFrame, Failed } from './ui';
 
 const PhotoEditor = lazy(() =>
@@ -12,6 +12,14 @@ const VideoEditor = lazy(() =>
   import('./video/VideoEditor').then((m) => ({ default: m.VideoEditor })),
 );
 const PdfEditor = lazy(() => import('./pdf/PdfEditor').then((m) => ({ default: m.PdfEditor })));
+const TextEditor = lazy(() => import('./text/TextEditor').then((m) => ({ default: m.TextEditor })));
+
+const EDITORS: Record<Tool, typeof PhotoEditor> = {
+  photo: PhotoEditor,
+  video: VideoEditor,
+  pdf: PdfEditor,
+  text: TextEditor,
+};
 
 /** A failed download of the editor (offline, or a new version of the app) shows a message. */
 class Guard extends Component<{ children: ReactNode; onClose: () => void }, { failed: boolean }> {
@@ -30,8 +38,7 @@ class Guard extends Component<{ children: ReactNode; onClose: () => void }, { fa
 }
 
 export function EditorHost({ request, onClose }: { request: EditRequest; onClose: () => void }) {
-  const Editor =
-    request.tool === 'photo' ? PhotoEditor : request.tool === 'video' ? VideoEditor : PdfEditor;
+  const Editor = EDITORS[request.tool];
   return (
     <Guard onClose={onClose}>
       <Suspense
