@@ -109,7 +109,8 @@ Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai 
      dan deploy. Worker membuat custom domain-nya sendiri.
   2. domain sendiri (Rp5.000), tambahan: nyalakan **Cloudflare for SaaS** di zone `zeiko.biz.id`, buat record
      `custom-s3.zeiko.biz.id AAAA 100::` (proxied), jadikan *fallback origin*. Jangan pasang route `*/*`: Worker
-     membuat route per domain sendiri. Ganti target lewat `"s3CnameTarget"` di `deploy/<env>.json`.
+     membuat route per domain sendiri. Setelah itu tambahkan `"s3CnameTarget": "custom-s3.zeiko.biz.id"` ke
+     `deploy/<env>.json`, buat ulang `wrangler.jsonc`, dan deploy. Sebelum itu pilihan domain sendiri tidak muncul.
   Harga di config `s3_url_zeiko_idr`, `s3_url_custom_idr`, `s3_url_release_days`.
 - Menyalakan akun tanpa paket (gratis, diberi operator): `POST /api/ops/s3/accounts {"zeikoId" | "email",
   "limitBytes", "reason"}` dengan bearer ops (tombol relay nanti). Orangnya harus sudah pernah masuk Drive.

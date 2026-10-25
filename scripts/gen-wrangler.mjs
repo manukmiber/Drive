@@ -63,7 +63,9 @@ function bindings(env, nsBase, ids) {
         : {
             WORKER_NAME: `zeiko-${env}`,
             S3_SUBDOMAIN_SUFFIX: ids.s3SubdomainSuffix,
-            S3_CNAME_TARGET: ids.s3CnameTarget ?? 'custom-s3.zeiko.biz.id',
+            // Set only once Cloudflare for SaaS and its fallback origin exist (DEPLOY.md); until then
+            // a person's own domain is not offered.
+            ...(ids.s3CnameTarget ? { S3_CNAME_TARGET: ids.s3CnameTarget } : {}),
             ...(ids.zoneId ? { CF_ZONE_ID: ids.zoneId } : {}),
           }),
       EMAIL_FROM: 'no-reply@zeiko.biz.id',
