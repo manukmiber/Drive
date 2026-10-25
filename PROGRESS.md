@@ -173,4 +173,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   `/alat`, dan "Buka di editor" dari pratinjau. Dites di build production dengan CSP app: sisip baris (tanpa
   `new Function`), rumus ikut bergeser, gabung sel, ganti asli lalu dibuka lagi, CSV `;` disimpan ulang byte per
   byte; HP/desktop.
-- [ ] ZIP: lihat isi, bongkar ke Drive.
+- [x] ZIP: lihat isi per folder, unduh satu file, bongkar semua atau yang dipilih ke folder baru di sebelah ZIP-nya
+  (folder di dalamnya ikut). File bersandi ditandai, CRC dicek, `..`/path absolut dibersihkan, `__MACOSX` dibuang.
+  Dari menu ⋮ ("Lihat isi ZIP"), pratinjau, dan kartu di `/alat`. Dites di build production dengan CSP app (inflate
+  di worker fflate), HP/desktop, terang/gelap.

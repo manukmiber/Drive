@@ -1043,9 +1043,18 @@ spreadsheet, docs, dll? ambil dari github boleh kok gausah bikin dari awal".
   - CSV: pemisah (`,` `;` tab) dikenali dari baris pertama dan dipakai lagi saat menyimpan. Hanya desimal biasa yang
     jadi angka, jadi `0812…` dan kode tetap teks. CSV bukan UTF-8 dibaca sebagai Windows-1252 (CSV dari Excel
     Windows).
-- **ZIP:** isi `.zip` dilihat dan dibongkar di browser dengan `fflate` (MIT). Pilihannya: unduh satu file, bongkar
-  yang dipilih, atau bongkar semua ke folder baru bernama sama di Drive (lewat antrean upload, folder dibuat seperti
-  upload folder). ZIP bersandi tidak didukung. Nama dengan `..` atau path absolut dibuang bagian berbahayanya.
+- **ZIP:** isi `.zip` dilihat dan dibongkar di browser. Pilihannya: unduh satu file, bongkar yang dipilih, atau
+  bongkar semua ke folder baru bernama sama di sebelah ZIP-nya (lewat antrean upload, folder dibuat seperti upload
+  folder).
+  - Daftar isi (central directory, termasuk ZIP64) dibaca sendiri di `editors/zip/zip.ts`, jadi file bersandi sudah
+    ketahuan sebelum dibongkar (ditandai, tidak bisa dipilih). `fflate` (MIT) hanya untuk inflate; file > 512 KB
+    di-inflate di worker fflate (`blob:`, diizinkan `worker-src`) supaya halaman tidak macet.
+  - Setiap file dicek CRC-32-nya; yang rusak dilewati dan disebutkan. Hasil inflate tidak pernah lebih besar dari
+    ukuran di daftar isi (fflate menulis ke buffer seukuran itu), jadi batas `editor_zip_extract_max_bytes` dihitung
+    dari daftar isi dan tetap aman terhadap ZIP bom yang berbohong soal ukuran.
+  - Nama dibersihkan per folder seperti di Worker (`worker/lib/names.ts`), plus `..`, `/` di depan, dan huruf drive
+    dibuang, jadi tidak ada file yang keluar dari folder tujuan. Sampah dari Mac/Windows (`__MACOSX/`, `.DS_Store`,
+    `Thumbs.db`, `desktop.ini`) tidak ditampilkan dan tidak ikut dibongkar.
 - **Baru → File teks / Dokumen / Spreadsheet** di menu Baru: editor dibuka dengan file kosong, lalu disimpan ke folder
   yang sedang dibuka (atau Drive Saya kalau tidak boleh menambah file di sana).
 - **Batas ukuran** di config, dikirim lewat katalog publik: `editor_text_max_bytes`, `editor_doc_max_bytes`,

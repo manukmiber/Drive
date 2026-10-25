@@ -17,6 +17,7 @@ const DocEditor = lazy(() => import('./doc/DocEditor').then((m) => ({ default: m
 const SheetEditor = lazy(() =>
   import('./sheet/SheetEditor').then((m) => ({ default: m.SheetEditor })),
 );
+const ZipViewer = lazy(() => import('./zip/ZipViewer').then((m) => ({ default: m.ZipViewer })));
 
 const EDITORS: Record<Tool, typeof PhotoEditor> = {
   photo: PhotoEditor,
@@ -25,6 +26,7 @@ const EDITORS: Record<Tool, typeof PhotoEditor> = {
   text: TextEditor,
   doc: DocEditor,
   sheet: SheetEditor,
+  zip: ZipViewer,
 };
 
 /** A failed download of the editor (offline, or a new version of the app) shows a message. */

@@ -7,6 +7,7 @@ import {
   Copy,
   Download,
   Eye,
+  FileArchive,
   FileCode2,
   FilePen,
   FileSpreadsheet,
@@ -47,6 +48,7 @@ import {
   isPdf,
   isText,
   isVideo,
+  isZip,
   toolFor,
   type EditRequest,
 } from '../../editors/files';
@@ -274,6 +276,12 @@ export function useNodeActions(items: NodeDto[]) {
         label: t.editor.editSheet,
         icon: FileSpreadsheet,
         onSelect: () => setEditing({ tool: 'sheet', nodes: files, files: [] }),
+      });
+    if (single && all(isZip))
+      list.push({
+        label: t.editor.openZip,
+        icon: FileArchive,
+        onSelect: () => setEditing({ tool: 'zip', nodes: files, files: [] }),
       });
     // CSV opens as a spreadsheet, and as text too.
     if (single && all(isText))

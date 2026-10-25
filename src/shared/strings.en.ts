@@ -895,6 +895,31 @@ export const en: Strings = {
     } as Record<string, string>,
     csvOneSheet: 'A CSV file holds one sheet, so only the sheet you have open is saved.',
     openInEditor: 'Open in the editor',
+    // ZIP (ADR-051)
+    zip: 'ZIP',
+    zipDesc:
+      'Look inside a ZIP file, download one file, or unpack it into a new folder in Drive. All in the browser.',
+    openZip: 'Open the ZIP',
+    zipNotZip: 'This isn’t a ZIP file, or it’s damaged.',
+    zipEmpty: 'This ZIP is empty.',
+    zipSummary: (files: number, size: string) =>
+      `${files.toLocaleString('en')} ${files === 1 ? 'file' : 'files'} · ${size}`,
+    zipFolder: (files: number) => `${files.toLocaleString('en')} ${files === 1 ? 'file' : 'files'}`,
+    zipLocked: 'Password-protected',
+    zipUp: 'Up one folder',
+    zipSelect: (name: string) => `Select ${name}`,
+    zipSelectAll: 'Select everything here',
+    zipDownload: (name: string) => `Download ${name}`,
+    zipExtractAll: 'Unpack to Drive',
+    zipExtractSome: (n: number) => `Unpack ${n.toLocaleString('en')} to Drive`,
+    zipExtracting: (done: number, total: number) => `Unpacking… ${done}/${total}`,
+    zipQueued: (n: number, folder: string) =>
+      `Uploading ${n.toLocaleString('en')} ${n === 1 ? 'file' : 'files'} to the folder “${folder}”.`,
+    zipSkipped: (n: number) =>
+      `${n.toLocaleString('en')} ${n === 1 ? 'file was' : 'files were'} skipped: password-protected, damaged, or packed in a way this can’t read.`,
+    zipNothing: 'There’s nothing here that can be unpacked.',
+    zipTooMuch: (max: string) =>
+      `Unpacked, this is more than ${max}. Pick some of the files, or download the ZIP.`,
   },
   ads: {
     hide: 'Hide this ad',

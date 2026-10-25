@@ -923,6 +923,30 @@ export const t = {
     csvOneSheet:
       'File CSV hanya bisa berisi satu lembar, jadi yang disimpan hanya lembar yang sedang dibuka.',
     openInEditor: 'Buka di editor',
+    // ZIP (ADR-051)
+    zip: 'ZIP',
+    zipDesc:
+      'Lihat isi file ZIP, unduh satu file, atau bongkar isinya ke folder baru di Drive. Semua di browser.',
+    openZip: 'Lihat isi ZIP',
+    zipNotZip: 'Ini bukan file ZIP, atau filenya rusak.',
+    zipEmpty: 'ZIP ini kosong.',
+    zipSummary: (files: number, size: string) => `${files.toLocaleString('id-ID')} file · ${size}`,
+    zipFolder: (files: number) => `${files.toLocaleString('id-ID')} file`,
+    zipLocked: 'Bersandi',
+    zipUp: 'Naik satu folder',
+    zipSelect: (name: string) => `Pilih ${name}`,
+    zipSelectAll: 'Pilih semua di sini',
+    zipDownload: (name: string) => `Unduh ${name}`,
+    zipExtractAll: 'Bongkar ke Drive',
+    zipExtractSome: (n: number) => `Bongkar ${n.toLocaleString('id-ID')} ke Drive`,
+    zipExtracting: (done: number, total: number) => `Membongkar… ${done}/${total}`,
+    zipQueued: (n: number, folder: string) =>
+      `${n.toLocaleString('id-ID')} file sedang diupload ke folder “${folder}”.`,
+    zipSkipped: (n: number) =>
+      `${n.toLocaleString('id-ID')} file dilewati: bersandi, rusak, atau dikompres dengan cara yang tidak dikenal.`,
+    zipNothing: 'Tidak ada file yang bisa dibongkar.',
+    zipTooMuch: (max: string) =>
+      `Hasil bongkarnya lebih dari ${max}. Pilih sebagian file saja, atau unduh ZIP-nya.`,
   },
   ads: {
     hide: 'Sembunyikan iklan ini',

@@ -103,7 +103,7 @@ export const listRecent = () => api<{ items: NodeDto[] }>('/api/recent');
 
 /**
  * Opening these shows the preview (decided server-side too; .docx is drawn in the app, and a .xlsx
- * gets the button to its editor).
+ * or .zip gets the button to its editor).
  */
 export function canPreview(n: NodeDto): boolean {
   if (n.kind !== 'file' || n.status === 'rejected' || n.status === 'uploading') return false;
@@ -112,7 +112,7 @@ export function canPreview(n: NodeDto): boolean {
     /^(image\/(jpeg|png|webp|avif|gif|bmp|heic)|video\/|audio\/|text\/|application\/(pdf|json|xml))/.test(
       m,
     ) ||
-    /\.(pdf|docx|xlsx|txt|md|csv|json|xml|svg|html?|css|js|ts|py|go|rs|java|c|cpp|sh|ya?ml|toml|sql|log)$/i.test(
+    /\.(pdf|docx|xlsx|zip|txt|md|csv|json|xml|svg|html?|css|js|ts|py|go|rs|java|c|cpp|sh|ya?ml|toml|sql|log)$/i.test(
       n.name,
     )
   );

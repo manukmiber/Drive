@@ -7,7 +7,7 @@ import { nodeInfo, previewInfo, type NodeDto } from '../lib/files';
 import type { Catalog, Me } from '../lib/types';
 import { uploads } from '../upload/useUploads';
 
-export type Tool = 'photo' | 'video' | 'pdf' | 'text' | 'doc' | 'sheet';
+export type Tool = 'photo' | 'video' | 'pdf' | 'text' | 'doc' | 'sheet' | 'zip';
 
 /** What an editor opens: Drive files, files from this device, or both. */
 export interface EditRequest {
@@ -50,6 +50,8 @@ export const isPdf = (mime: string | null, name: string) =>
   mime === 'application/pdf' || /\.pdf$/i.test(name);
 export const isDoc = (_mime: string | null, name: string) => /\.docx$/i.test(name);
 export const isSheet = (_mime: string | null, name: string) => /\.(xlsx|csv|tsv)$/i.test(name);
+export const isZip = (mime: string | null, name: string) =>
+  mime === 'application/zip' || mime === 'application/x-zip-compressed' || /\.zip$/i.test(name);
 export const isText = (mime: string | null, name: string) =>
   TEXT_EXT.has(extOf(name)) ||
   /^text\//.test(mime ?? '') ||
@@ -65,6 +67,7 @@ export function toolFor(mime: string | null, name: string): Tool | null {
   if (isImage(mime, name)) return 'photo';
   if (isDoc(mime, name)) return 'doc';
   if (isSheet(mime, name)) return 'sheet';
+  if (isZip(mime, name)) return 'zip';
   if (isText(mime, name)) return 'text';
   return null;
 }
@@ -78,6 +81,7 @@ export function maxBytes(c: Catalog['config'] | undefined, tool: Tool): number {
     text: c.editor_text_max_bytes,
     doc: c.editor_doc_max_bytes,
     sheet: c.editor_sheet_max_bytes,
+    zip: c.editor_zip_max_bytes,
   };
   return max[tool];
 }

@@ -2,6 +2,7 @@
 // files open in the same editors from their ⋮ menu or the preview.
 import {
   Clapperboard,
+  FileArchive,
   FileCode2,
   FileImage,
   FilePen,
@@ -89,6 +90,15 @@ const CARDS: Card[] = [
       '.xlsx,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv',
     multiple: false,
     blank: t.editor.untitledSheet,
+  },
+  {
+    id: 'zip',
+    tool: 'zip',
+    icon: FileArchive,
+    title: t.editor.zip,
+    body: t.editor.zipDesc,
+    accept: '.zip,application/zip,application/x-zip-compressed',
+    multiple: false,
   },
   {
     id: 'text',

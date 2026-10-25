@@ -6,7 +6,7 @@ import { formatBytes } from '../../../shared/format';
 import { t } from '../../lib/i18n';
 import { downloadFile, previewInfo, type NodeDto } from '../../lib/files';
 import { FileIcon } from '../FileIcon';
-import { editable, isDoc, maxBytes, toolFor } from '../../editors/files';
+import { editable, isDoc, isZip, maxBytes, toolFor } from '../../editors/files';
 import { useConfig } from '../../editors/ui';
 
 // pdf.js shows PDFs (SPEC §8.4; Chrome on Android has no PDF viewer for iframes). It loads only for a
@@ -59,7 +59,7 @@ function NoPreview({ node, onEdit }: { node: NodeDto; onEdit?: () => void }) {
             onClick={onEdit}
             className="rounded-full bg-white px-5 py-2 text-sm font-medium text-gray-900"
           >
-            {t.editor.openInEditor}
+            {isZip(node.mime, node.name) ? t.editor.openZip : t.editor.openInEditor}
           </button>
         )}
         <button
@@ -147,7 +147,8 @@ export function Preview({
         <FileIcon node={node} />
         <span className="min-w-0 flex-1 truncate text-sm">{node.name}</span>
         <span className="hidden text-xs text-white/60 sm:inline">{formatBytes(node.size)}</span>
-        {editIt && (
+        {/* A ZIP isn't edited: its button is the one in the middle. */}
+        {editIt && !isZip(node.mime, node.name) && (
           <button
             type="button"
             onClick={editIt}
