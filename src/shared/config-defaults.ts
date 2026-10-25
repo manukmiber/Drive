@@ -246,6 +246,11 @@ export const configSchema = z.object({
   media_binding_max_seconds: int().min(1).default(60),
   standalone_compress_max_bytes: nonNeg().default(2 * GIB),
 
+  // ── Editors (ADR-050): everything runs in the person's browser, in its memory ──
+  editor_image_max_bytes: nonNeg().default(50 * MIB),
+  editor_video_max_bytes: nonNeg().default(1 * GIB),
+  editor_pdf_max_bytes: nonNeg().default(200 * MIB),
+
   // ── Ads (ADR-043: campaigns, no slots, a 15-second rotation) ──
   /** A day in one city; two cities are two of these, up to one bundle. */
   ad_price_city_idr: nonNeg().default(1_000),
@@ -326,6 +331,9 @@ export const PUBLIC_CONFIG_KEYS = [
   'zstd_levels',
   'zip_deflate_stream_max_bytes',
   'standalone_compress_max_bytes',
+  'editor_image_max_bytes',
+  'editor_video_max_bytes',
+  'editor_pdf_max_bytes',
   'min_topup_idr',
   'upgrade_ratio_hint_pct',
   'ad_image_max_bytes',

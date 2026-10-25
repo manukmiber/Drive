@@ -18,6 +18,7 @@ import {
   Star,
   Megaphone,
   Minimize2,
+  Wand2,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -52,6 +53,7 @@ const NAV: NavItem[] = [
   { to: '/terbaru', label: t.nav.recent, icon: Clock },
   { to: '/berbintang', label: t.nav.starred, icon: Star },
   { to: '/kompres', label: t.nav.compress, icon: Minimize2 },
+  { to: '/alat', label: t.nav.tools, icon: Wand2 },
   { to: '/unduhan', label: t.nav.downloads, icon: Archive },
   { to: '/iklan', label: t.nav.ads, icon: Megaphone },
   { to: '/sampah', label: t.nav.trash, icon: Trash2 },

@@ -55,6 +55,11 @@ hanya melayani akun pemiliknya, dilepas kalau paket tidak dibayar 30 hari. Di de
 yang masih kurang, untuk tab Features di relay); aplikasi membaca `capabilities` dari `/api/public/catalog`. Fitur baru
 yang butuh secret/binding/DNS pemilik didaftarkan di sana dan disembunyikan sampai siap, tidak ditampilkan mati.
 
+**Editor foto, video, PDF** (ADR-050, `src/web/editors/`, halaman `/alat`): semuanya jalan di browser, isi file tidak
+dikirim ke mana pun. Bytes dari URL pratinjau, hasil lewat antrean upload biasa. Library dibundel dan dimuat saat editor
+dibuka: `mediabunny`, `pdfjs-dist` (build **legacy**; aset `/pdfjs-<versi>/` disalin plugin di `vite.config.ts`),
+`pdf-lib`. Batas ukuran: `editor_*_max_bytes` di config.
+
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.
 

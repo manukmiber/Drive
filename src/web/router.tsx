@@ -44,6 +44,7 @@ const Advertiser = page(() => import('./pages/Advertiser'), 'Advertiser');
 const Downloads = page(() => import('./pages/Downloads'), 'Downloads');
 const AiDecision = page(() => import('./pages/AiDecision'), 'AiDecision');
 const S3Page = page(() => import('./pages/S3'), 'S3');
+const Tools = page(() => import('./pages/Tools'), 'Tools');
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: AppShell });
@@ -133,6 +134,7 @@ const routeTree = rootRoute.addChildren([
       },
     }),
     createRoute({ getParentRoute: () => appRoute, path: '/kompres', component: Compress }),
+    createRoute({ getParentRoute: () => appRoute, path: '/alat', component: Tools }),
     createRoute({ getParentRoute: () => appRoute, path: '/iklan', component: Advertiser }),
     createRoute({ getParentRoute: () => appRoute, path: '/unduhan', component: Downloads }),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),

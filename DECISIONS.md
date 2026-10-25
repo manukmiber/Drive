@@ -950,3 +950,53 @@ how to atau caranya ngisi yang diperlukan di relay".
 
 **Konsekuensi:** fitur baru yang bergantung pada setelan pemilik harus didaftarkan di `readiness.ts` dan disembunyikan
 lewat `capabilities` sampai siap.
+
+## ADR-050 — Editor foto, video, dan PDF di browser
+
+**Status:** diterima (pemilik, 2026-10-25). **Konteks:** pemilik: "Tambahkan basic photo editor", "basic video editor
+(Cut, split, merge)", dan "PDF viewer, sign, compress, dll".
+
+**Keputusan:**
+- Semua editor jalan **di browser orang itu sendiri**. Isi file tidak dikirim ke layanan luar mana pun (larangan di
+  `CLAUDE.md`) dan tidak memakai Container, kredit, atau CPU Worker. Library dibundel di app (tidak dari CDN):
+  - `mediabunny` (MPL-2.0) untuk video;
+  - `pdfjs-dist` build *legacy* (Apache-2.0) untuk menampilkan PDF. Build biasa memakai API JavaScript yang belum ada
+    di banyak HP;
+  - `pdf-lib` (MIT) untuk mengubah PDF.
+
+  Ketiganya hanya dimuat saat editor dibuka.
+- Bytes diambil lewat URL pratinjau `USERCONTENT_ORIGIN` yang sudah ada (CORS untuk `APP_ORIGIN`), dengan cek izin
+  dan scan yang sama. Hasil disimpan lewat antrean upload biasa, jadi kuota, scan, thumbnail, dan izin folder tetap
+  berlaku:
+  - **file baru** di folder yang sama, dengan nama "… (edit)" (kalau tidak boleh mengubah folder itu, ke Drive Saya);
+  - **ganti file asli**: file lama masuk Sampah, jadi masih bisa dipulihkan.
+
+  Hasil juga bisa langsung diunduh ke perangkat tanpa disimpan. File dari perangkat juga bisa dibuka lewat halaman
+  `/alat`.
+- **Foto:** potong (bebas atau rasio), putar, balik, terang/kontras/saturasi/hangat, filter, ubah ukuran, simpan
+  JPEG/PNG/WebP. Data EXIF (termasuk GPS) tidak ikut ke hasil.
+- **Video:** potong awal/akhir, pisah di titik putar, hapus dan urutkan bagian, gabung beberapa video. Hasilnya satu
+  file, atau tiap bagian jadi file sendiri. Ada dua cara:
+  - **Cepat:** salin tanpa encode ulang. Potongan menempel ke keyframe terdekat, dan gabung hanya untuk video dengan
+    format yang sama;
+  - **Tepat:** encode ulang dengan WebCodecs. Tepat per frame dan bisa menggabung ukuran berbeda, tapi lebih lama
+    dan hanya ada kalau browser bisa meng-encode.
+- **PDF:**
+  - lihat (pdf.js, juga di pratinjau, karena Chrome Android tidak bisa menampilkan PDF di iframe);
+  - atur halaman: putar, hapus, urutkan, ambil sebagian, pisah per halaman, tambah PDF/gambar (gabung);
+  - tanda tangan (gambar, ketik, atau foto), teks, tanggal;
+  - kompres:
+    - *Seimbang:* foto JPEG di dalamnya diperkecil, teks tetap bisa dipilih;
+    - *Kecil:* halaman jadi gambar.
+  - Gambar yang dipilih di Drive bisa dijadikan satu PDF.
+
+  PDF bersandi bisa dilihat, tapi tidak bisa diubah.
+- Batas ukuran yang dibuka editor ada di config, dan dikirim ke app lewat katalog publik: `editor_image_max_bytes`,
+  `editor_video_max_bytes`, `editor_pdf_max_bytes`. Alasannya: semuanya diproses di memori perangkat. Editor tidak
+  butuh apa pun dari pemilik, jadi tidak didaftarkan di `readiness.ts`.
+
+**Konsekuensi:**
+- Hasil edit memakai kuota seperti file lain.
+- Mode Tepat dan HEIC bergantung pada browser.
+- `pdfjs-dist` membawa cmaps, font standar, dan decoder wasm sebagai aset statis di `/pdfjs-<versi>/`. Aset ini
+  disalin oleh plugin kecil di `vite.config.ts`.

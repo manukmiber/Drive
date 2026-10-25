@@ -91,7 +91,15 @@ export class UploadManager {
     this.emit();
   }
 
-  async add(items: Array<{ file: File; parentId: string; name?: string }>): Promise<void> {
+  async add(
+    items: Array<{
+      file: File;
+      parentId: string;
+      name?: string;
+      /** Default: ask (the conflict prompt). Editors pass rename or replace (ADR-050). */
+      onConflict?: UploadTask['onConflict'];
+    }>,
+  ): Promise<void> {
     const batchId = crypto.randomUUID();
     for (const it of items) {
       const task: UploadTask = {
@@ -107,7 +115,7 @@ export class UploadManager {
         errorCode: null,
         uploadId: null,
         node: null,
-        onConflict: 'error',
+        onConflict: it.onConflict ?? 'error',
         batchId,
       };
       if (task.size > SIMPLE_MAX) {

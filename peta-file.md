@@ -20,6 +20,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | Harga di website | `src/worker/routes/catalog.ts` (`/api/public/catalog`) | — | `src/drive.js` (`renderPlans`), `public/drive.html` |
 | Upload | `src/web/upload/*`, `src/worker/routes/uploads.ts`, `src/worker/services/uploads.ts` | — | — |
 | Download / share | `src/worker/routes/{download,share-public,shares,archive-download}.ts`, `src/worker/services/{download,shares,share-send}.ts` | — | link share diteruskan oleh `src/worker.js` |
+| Editor foto/video/PDF (ADR-050, di browser) | `src/web/editors/*`, `src/web/pages/Tools.tsx` (`/alat`), menu di `components/explorer/useNodeActions.tsx`, tombol Edit + pdf.js di `Preview.tsx`, aset pdf.js di `vite.config.ts` | — | — |
 
 ## B. Zeiko Drive — `/root/zeiko-cloud-storage`
 
@@ -129,6 +130,11 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `components/AppShell.tsx` ★ | Sidebar (navigasi + "Produk Zeiko"), tombol bahasa, keluar (Better Auth + pintu). |
 | `components/explorer/*`, `components/ui/*`, `components/*.tsx` | Explorer file, dialog, menu, toast, panel upload, meter, TOTP, Turnstile, iklan. |
 | `upload/*` | Antrean upload multipart + resume (IndexedDB), folder, thumbnail, share target. |
+| `editors/{files,ui,EditorHost}.ts(x)` | Editor (ADR-050): ambil bytes lewat URL pratinjau, simpan lewat antrean upload (baru / ganti asli → Sampah) atau unduh; bingkai layar penuh, dialog simpan; editor dimuat saat dibuka. |
+| `editors/photo/*` | `adjust.ts` (warna per piksel), `geometry.ts` (potong/putar/balik), `render.ts` (kanvas), `PhotoEditor.tsx`. |
+| `editors/video/*` | `engine.ts` (mediabunny: cepat = salin paket, tepat = encode ulang WebCodecs), `timeline.ts`, `VideoEditor.tsx`. |
+| `editors/pdf/*` | `ops.ts` (pdf-lib: halaman, stempel, gambar→PDF, kompres JPEG), `pdfjs.ts` (build legacy), `PdfView.tsx` (juga pratinjau), `PdfEditor.tsx`, `SignaturePad.tsx`, `stamps.ts`. |
+| `pages/Tools.tsx` | `/alat`: editor untuk file dari perangkat. |
 
 ### `dev/` (menjalankan Worker asli di Node, ADR-001)
 `server.ts` API dev · `env.ts` merakit Env dari shim · `vars.ts` default + `.dev.vars` · `migrate.ts` ·
@@ -147,6 +153,7 @@ di Cloudflare.
 | `integration/auth.test.ts` ★, `billing.test.ts` ★, `ops.test.ts` ★ | Login tiket, pembayaran zeiko + rekonsiliasi, ops API. |
 | `integration/*.test.ts` (lainnya) | Semua fitur, termasuk suite IDOR. |
 | `unit/{adapters ★,lib,shared}.test.ts` | Adapter (termasuk Zeiko), helper, shared. |
+| `unit/{video-engine,pdf-ops,photo-editor}.test.ts` | Editor (ADR-050): potong/gabung video dengan fixture di `tests/fixtures/video`, operasi PDF dan letak stempel, matematika foto. |
 | `e2e/{auth.setup,helpers,journey.spec}.ts` | Playwright. **Rusak**: masih login lewat OTP (tugas tersisa #1). |
 | `load/download.js` | k6. Belum dijalankan (kuota Workers Free). |
 

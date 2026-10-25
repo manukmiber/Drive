@@ -30,7 +30,14 @@ function videoThumb(file: File): Promise<Blob | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const video = document.createElement('video');
+    let finished = false;
     const done = (b: Blob | null) => {
+      if (finished) return;
+      finished = true;
+      // Stop the element first: revoking while it still reads logs ERR_FILE_NOT_FOUND per request.
+      video.onloadedmetadata = video.onseeked = video.onerror = null;
+      video.removeAttribute('src');
+      video.load();
       URL.revokeObjectURL(url);
       resolve(b);
     };

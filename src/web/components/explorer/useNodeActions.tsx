@@ -3,11 +3,15 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  Clapperboard,
   Copy,
   Download,
   Eye,
+  FilePen,
+  FileImage,
   FolderInput,
   FolderOpen,
+  ImageIcon,
   Info,
   Minimize2,
   Pencil,
@@ -31,6 +35,8 @@ import {
   type NodeDto,
 } from '../../lib/files';
 import { isCompressible } from '../../lib/compress';
+import { EditorHost } from '../../editors/EditorHost';
+import { editable, isImage, isPdf, isVideo, toolFor, type EditRequest } from '../../editors/files';
 import { useMe } from '../../lib/session';
 import { Button } from '../Button';
 import { Dialog, PromptDialog } from '../ui/Dialog';
@@ -68,6 +74,15 @@ export function useNodeActions(items: NodeDto[]) {
   const [details, setDetails] = useState<string | null>(null);
   const [sharing, setSharing] = useState<NodeDto[] | null>(null);
   const [compressing, setCompressing] = useState<NodeDto[] | null>(null);
+  const [editing, setEditing] = useState<EditRequest | null>(null);
+  /** Opens the editor for one Drive file (from the preview). */
+  const edit = useCallback((node: NodeDto) => {
+    const tool = toolFor(node.mime, node.name);
+    if (tool && editable(node)) {
+      setPreview(null);
+      setEditing({ tool, nodes: [node], files: [] });
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     await Promise.all([
@@ -207,6 +222,34 @@ export function useNodeActions(items: NodeDto[]) {
         icon: Minimize2,
         onSelect: () => setCompressing(files),
       });
+    // Editors (ADR-050): ready files of one kind; several videos or PDFs are joined.
+    const ready = files.length === nodes.length && files.every(editable);
+    const all = (f: (mime: string | null, name: string) => boolean) =>
+      ready && files.length > 0 && files.every((n) => f(n.mime, n.name));
+    if (single && all(isImage))
+      list.push({
+        label: t.editor.editPhoto,
+        icon: ImageIcon,
+        onSelect: () => setEditing({ tool: 'photo', nodes: files, files: [] }),
+      });
+    if (all(isVideo))
+      list.push({
+        label: files.length === 1 ? t.editor.editVideo : t.editor.mergeVideos(files.length),
+        icon: Clapperboard,
+        onSelect: () => setEditing({ tool: 'video', nodes: files, files: [] }),
+      });
+    if (all(isPdf))
+      list.push({
+        label: files.length === 1 ? t.editor.openPdf : t.editor.mergePdfs(files.length),
+        icon: FilePen,
+        onSelect: () => setEditing({ tool: 'pdf', nodes: files, files: [] }),
+      });
+    if (all(isImage))
+      list.push({
+        label: t.editor.imagesToPdf,
+        icon: FileImage,
+        onSelect: () => setEditing({ tool: 'pdf', nodes: files, files: [], fromImages: true }),
+      });
     list.push({ label: t.files.moveTo, icon: FolderInput, onSelect: () => setMoving(ids) });
     if (single)
       list.push({
@@ -293,8 +336,10 @@ export function useNodeActions(items: NodeDto[]) {
           index={preview.index}
           onIndex={(index) => setPreview({ ...preview, index })}
           onClose={() => setPreview(null)}
+          onEdit={edit}
         />
       )}
+      {editing && <EditorHost request={editing} onClose={() => setEditing(null)} />}
       {details && <Details id={details} onClose={() => setDetails(null)} />}
       {sharing && <ShareDialog nodes={sharing} onClose={() => setSharing(null)} />}
       {compressing && <CompressDialog nodes={compressing} onClose={() => setCompressing(null)} />}

@@ -146,3 +146,14 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   Cloudflare for SaaS + fallback origin `custom-s3.zeiko.biz.id`: menunggu izin pemilik.
 - [ ] Pemilik: VirusTotal Premium dan Hive/Thorn (akan ditambahkan pemilik); alamat dukungan/privasi; retensi log;
   alur peringatan ToS §6–§7.
+
+## Editor foto, video, PDF (ADR-050, 2026-10-25)
+- [x] Semua di browser (tidak ada layanan luar, Container, atau kredit). Buka dari menu ⋮ / pratinjau (file Drive) atau
+  `/alat` (file perangkat). Simpan sebagai file baru, ganti asli (yang lama ke Sampah), atau unduh.
+- [x] Foto: potong (bebas/rasio), putar, balik, cahaya/warna, 7 filter, skala, JPEG/PNG/WebP, tanpa EXIF.
+- [x] Video: potong awal/akhir, pisah, hapus/urutkan bagian, tambah klip, gabung. Cepat (salin paket, menempel ke
+  keyframe) atau Tepat (encode ulang WebCodecs), satu file atau per bagian.
+- [x] PDF: lihat (pdf.js, juga di pratinjau), putar/hapus/urutkan/ambil/pisah halaman, tambah PDF/gambar,
+  tanda tangan (gambar/ketik/foto, ingat di perangkat), teks, tanggal, kompres seimbang/paling kecil, gambar → PDF.
+- [x] Dites di Chrome (dev): semua alur di atas, hasil diperiksa (ukuran foto, durasi video, isi PDF dirender ulang).
+- [ ] Uji di HP Android/iPhone sungguhan (memori untuk video besar, WebCodecs di Safari, HEIC).

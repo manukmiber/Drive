@@ -1,11 +1,32 @@
 // Full-screen preview (SPEC §8.4): bytes come from USERCONTENT_ORIGIN via short-lived signed URLs.
 import { useQuery } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Download, X } from 'lucide-react';
-import { useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Download, Pencil, X } from 'lucide-react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { formatBytes } from '../../../shared/format';
 import { t } from '../../lib/i18n';
 import { downloadFile, previewInfo, type NodeDto } from '../../lib/files';
 import { FileIcon } from '../FileIcon';
+import { editable, toolFor } from '../../editors/files';
+
+// pdf.js shows PDFs (SPEC §8.4; Chrome on Android has no PDF viewer for iframes). It loads only for a
+// PDF, and the browser's own viewer is the fallback.
+const PdfPreview = lazy(() =>
+  import('../../editors/pdf/PdfView').then((m) => ({ default: m.PdfPreview })),
+);
+
+function PdfFrame({ url, title }: { url: string; title: string }) {
+  const [fallback, setFallback] = useState(false);
+  const fail = useCallback(() => setFallback(true), []);
+  if (fallback)
+    return (
+      <iframe src={url} title={title} className="h-full w-full max-w-5xl rounded-lg bg-white" />
+    );
+  return (
+    <Suspense fallback={<p className="text-sm text-white/70">{t.common.loading}</p>}>
+      <PdfPreview url={url} onFail={fail} />
+    </Suspense>
+  );
+}
 
 function TextView({ url }: { url: string }) {
   const q = useQuery({
@@ -24,11 +45,14 @@ export function Preview({
   index,
   onIndex,
   onClose,
+  onEdit,
 }: {
   items: NodeDto[];
   index: number;
   onIndex: (i: number) => void;
   onClose: () => void;
+  /** Opens the photo, video or PDF editor (ADR-050). */
+  onEdit?: (node: NodeDto) => void;
 }) {
   const node = items[index];
   const info = useQuery({
@@ -71,6 +95,16 @@ export function Preview({
         <FileIcon node={node} />
         <span className="min-w-0 flex-1 truncate text-sm">{node.name}</span>
         <span className="hidden text-xs text-white/60 sm:inline">{formatBytes(node.size)}</span>
+        {onEdit && editable(node) && toolFor(node.mime, node.name) && (
+          <button
+            type="button"
+            onClick={() => onEdit(node)}
+            className="flex items-center gap-1.5 rounded-full px-3 py-2 text-sm hover:bg-white/10"
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="hidden sm:inline">{t.editor.edit}</span>
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void downloadFile(node.id)}
@@ -102,13 +136,7 @@ export function Preview({
         {d && d.kind === 'audio' && (
           <audio src={d.url} controls autoPlay className="w-full max-w-lg" />
         )}
-        {d && d.kind === 'pdf' && (
-          <iframe
-            src={d.url}
-            title={node.name}
-            className="h-full w-full max-w-5xl rounded-lg bg-white"
-          />
-        )}
+        {d && d.kind === 'pdf' && <PdfFrame key={d.url} url={d.url} title={node.name} />}
         {d && d.kind === 'text' && <TextView url={d.url} />}
         {d && !d.kind && (
           <div className="flex flex-col items-center gap-4 text-center">
