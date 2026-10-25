@@ -1,5 +1,6 @@
 // Sending share links: deeplinks (WhatsApp/Telegram/QR/copy/Web Share, logged only) and email via the
 // `notify` queue (SPEC §6.3–6.8). Sending through a Telegram bot is gone (ADR-041).
+import { realEmail } from './readiness';
 import { formatBytes, formatDateTime } from '../../shared/format';
 import type { ShareChannel, ShareSendMode } from '../../shared/enums';
 import { DAY_MS } from '../../shared/constants';
@@ -142,7 +143,8 @@ export async function sendShareEmail(
   ip: string,
 ): Promise<{ queued: number; suppressed: number }> {
   const cfg = await ctx.config();
-  if (!cfg.features.email_share) throw new AppError('FORBIDDEN', 'email sharing is disabled');
+  if (!cfg.features.email_share || !realEmail(ctx))
+    throw new AppError('FORBIDDEN', 'email sharing is disabled');
   const share = await requireOwnShare(ctx, user.id, shareId);
   if (await shareState(ctx, share)) throw new AppError('CONFLICT', 'share link is not active');
   const recipients = [...new Set(input.recipients.map((r) => r.trim().toLowerCase()))].filter(

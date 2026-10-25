@@ -5,6 +5,7 @@ import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
 import { formatDateTime } from '../../../shared/format';
 import { t } from '../../lib/i18n';
+import { useCatalog } from '../../lib/catalog';
 import {
   createShare,
   emailShare,
@@ -58,6 +59,8 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
   const [copied, setCopied] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
   const [panel, setPanel] = useState<'none' | 'email' | 'qr' | 'settings'>('none');
+  // Hidden until Drive sends real email (ADR-049).
+  const emailOk = useCatalog().data?.capabilities?.emailShare !== false;
   const [emails, setEmails] = useState('');
   const [captcha, setCaptcha] = useState<string | null>(null);
   const needsCaptcha = Boolean(useTurnstileSiteKey());
@@ -196,15 +199,16 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
 
           <div>
             <p className="mb-1 text-xs font-medium text-[var(--fg-muted)]">{t.share.sendVia}</p>
-            <div className="grid grid-cols-5 gap-1">
+            <div className={`grid gap-1 ${emailOk ? 'grid-cols-5' : 'grid-cols-4'}`}>
               {chip(t.share.whatsapp, MessageCircle, () => void send('whatsapp'))}
               {chip(t.share.telegram, Send, () => void send('telegram'))}
-              {chip(
-                t.share.email,
-                Mail,
-                () => setPanel(panel === 'email' ? 'none' : 'email'),
-                panel === 'email',
-              )}
+              {emailOk &&
+                chip(
+                  t.share.email,
+                  Mail,
+                  () => setPanel(panel === 'email' ? 'none' : 'email'),
+                  panel === 'email',
+                )}
               {chip(
                 t.share.qr,
                 QrCode,

@@ -161,6 +161,8 @@ export const t = {
     plan: 'Paket',
     prices: (perGb: string, perGb3: string, minGb: number) =>
       `${perGb} per GB per bulan untuk 1 salinan, ${perGb3} untuk 3 salinan di 3 lokasi. Minimal ${minGb} GB, dibayar di awal dengan QRIS.`,
+    priceOne: (perGb: string, minGb: number) =>
+      `${perGb} per GB per bulan. Minimal ${minGb} GB, dibayar di awal dengan QRIS.`,
     egressRule: (free: string, block: string, blockPrice: string) =>
       `Egress gratis ${free} per periode; kelebihannya ${blockPrice} per ${block}, ditagih saat perpanjangan.`,
     buyIntro: 'Pilih ukuran penyimpanan, bayar dengan QRIS, dan Zeiko S3 langsung aktif.',

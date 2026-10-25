@@ -3,6 +3,7 @@ import { asc, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { PUBLIC_CONFIG_KEYS } from '../../shared/config-defaults';
 import { schema } from '../db/client';
+import { capabilities } from '../services/readiness';
 import type { AppBindings } from '../types';
 
 export const catalog = new Hono<AppBindings>().get('/catalog', async (c) => {
@@ -27,9 +28,12 @@ export const catalog = new Hono<AppBindings>().get('/catalog', async (c) => {
   ]);
   const publicConfig = Object.fromEntries(PUBLIC_CONFIG_KEYS.map((k) => [k, cfg[k]]));
   c.header('Cache-Control', 'public, max-age=60');
-  const capabilities = {
-    // TAR.ZST and big deflate ZIPs need Container `archiver` (ADR-033).
-    asyncArchives: c.get('ctx').adapters.archiver.name !== 'none',
-  };
-  return c.json({ plans, addons, compressPacks: packs, config: publicConfig, capabilities });
+  // Only what works here (ADR-049): the app hides the rest.
+  return c.json({
+    plans,
+    addons,
+    compressPacks: packs,
+    config: publicConfig,
+    capabilities: await capabilities(c.get('ctx')),
+  });
 });

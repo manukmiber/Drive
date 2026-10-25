@@ -22,6 +22,7 @@ import {
   updateCatalogItem,
   updateConfig,
 } from '../services/admin';
+import { readiness } from '../services/readiness';
 import { storageReport } from '../services/storage-report';
 import {
   accountView,
@@ -64,6 +65,10 @@ export const ops = new Hono<AppBindings>()
   )
   // R2 against what Drive sold (ADR-037): real usage, people × plan, Class A/B and the margin.
   .get('/storage', async (c) => c.json(await storageReport(c.get('ctx'))))
+  // What each feature still needs, for the relay's Features tab (ADR-049).
+  .get('/readiness', async (c) =>
+    c.json({ env: c.env.APP_ENV, features: await readiness(c.get('ctx')) }),
+  )
   .get('/catalog', async (c) => c.json(await catalogView(c.get('ctx'))))
   .patch('/catalog/:kind/:code', validate('json', z.record(z.string(), z.unknown())), async (c) => {
     const { reason: why, ...patch } = c.req.valid('json');

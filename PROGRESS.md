@@ -136,6 +136,8 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   berubah, baca dari salinan lain kalau yang pertama hilang, sapuan malam.
 - [x] Alamat sendiri (ADR-048): `s3.<nama>.zeiko.biz.id` Rp3.000 atau domain sendiri Rp5.000, sekali bayar,
   hanya untuk akun pemiliknya, cek DNS per jam, dilepas setelah paket tidak dibayar 30 hari.
+- [x] Fitur yang belum siap disembunyikan (ADR-049): `readiness.ts`, `capabilities` di katalog, `GET /api/ops/readiness`
+  untuk tab Features di relay.
 - [x] VirusTotal (ADR-046): cek hash tipe berisiko, kirim program/dokumen ber-macro yang belum dikenal, anggaran key
   per menit/hari/orang, tidak pernah menahan file lama. Drive dan Zeiko S3.
 - [ ] Tombol relay "tambah user + binding ke worker" (diagram: "nanti"): buat D1, catat binding, panggil ops API.

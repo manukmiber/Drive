@@ -13,7 +13,9 @@ import { toast } from '../components/ui/Toast';
 import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { t } from '../lib/i18n';
 import { cn } from '../lib/cn';
+import { useCatalog } from '../lib/catalog';
 import { useCheckout } from './Billing';
+import { NotFound } from './NotFound';
 
 interface S3Key {
   id: string;
@@ -216,27 +218,27 @@ function PlanForm({
           {t.s3.sizeHint(prices.minGb, prices.maxGb)}
         </span>
       </label>
-      <fieldset>
-        <legend className="text-sm font-medium">{t.s3.copies}</legend>
-        {([1, 3] as const).map((n) => (
-          <label key={n} className="mt-1 flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="replicas"
-              checked={replicas === n}
-              disabled={n === 3 && !prices.threeCopies}
-              onChange={() => setReplicas(n)}
-            />
-            {t.s3.copyOption(
-              n,
-              formatRupiah(n === 3 ? prices.perGbMonth3xIdr : prices.perGbMonthIdr),
-            )}
-          </label>
-        ))}
-        {!prices.threeCopies && (
-          <p className="mt-1 text-xs text-[var(--fg-muted)]">{t.s3.threeUnavailable}</p>
-        )}
-      </fieldset>
+      {/* One copy only until the replica buckets exist (ADR-049): no choice to show. */}
+      {(prices.threeCopies || initial.replicas === 3) && (
+        <fieldset>
+          <legend className="text-sm font-medium">{t.s3.copies}</legend>
+          {([1, 3] as const).map((n) => (
+            <label key={n} className="mt-1 flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="replicas"
+                checked={replicas === n}
+                disabled={n === 3 && !prices.threeCopies}
+                onChange={() => setReplicas(n)}
+              />
+              {t.s3.copyOption(
+                n,
+                formatRupiah(n === 3 ? prices.perGbMonth3xIdr : prices.perGbMonthIdr),
+              )}
+            </label>
+          ))}
+        </fieldset>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-sm">{t.s3.monthly(amount)}</span>
         <Button type="submit" className="h-9 px-4" disabled={!valid || disabled}>
@@ -250,7 +252,11 @@ function PlanForm({
 function PriceNotes({ p }: { p: S3Plan['prices'] }) {
   return (
     <div className="space-y-1 text-sm text-[var(--fg-muted)]">
-      <p>{t.s3.prices(formatRupiah(p.perGbMonthIdr), formatRupiah(p.perGbMonth3xIdr), p.minGb)}</p>
+      <p>
+        {p.threeCopies
+          ? t.s3.prices(formatRupiah(p.perGbMonthIdr), formatRupiah(p.perGbMonth3xIdr), p.minGb)
+          : t.s3.priceOne(formatRupiah(p.perGbMonthIdr), p.minGb)}
+      </p>
       <p>
         {t.s3.egressRule(
           formatBytes(p.egressFreeBytes),
@@ -594,7 +600,14 @@ function UrlSection({
   );
 }
 
+/** Hidden until Zeiko S3 works here (ADR-049). */
 export function S3() {
+  const catalog = useCatalog();
+  if (catalog.data && !catalog.data.capabilities?.s3) return <NotFound />;
+  return <S3Page />;
+}
+
+function S3Page() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: QUERY, queryFn: () => api<S3Overview>('/api/s3') });
   const [naming, setNaming] = useState(false);

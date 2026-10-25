@@ -29,7 +29,15 @@ export interface Catalog {
   plans: Plan[];
   addons: Addon[];
   compressPacks: CompressPack[];
-  capabilities?: { asyncArchives: boolean };
+  /** Only what works here (ADR-049); the app hides the rest. */
+  capabilities?: {
+    asyncArchives: boolean;
+    emailShare: boolean;
+    s3: boolean;
+    s3ThreeCopies: boolean;
+    s3UrlZeiko: boolean;
+    s3UrlCustom: boolean;
+  };
   config: {
     upload_part_concurrency: number;
     upload_max_parallel_files: number;

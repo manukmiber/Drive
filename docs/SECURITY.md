@@ -89,6 +89,11 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 - 3 salinan: bucket replika juga privat (dibuat `cf-setup` tanpa akses publik), key-nya sama
   (`s3/{userId}/{blobId}`), dan penghapusan selalu dikirim ke ketiga bucket.
 
+## Kesiapan fitur (ADR-049)
+
+- `GET /api/ops/readiness` (bearer ops) hanya menyebut nama kebutuhan dan apakah terisi, tidak pernah nilainya.
+  `capabilities` publik hanya berisi boolean per fitur.
+
 ## VirusTotal (ADR-046)
 
 - Key gratis milik pemilik. **Ketentuan VirusTotal melarang Public API dipakai di produk/layanan komersial**;

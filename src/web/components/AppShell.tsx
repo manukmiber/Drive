@@ -37,6 +37,7 @@ import { BillingBanner } from '../pages/Billing';
 import { Bell } from './Bell';
 import { AdCard } from './AdCard';
 import { ArchivePanel } from './ArchivePanel';
+import { useCatalog } from '../lib/catalog';
 
 interface NavItem {
   to: string;
@@ -108,6 +109,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const links = useProductLinks();
+  const catalog = useCatalog();
   useDoorSync(
     me.data ? me.data.user.zeikoId : undefined,
     me.data ? { city: me.data.user.adCity, postalCode: me.data.user.adPostalCode } : undefined,
@@ -171,10 +173,12 @@ export function AppShell() {
             <Brain className="h-4 w-4" />
             {t.products.ai}
           </Link>
-          <Link to="/s3" className={navLink}>
-            <Database className="h-4 w-4" />
-            {t.products.s3}
-          </Link>
+          {catalog.data?.capabilities?.s3 && (
+            <Link to="/s3" className={navLink}>
+              <Database className="h-4 w-4" />
+              {t.products.s3}
+            </Link>
+          )}
           {links.data?.chat && (
             <a href={links.data.chat} className={navLink} rel="noopener">
               <MessageCircle className="h-4 w-4" />

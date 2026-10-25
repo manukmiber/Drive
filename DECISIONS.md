@@ -917,3 +917,36 @@ cuma 3K". Pilihan: keduanya, dan opsional.
 **Konsekuensi:** Cloudflare for SaaS harus dinyalakan di zone dan fallback origin dibuat (perubahan zone, oleh pemilik).
 Kuota custom hostname dan batas route/custom domain per zone dari Cloudflare berlaku; cek sebelum ramai. Virtual-hosted
 style (`bucket.s3.nama…`) tidak didukung di alamat sendiri.
+
+## ADR-049 — Fitur yang belum siap disembunyikan; relay menampilkan kebutuhannya
+
+**Status:** diterima (pemilik, 2026-10-25). **Konteks:** pemilik: "Kalau misal ada fitur yang belum ready, sembunyikan
+dari tampilan user ya. Baru nanti ditampilkan kalau misal aku udah isi semua yang diperlukan", lalu "Sekalian kasih
+how to atau caranya ngisi yang diperlukan di relay".
+
+**Keputusan:**
+- `services/readiness.ts` adalah satu-satunya tempat yang memutuskan fitur mana yang jalan di sini. Setiap fitur punya
+  daftar kebutuhan, masing-masing dengan jenis:
+  - `secret`: diisi dari Setup relay, yang menaruhnya ke Worker;
+  - `deploy`: datang dengan `cf-setup` (binding, var, secret acak, tabel);
+  - `cloudflare`: langkah di dashboard Cloudflare, lalu satu baris di `deploy/<env>.json`.
+
+  Setiap kebutuhan punya cara mengisinya (`how`). Sebuah fitur siap kalau semua kebutuhannya terpenuhi dan fitur yang
+  ditunggunya (`after`) juga siap.
+- Aplikasi membaca `capabilities` dari `/api/public/catalog` dan **menyembunyikan** yang belum siap, tidak
+  menampilkannya dalam keadaan mati:
+  - Zeiko S3 (menu dan halaman `/s3`, yang menjadi 404);
+  - pilihan 3 salinan dan harganya;
+  - alamat sendiri (subdomain Zeiko / domain sendiri);
+  - kirim link lewat email (di staging/production tanpa email sungguhan);
+  - arsip TAR.ZST.
+
+  Server tetap menolak hal yang sama.
+- Relay membaca `GET /api/ops/readiness` (bearer ops), berisi nama kebutuhan dan status saja, **tidak pernah nilai
+  secret**. Tab Features di layar Zeiko Drive relay menampilkannya dan mengisi secret yang ada di daftar izin relay ke
+  Worker Drive.
+- Di dev/test, adapter mock alamat sendiri membuat kebutuhan Cloudflare-nya dianggap terpenuhi (mock tidak pernah aktif
+  di production).
+
+**Konsekuensi:** fitur baru yang bergantung pada setelan pemilik harus didaftarkan di `readiness.ts` dan disembunyikan
+lewat `capabilities` sampai siap.

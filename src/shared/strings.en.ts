@@ -159,6 +159,8 @@ export const en: Strings = {
     notEmpty: 'The bucket still has objects in it. Delete them through the API first.',
     invalidName: 'That bucket name doesn’t follow the rules.',
     plan: 'Plan',
+    priceOne: (perGb: string, minGb: number) =>
+      `${perGb} per GB per month. At least ${minGb} GB, paid upfront by QRIS.`,
     prices: (perGb: string, perGb3: string, minGb: number) =>
       `${perGb} per GB per month for 1 copy, ${perGb3} for 3 copies in 3 places. At least ${minGb} GB, paid upfront by QRIS.`,
     egressRule: (free: string, block: string, blockPrice: string) =>
