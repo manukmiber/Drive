@@ -34,11 +34,11 @@ const DocxPreview = lazy(() =>
   import('../../editors/doc/DocxPreview').then((m) => ({ default: m.DocxPreview })),
 );
 
-function DocxFrame({ url, node }: { url: string; node: NodeDto }) {
+function DocxFrame({ url, node, onEdit }: { url: string; node: NodeDto; onEdit?: () => void }) {
   const [failed, setFailed] = useState(false);
   const fail = useCallback(() => setFailed(true), []);
   const max = maxBytes(useConfig(), 'doc');
-  if (failed || !max || node.size > max) return <NoPreview node={node} />;
+  if (failed || !max || node.size > max) return <NoPreview node={node} onEdit={onEdit} />;
   return (
     <Suspense fallback={<p className="text-sm text-white/70">{t.common.loading}</p>}>
       <DocxPreview url={url} onFail={fail} />
@@ -46,18 +46,34 @@ function DocxFrame({ url, node }: { url: string; node: NodeDto }) {
   );
 }
 
-function NoPreview({ node }: { node: NodeDto }) {
+/** No picture of the file; one an editor opens (a spreadsheet, a ZIP) can be opened there. */
+function NoPreview({ node, onEdit }: { node: NodeDto; onEdit?: () => void }) {
   return (
     <div className="flex flex-col items-center gap-4 text-center">
       <FileIcon node={node} className="h-16 w-16" />
       <p className="text-sm text-white/70">{t.files.noPreview}</p>
-      <button
-        type="button"
-        onClick={() => void downloadFile(node.id)}
-        className="rounded-full bg-white px-5 py-2 text-sm font-medium text-gray-900"
-      >
-        {t.common.download}
-      </button>
+      <div className="flex flex-wrap justify-center gap-2">
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="rounded-full bg-white px-5 py-2 text-sm font-medium text-gray-900"
+          >
+            {t.editor.openInEditor}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => void downloadFile(node.id)}
+          className={
+            onEdit
+              ? 'rounded-full border border-white/40 px-5 py-2 text-sm font-medium text-white'
+              : 'rounded-full bg-white px-5 py-2 text-sm font-medium text-gray-900'
+          }
+        >
+          {t.common.download}
+        </button>
+      </div>
     </div>
   );
 }
@@ -110,6 +126,8 @@ export function Preview({
 
   if (!node) return null;
   const d = info.data;
+  const editIt =
+    onEdit && editable(node) && toolFor(node.mime, node.name) ? () => onEdit(node) : undefined;
   return (
     <div
       role="dialog"
@@ -129,10 +147,10 @@ export function Preview({
         <FileIcon node={node} />
         <span className="min-w-0 flex-1 truncate text-sm">{node.name}</span>
         <span className="hidden text-xs text-white/60 sm:inline">{formatBytes(node.size)}</span>
-        {onEdit && editable(node) && toolFor(node.mime, node.name) && (
+        {editIt && (
           <button
             type="button"
-            onClick={() => onEdit(node)}
+            onClick={editIt}
             aria-label={t.editor.edit}
             className="flex items-center gap-1.5 rounded-full px-3 py-2 text-sm hover:bg-white/10"
           >
@@ -176,9 +194,9 @@ export function Preview({
         {d &&
           !d.kind &&
           (isDoc(node.mime, node.name) ? (
-            <DocxFrame key={d.url} url={d.url} node={node} />
+            <DocxFrame key={d.url} url={d.url} node={node} onEdit={editIt} />
           ) : (
-            <NoPreview node={node} />
+            <NoPreview node={node} onEdit={editIt} />
           ))}
         {next !== null && (
           <button

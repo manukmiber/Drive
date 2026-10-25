@@ -31,6 +31,7 @@ export const en: Strings = {
     newFolder: 'New folder',
     newTextFile: 'Text file',
     newDocument: 'Document',
+    newSpreadsheet: 'Spreadsheet',
     uploadFile: 'Upload files',
     uploadFolder: 'Upload a folder',
     myDrive: 'My Drive',
@@ -662,7 +663,7 @@ export const en: Strings = {
     imagesToPdfDesc: 'Put several photos or pictures into one PDF file.',
     fromDevice: 'Choose from this device',
     fromDriveHint:
-      'Already in your Drive? Open the ⋮ menu on the file and choose an editor, or tap Edit in its preview. New → Text file or Document starts a new one in the folder you’re in.',
+      'Already in your Drive? Open the ⋮ menu on the file and choose an editor, or tap Edit in its preview. New → Document, Spreadsheet or Text file starts a new one in the folder you’re in.',
     newBlank: 'New empty file',
     edit: 'Edit',
     editPhoto: 'Edit photo',
@@ -881,6 +882,19 @@ export const en: Strings = {
     splitCell: 'Split cell',
     deleteTable: 'Delete table',
     words: (n: number) => (n === 1 ? '1 word' : `${n.toLocaleString('en-GB')} words`),
+    // Spreadsheets (ADR-051)
+    sheet: 'Spreadsheet',
+    sheetDesc:
+      'Excel and CSV files: formulas, number formats, merged cells, sorting, filters and several sheets.',
+    editSheet: 'Edit spreadsheet',
+    untitledSheet: 'Untitled spreadsheet.xlsx',
+    firstSheet: 'Sheet1',
+    sheetFormats: {
+      xlsx: 'Excel workbook (.xlsx)',
+      csv: 'CSV (.csv), this sheet only',
+    } as Record<string, string>,
+    csvOneSheet: 'A CSV file holds one sheet, so only the sheet you have open is saved.',
+    openInEditor: 'Open in the editor',
   },
   ads: {
     hide: 'Hide this ad',

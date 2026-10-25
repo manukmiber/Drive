@@ -14,6 +14,9 @@ const VideoEditor = lazy(() =>
 const PdfEditor = lazy(() => import('./pdf/PdfEditor').then((m) => ({ default: m.PdfEditor })));
 const TextEditor = lazy(() => import('./text/TextEditor').then((m) => ({ default: m.TextEditor })));
 const DocEditor = lazy(() => import('./doc/DocEditor').then((m) => ({ default: m.DocEditor })));
+const SheetEditor = lazy(() =>
+  import('./sheet/SheetEditor').then((m) => ({ default: m.SheetEditor })),
+);
 
 const EDITORS: Record<Tool, typeof PhotoEditor> = {
   photo: PhotoEditor,
@@ -21,6 +24,7 @@ const EDITORS: Record<Tool, typeof PhotoEditor> = {
   pdf: PdfEditor,
   text: TextEditor,
   doc: DocEditor,
+  sheet: SheetEditor,
 };
 
 /** A failed download of the editor (offline, or a new version of the app) shows a message. */

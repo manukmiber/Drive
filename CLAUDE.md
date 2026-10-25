@@ -59,9 +59,11 @@ yang butuh secret/binding/DNS pemilik didaftarkan di sana dan disembunyikan samp
 dikirim ke mana pun. Bytes dari URL pratinjau, hasil lewat antrean upload biasa. Library dibundel dan dimuat saat editor
 dibuka: `mediabunny`, `pdfjs-dist` (build **legacy**; aset `/pdfjs-<versi>/` disalin plugin di `vite.config.ts`),
 `pdf-lib`. Batas ukuran: `editor_*_max_bytes` di config. **Editor teks/kode, dokumen, spreadsheet, ZIP** (ADR-051): aturan
-yang sama; teks pakai CodeMirror 6 (`editors/text/`), dokumen TipTap + mammoth/docx (`editors/doc/`), HTML dari file
-orang selalu lewat `editors/sanitize.ts`. Baru → Dokumen / File teks membuka editor dengan file kosong
-(`EditRequest.blank`) yang disimpan ke folder yang sedang dibuka. `EditorFrame` dirender ke `document.body` (portal).
+yang sama; teks pakai CodeMirror 6 (`editors/text/`), dokumen TipTap + mammoth/docx (`editors/doc/`), spreadsheet
+FortuneSheet + FortuneExcel (`editors/sheet/`; plugin `fortuneSheetFixes` di `vite.config.ts` membuang `new Function`
+karena CSP, jadi cek spreadsheet di build production, bukan dev), HTML dari file orang selalu lewat
+`editors/sanitize.ts`. Baru → Dokumen / Spreadsheet / File teks membuka editor dengan file kosong (`EditRequest.blank`)
+yang disimpan ke folder yang sedang dibuka. `EditorFrame` dirender ke `document.body` (portal).
 
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.

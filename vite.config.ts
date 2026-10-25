@@ -48,12 +48,58 @@ function pdfjsAssets(): Plugin {
   };
 }
 
+/**
+ * FortuneSheet inserts rows with `new Function`, which the app's CSP refuses (no 'unsafe-eval',
+ * ADR-051). The rows are JSON, so they are parsed instead. Its toolbar also names two buttons in
+ * Chinese and the zoom box in English, words its language table doesn't carry; they are dropped.
+ * The build fails when the library's code changes, so an update is looked at here.
+ */
+function fortuneSheetFixes(): Plugin {
+  const parsed = 'arr.map(function (s) { return JSON.parse(s); })';
+  const swaps: Record<string, Array<[string, string]>> = {
+    '/@fortune-sheet/core/dist/index.esm.js': [
+      [
+        'new Function("d", "return d.unshift(".concat(arr.join(","), ")"))(d);',
+        `d.unshift.apply(d, ${parsed});`,
+      ],
+      [
+        'new Function("d", "return d.splice(".concat(index, ", 0, ").concat(arr.join(","), ")"))(d);',
+        `d.splice.apply(d, [index, 0].concat(${parsed}));`,
+      ],
+      [
+        'new Function("d", "return d.splice(".concat(index + 1, ", 0, ").concat(arr.join(","), ")"))(d);',
+        `d.splice.apply(d, [index + 1, 0].concat(${parsed}));`,
+      ],
+    ],
+    '/@fortune-sheet/react/dist/index.esm.js': [
+      ['text: "\\u5408\\u5E76\\u5355\\u5143\\u683C",', 'text: undefined,'],
+      ['text: "\\u8FB9\\u6846\\u8BBE\\u7F6E",', 'text: undefined,'],
+      ['title: "Zoom settings",', ''],
+    ],
+  };
+  return {
+    name: 'fortune-sheet-fixes',
+    transform(code, id) {
+      const file = Object.keys(swaps).find((f) => id.replace(/\\/g, '/').includes(f));
+      if (!file) return null;
+      let out = code;
+      for (const [from, to] of swaps[file]!) {
+        if (!out.includes(from)) this.error(`FortuneSheet changed: "${from}" is gone (ADR-051)`);
+        out = out.split(from).join(to);
+      }
+      if (out.includes('new Function'))
+        this.error('FortuneSheet has another new Function (ADR-051)');
+      return { code: out, map: null };
+    },
+  };
+}
+
 export default defineConfig({
   root: 'src/web',
   publicDir: 'public',
   // The app is served at the root of its own address, drive.zeiko.biz.id (ADR-038).
   base: '/',
-  plugins: [react(), tailwindcss(), pdfjsAssets()],
+  plugins: [react(), tailwindcss(), pdfjsAssets(), fortuneSheetFixes()],
   build: {
     outDir: '../../dist/web',
     emptyOutDir: true,

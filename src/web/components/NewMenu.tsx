@@ -1,5 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { FileText, FileType2, FileUp, FolderPlus, FolderUp, Plus } from 'lucide-react';
+import {
+  FileSpreadsheet,
+  FileText,
+  FileType2,
+  FileUp,
+  FolderPlus,
+  FolderUp,
+  Plus,
+} from 'lucide-react';
 import { useRef, useState } from 'react';
 import { EditorHost } from '../editors/EditorHost';
 import type { EditRequest, Tool } from '../editors/files';
@@ -40,6 +48,11 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
   const items: MenuItem[] = [
     { label: t.nav.newFolder, icon: FolderPlus, onSelect: () => setNaming(true) },
     { label: t.nav.newDocument, icon: FileType2, onSelect: create('doc', t.editor.untitledDoc) },
+    {
+      label: t.nav.newSpreadsheet,
+      icon: FileSpreadsheet,
+      onSelect: create('sheet', t.editor.untitledSheet),
+    },
     { label: t.nav.newTextFile, icon: FileText, onSelect: create('text', t.editor.untitledText) },
     { label: t.nav.uploadFile, icon: FileUp, onSelect: () => fileInput.current?.click() },
     { label: t.nav.uploadFolder, icon: FolderUp, onSelect: () => dirInput.current?.click() },

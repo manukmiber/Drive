@@ -1031,11 +1031,18 @@ spreadsheet, docs, dll? ambil dari github boleh kok gausah bikin dari awal".
   - Isinya: rumus, format angka, gabung sel, bekukan baris, urut, filter, beberapa lembar.
   - Disimpan sebagai `.xlsx`, atau `.csv` (lembar yang sedang dibuka). `.xls` lama (biner) tidak didukung.
   - Teks UI FortuneSheet hanya ada dalam bahasa Inggris (dan beberapa bahasa lain, tanpa Indonesia). Untuk bahasa
-    Indonesia, teks bagian yang kita tampilkan ditimpa terjemahan kita di `strings.*`. Bantuan fungsi rumus (SUM,
-    VLOOKUP, …) tetap bahasa Inggris, karena nama fungsinya pun bahasa Inggris.
+    Indonesia, teks bagian yang kita tampilkan ditimpa terjemahan kita di `editors/sheet/fortune-id.ts` (bukan
+    `strings.*`, supaya ikut dimuat bersama editor, tidak bersama app). Bantuan fungsi rumus (SUM, VLOOKUP, …) tetap
+    bahasa Inggris, karena nama fungsinya pun bahasa Inggris. Huruf bawaan sel Arial, bukan Times New Roman.
   - FortuneSheet memakai `new Function` saat menyisipkan baris, dan itu ditolak CSP app (tanpa `unsafe-eval`).
-    Plugin kecil di `vite.config.ts` menggantinya dengan `JSON.parse`. Build gagal kalau kode aslinya berubah, supaya
-    ketahuan saat versi naik.
+    Plugin kecil di `vite.config.ts` menggantinya dengan `JSON.parse` (dan membuang dua label tombol berbahasa
+    Mandarin yang ditulis langsung di kodenya). Build gagal kalau kode aslinya berubah, supaya ketahuan saat versi
+    naik.
+  - FortuneExcel membaca semua nilai `.xlsx` sebagai teks, lalu menulisnya kembali sebagai teks: `100` akan kembali ke
+    Excel sebagai `"100"`. Sel yang angka menurut `exceljs` dijadikan angka lagi saat dibuka (`sheet/xlsx.ts`).
+  - CSV: pemisah (`,` `;` tab) dikenali dari baris pertama dan dipakai lagi saat menyimpan. Hanya desimal biasa yang
+    jadi angka, jadi `0812…` dan kode tetap teks. CSV bukan UTF-8 dibaca sebagai Windows-1252 (CSV dari Excel
+    Windows).
 - **ZIP:** isi `.zip` dilihat dan dibongkar di browser dengan `fflate` (MIT). Pilihannya: unduh satu file, bongkar
   yang dipilih, atau bongkar semua ke folder baru bernama sama di Drive (lewat antrean upload, folder dibuat seperti
   upload folder). ZIP bersandi tidak didukung. Nama dengan `..` atau path absolut dibuang bagian berbahayanya.

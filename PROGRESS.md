@@ -167,5 +167,10 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   perataan, tata letak tidak ikut), simpan `.docx` (docx/html), Markdown, atau HTML. Baru → Dokumen. Pratinjau `.docx`
   pakai docx-preview, dibersihkan DOMPurify, halaman dikecilkan agar muat di HP. Dites di Chrome (dev): buka, ubah,
   ganti asli, simpan Markdown, dokumen baru, terang/gelap, HP/desktop.
-- [ ] Spreadsheet (.xlsx/.csv, FortuneSheet).
+- [x] Spreadsheet: FortuneSheet (rumus, format angka, gabung sel, bekukan, urut, filter, beberapa lembar), menu dan
+  toolbar dalam bahasa Indonesia. Buka `.xlsx` (FortuneExcel, angka dikembalikan jadi angka), `.csv`/`.tsv` (pemisah
+  dikenali, `0812…` tetap teks); simpan `.xlsx` atau lembar yang dibuka sebagai CSV. Baru → Spreadsheet, kartu di
+  `/alat`, dan "Buka di editor" dari pratinjau. Dites di build production dengan CSP app: sisip baris (tanpa
+  `new Function`), rumus ikut bergeser, gabung sel, ganti asli lalu dibuka lagi, CSV `;` disimpan ulang byte per
+  byte; HP/desktop.
 - [ ] ZIP: lihat isi, bongkar ke Drive.

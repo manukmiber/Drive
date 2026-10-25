@@ -9,6 +9,7 @@ import {
   Eye,
   FileCode2,
   FilePen,
+  FileSpreadsheet,
   FileType2,
   FileImage,
   FolderInput,
@@ -42,6 +43,7 @@ import {
   editable,
   isDoc,
   isImage,
+  isSheet,
   isPdf,
   isText,
   isVideo,
@@ -267,7 +269,14 @@ export function useNodeActions(items: NodeDto[]) {
         icon: FileType2,
         onSelect: () => setEditing({ tool: 'doc', nodes: files, files: [] }),
       });
-    if (single && all(isText) && toolFor(single.mime, single.name) === 'text')
+    if (single && all(isSheet))
+      list.push({
+        label: t.editor.editSheet,
+        icon: FileSpreadsheet,
+        onSelect: () => setEditing({ tool: 'sheet', nodes: files, files: [] }),
+      });
+    // CSV opens as a spreadsheet, and as text too.
+    if (single && all(isText))
       list.push({
         label: t.editor.editText,
         icon: FileCode2,

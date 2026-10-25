@@ -31,6 +31,7 @@ export const t = {
     newFolder: 'Folder baru',
     newTextFile: 'File teks',
     newDocument: 'Dokumen',
+    newSpreadsheet: 'Spreadsheet',
     uploadFile: 'Upload file',
     uploadFolder: 'Upload folder',
     myDrive: 'Drive Saya',
@@ -658,7 +659,7 @@ export const t = {
     imagesToPdfDesc: 'Satukan beberapa foto atau gambar jadi satu file PDF.',
     fromDevice: 'Pilih dari perangkat',
     fromDriveHint:
-      'File yang sudah ada di Drive? Buka menu ⋮ di file itu lalu pilih editornya, atau ketuk Edit di pratinjau. Baru → File teks atau Dokumen membuat file baru di folder yang sedang kamu buka.',
+      'File yang sudah ada di Drive? Buka menu ⋮ di file itu lalu pilih editornya, atau ketuk Edit di pratinjau. Baru → Dokumen, Spreadsheet, atau File teks membuat file baru di folder yang sedang kamu buka.',
     newBlank: 'Buat file kosong',
     edit: 'Edit',
     editPhoto: 'Edit foto',
@@ -908,6 +909,20 @@ export const t = {
     splitCell: 'Pisah sel',
     deleteTable: 'Hapus tabel',
     words: (n: number) => `${n.toLocaleString('id-ID')} kata`,
+    // Spreadsheet (ADR-051)
+    sheet: 'Spreadsheet',
+    sheetDesc:
+      'File Excel dan CSV: rumus, format angka, gabung sel, urutkan, filter, dan beberapa lembar.',
+    editSheet: 'Edit spreadsheet',
+    untitledSheet: 'Spreadsheet tanpa judul.xlsx',
+    firstSheet: 'Lembar1',
+    sheetFormats: {
+      xlsx: 'Buku kerja Excel (.xlsx)',
+      csv: 'CSV (.csv), lembar ini saja',
+    } as Record<string, string>,
+    csvOneSheet:
+      'File CSV hanya bisa berisi satu lembar, jadi yang disimpan hanya lembar yang sedang dibuka.',
+    openInEditor: 'Buka di editor',
   },
   ads: {
     hide: 'Sembunyikan iklan ini',
