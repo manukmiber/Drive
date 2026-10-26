@@ -159,6 +159,7 @@ di Cloudflare.
 | File | Isi |
 |---|---|
 | `helpers/session.ts` ★ | Cookie jar, `zeikoAccountFor`, `exchange`, `signIn` lewat tiket. |
+| `components/FolderGlyph.tsx`, `components/explorer/DecorDialog.tsx` | Ikon/warna folder dan dialog Dekorasi (ADR-058). |
 | `helpers/ops.ts` | `OPS_KEY`, `opsCall`, `operator(rt)` (relay di test), `imageBody` (gambar iklan base64). |
 | `helpers/{runtime,files,zip}.ts` | Runtime in-memory per test, beri paket, verifikasi ZIP. |
 | `integration/auth.test.ts` ★, `billing.test.ts` ★, `ops.test.ts` ★ | Login tiket, pembayaran zeiko + rekonsiliasi, ops API. |

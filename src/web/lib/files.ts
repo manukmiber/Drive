@@ -1,3 +1,4 @@
+import type { FolderColor, FolderDecor } from '../../shared/folder-decor';
 import { api, postJson, sendJson } from './api';
 
 export interface NodeDto {
@@ -20,11 +21,15 @@ export interface NodeDto {
   createdAt: number;
   updatedAt: number;
   clientModifiedAt: number | null;
+  /** Folders only (ADR-058); `coverId` only when this viewer may see that image. */
+  decor: FolderDecor | null;
 }
 
 export interface Crumb {
   id: string;
   name: string;
+  color: FolderColor | null;
+  icon: string | null;
 }
 
 export type SortKey = 'name' | 'updated' | 'size' | 'type';
@@ -71,6 +76,11 @@ export const copyNode = (id: string, targetId?: string) =>
   sendJson<{ node: NodeDto }>('POST', `/api/nodes/${id}/copy`, targetId ? { targetId } : {});
 export const moveNodes = (ids: string[], targetId: string, confirmSpaceChange = false) =>
   sendJson<{ nodes: NodeDto[] }>('POST', '/api/nodes/move', { ids, targetId, confirmSpaceChange });
+/** Colour, icon and cover for folders (ADR-058): `null` clears a part, leaving it out keeps it. */
+export const decorateFolders = (
+  ids: string[],
+  patch: { color?: string | null; icon?: string | null; coverId?: string | null },
+) => postJson<{ nodes: NodeDto[] }>('/api/nodes/decor', { ids, ...patch });
 export const listTrash = () => api<{ items: NodeDto[]; retentionDays: number }>('/api/trash');
 export const emptyTrash = () => sendJson<{ count: number }>('POST', '/api/trash/empty');
 

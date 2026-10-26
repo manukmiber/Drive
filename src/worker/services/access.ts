@@ -28,6 +28,10 @@ export interface NodeRecord {
   created_at: number;
   updated_at: number;
   version: number;
+  /** Folder decoration (ADR-058). */
+  decor_color: string | null;
+  decor_icon: string | null;
+  decor_cover_id: string | null;
 }
 
 export interface Access {

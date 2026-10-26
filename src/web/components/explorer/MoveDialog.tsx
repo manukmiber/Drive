@@ -1,6 +1,7 @@
 // "Pindahkan ke…" folder picker (SPEC §8.2).
 import { useQuery } from '@tanstack/react-query';
-import { ChevronRight, Folder } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
+import { FileIcon } from '../FileIcon';
 import { useState } from 'react';
 import { t } from '../../lib/i18n';
 import { listChildren } from '../../lib/files';
@@ -78,7 +79,7 @@ export function MoveDialog({
               onClick={() => setFolderId(f.id)}
               className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-[var(--bg-subtle)]"
             >
-              <Folder className="h-4 w-4 text-brand-600" />
+              <FileIcon node={f} className="h-4 w-4" />
               <span className="flex-1 truncate">{f.name}</span>
               <ChevronRight className="h-4 w-4 text-[var(--fg-muted)]" />
             </button>

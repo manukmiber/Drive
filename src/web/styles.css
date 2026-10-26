@@ -13,6 +13,26 @@
   }
 }
 
+/* A folder's colour (ADR-058): FolderGlyph sets --dl/--dd, one shade per theme. */
+.decor-color {
+  color: var(--dl);
+  @variant dark {
+    color: var(--dd);
+  }
+}
+.decor-band {
+  background: color-mix(in srgb, var(--dl) 14%, transparent);
+  @variant dark {
+    background: color-mix(in srgb, var(--dd) 18%, transparent);
+  }
+}
+.decor-swatch {
+  background: var(--dl);
+  @variant dark {
+    background: var(--dd);
+  }
+}
+
 @theme {
   --font-sans:
     'InterVariable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;

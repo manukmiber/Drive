@@ -360,6 +360,10 @@ export const nodes = sqliteTable('nodes', {
   createdAt: ms('created_at').notNull(),
   updatedAt: ms('updated_at').notNull(),
   version: integer('version').notNull().default(1),
+  /** Folder decoration (ADR-058): palette name, icon name or emoji, cover file node. */
+  decorColor: text('decor_color'),
+  decorIcon: text('decor_icon'),
+  decorCoverId: text('decor_cover_id'),
 });
 
 export const nodeStars = sqliteTable(

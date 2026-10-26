@@ -57,7 +57,7 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 | D2  | Share ke akun tertentu + "Dibagikan dengan saya" | Wajib   | L      | –          | belum  |
 | D3  | Link minta file (orang lain hanya upload)        | Wajib   | M      | –          | belum  |
 | D4  | Panel Aktivitas (SPEC §8.1, belum dibuat)        | Wajib   | M      | –          | belum  |
-| D5  | Dekorasi folder: warna, ikon, gambar             | Diminta | M      | –          | belum  |
+| D5  | Dekorasi folder: warna, ikon, gambar             | Diminta | M      | –          | selesai (ADR-058) |
 | D6  | Pencarian lanjutan + cari isi file               | Diminta | L      | –          | belum  |
 | D7  | OCR PDF dan foto dokumen                         | Diminta | M      | D6         | belum  |
 | D8  | Galeri foto/video, bisa dicari                   | Diminta | L      | (D6)       | belum  |

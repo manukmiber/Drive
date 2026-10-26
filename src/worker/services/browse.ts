@@ -2,14 +2,14 @@
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { requireNode } from './access';
-import { toDto, type NodeDto } from './nodes';
+import { COVER_SQL, toDto, type NodeDto } from './nodes';
 
 /** Nodes the user may see: own personal space + family spaces they belong to (§9.4). */
 const VISIBLE = `((n.space = 'personal' AND n.owner_id = ?1)
   OR (n.space = 'family' AND n.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?1)))
   AND n.trashed_at IS NULL AND n.status != 'uploading' AND n.parent_id IS NOT NULL`;
 
-const SELECT = `SELECT n.*, b.scan_status, b.thumb_key,
+const SELECT = `SELECT n.*, b.scan_status, b.thumb_key, ${COVER_SQL},
   (SELECT 1 FROM node_stars s WHERE s.node_id = n.id AND s.user_id = ?1) AS starred FROM nodes n
   LEFT JOIN blobs b ON b.id = n.blob_id`;
 

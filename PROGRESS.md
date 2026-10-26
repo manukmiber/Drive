@@ -223,3 +223,9 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   `curl` ke ops API.
 - [ ] Pemilik: migrasi `0011` + deploy Drive, lalu update relay (`bash install.sh` atau tombol update).
 
+## Dekorasi folder (D5, ADR-058, 2026-10-26)
+- [x] Warna (12), ikon (24 atau satu emoji), gambar sampul dari space yang sama; banyak folder sekaligus; hapus.
+- [x] Tampil di explorer, breadcrumb, Pindahkan, cari, banner folder, share publik (tanpa sampul).
+- [x] Dicek di Chrome dev: 360 px terang (EN) dan desktop gelap (ID).
+- [ ] Pemilik: migrasi `0011` + `0012` di D1 remote, deploy.
+

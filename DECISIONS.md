@@ -1327,3 +1327,27 @@ tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.t
 `/api/admin` walau akun lama masih ber-role, laporan lewat ops, legal hold atas nama operator, token review palsu),
 `ads.test.ts` dan `idor.test.ts` (operator lewat ops, gambar base64, sesi biasa tidak bisa membuka `/api/ops`),
 `ops.test.ts` (pemindai), `auth.test.ts` (tidak ada rute passkey/TOTP/second-factor).
+
+## ADR-058 — Dekorasi folder: warna, ikon, gambar sampul
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: roadmap D5).
+
+**Keputusan:**
+- Kolom baru di `nodes` (migrasi `0012`): `decor_color` (12 warna tetap di `src/shared/folder-decor.ts`, tiap warna punya
+  shade terang dan gelap), `decor_icon` (24 ikon lucide atau tepat satu emoji, dicek dengan `Intl.Segmenter`),
+  `decor_cover_id` (node file; tanpa foreign key supaya gambar bisa dihapus).
+- `POST /api/nodes/decor {ids ≤ 100, color?, icon?, coverId?}`: bagian yang tidak dikirim tetap, `null` menghapus. Butuh
+  izin edit di setiap folder; bukan folder root dan bukan folder di Sampah.
+- **Sampul hanya dari space yang sama** (Drive Keluarga yang sama, atau Drive Saya pemilik yang sama), harus gambar
+  `ready` yang punya thumbnail dan tidak dikarantina. Di setiap daftar, `decor.coverId` dihitung ulang di SQL
+  (`COVER_SQL`): kalau gambar dipindah ke space lain, masuk Sampah, dihapus, atau dikarantina, nilainya `null` dan folder
+  kembali ke ikon dan warna. Akses di satu space itu semua-atau-tidak (`access.ts`), jadi "satu space" sama dengan "boleh
+  melihat". Thumbnail tetap dicek sendiri oleh `GET /api/files/:id/thumbnail`. Gambar tanpa thumbnail dibuatkan di
+  browser saat dipilih (`makeAndUploadThumb`).
+- Tampil di daftar/grid explorer, Sampah/Detail (lewat `FileIcon`), breadcrumb (ikon dan warna, desktop), dialog
+  Pindahkan, hasil cari, dan banner tipis saat folder dibuka (sampul, atau pita warna dan ikon). Halaman share publik
+  hanya menampilkan warna dan ikon (SVG lucide dari `lib/folder-icons.ts`), tidak pernah sampul.
+- Ekspor data memuat tiga kolom dekorasi.
+
+**Konsekuensi:** satu subquery per baris folder yang punya sampul. Test: `tests/integration/decor.test.ts`,
+`tests/unit/folder-decor.test.ts`, `shares.test.ts` (badge share), `idor.test.ts`.
+

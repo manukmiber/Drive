@@ -1,6 +1,12 @@
 // File tree operations (SPEC §8.3). Everything is a D1 update — R2 objects are never copied or
 // renamed (opaque keys, SPEC §3). Bulk operations work on subtrees via recursive CTEs (ADR-020).
 import { DAY_MS } from '../../shared/constants';
+import {
+  isFolderColor,
+  isFolderIcon,
+  type FolderColor,
+  type FolderDecor,
+} from '../../shared/folder-decor';
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
@@ -28,13 +34,36 @@ export interface NodeDto {
   createdAt: number;
   updatedAt: number;
   clientModifiedAt: number | null;
+  /** Folders only; null when undecorated (ADR-058). */
+  decor: FolderDecor | null;
 }
 
 type Row = NodeRecord & {
   scan_status?: string | null;
   starred?: number | null;
   thumb_key?: string | null;
+  cover_id?: string | null;
 };
+
+/**
+ * A folder's cover, only when whoever may see the folder may see the image too (ADR-058): a ready
+ * file in the same space (the same family, or the same owner's personal space), not in the trash,
+ * with a thumbnail and not held back by the scanner. Otherwise null, and the folder shows its icon
+ * and colour. Access in a space is all or nothing (`access.ts`), so "same space" is "may see".
+ */
+export const COVER_SQL = `(SELECT c.id FROM nodes c JOIN blobs cb ON cb.id = c.blob_id
+  WHERE c.id = n.decor_cover_id AND c.kind = 'file' AND c.status = 'ready' AND c.trashed_at IS NULL
+    AND c.space = n.space
+    AND ((c.space = 'family' AND c.family_id = n.family_id) OR (c.space = 'personal' AND c.owner_id = n.owner_id))
+    AND cb.thumb_key IS NOT NULL AND cb.scan_status NOT IN ('infected', 'quarantined')) AS cover_id`;
+
+function decorOf(r: Row): FolderDecor | null {
+  if (r.kind !== 'folder') return null;
+  const color = r.decor_color && isFolderColor(r.decor_color) ? r.decor_color : null;
+  const icon = r.decor_icon && isFolderIcon(r.decor_icon) ? r.decor_icon : null;
+  const coverId = r.cover_id ?? null;
+  return color || icon || coverId ? { color, icon, coverId } : null;
+}
 
 export function toDto(r: Row): NodeDto {
   return {
@@ -57,10 +86,11 @@ export function toDto(r: Row): NodeDto {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     clientModifiedAt: r.client_modified_at,
+    decor: decorOf(r),
   };
 }
 
-const SELECT_DTO = `SELECT n.*, b.scan_status, b.thumb_key,
+const SELECT_DTO = `SELECT n.*, b.scan_status, b.thumb_key, ${COVER_SQL},
   (SELECT 1 FROM node_stars s WHERE s.node_id = n.id AND s.user_id = ?1) AS starred
   FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id`;
 
@@ -199,23 +229,35 @@ export async function listChildren(
             : (last.mime ?? '');
     nextCursor = encodeCursor([last.kind === 'folder' ? 0 : 1, key, last.id]);
   }
-  return { folder: toDto(node), items: page.map(toDto), nextCursor };
+  // Through the DTO query, so the open folder carries its cover for the banner (ADR-058).
+  return { folder: await getNodeDto(ctx, userId, node.id), items: page.map(toDto), nextCursor };
 }
 
-export async function breadcrumb(
-  ctx: Ctx,
-  nodeId: string,
-): Promise<Array<{ id: string; name: string }>> {
+export interface Crumb {
+  id: string;
+  name: string;
+  /** The folder's colour and icon (ADR-058); a breadcrumb never shows a cover. */
+  color: FolderColor | null;
+  icon: string | null;
+}
+
+export async function breadcrumb(ctx: Ctx, nodeId: string): Promise<Crumb[]> {
   const { results } = await ctx.env.DB.prepare(
-    `WITH RECURSIVE up(id, parent_id, name, depth) AS (
-       SELECT id, parent_id, name, 0 FROM nodes WHERE id = ?1
-       UNION ALL SELECT n.id, n.parent_id, n.name, up.depth + 1 FROM nodes n JOIN up ON n.id = up.parent_id
+    `WITH RECURSIVE up(id, parent_id, name, color, icon, depth) AS (
+       SELECT id, parent_id, name, decor_color, decor_icon, 0 FROM nodes WHERE id = ?1
+       UNION ALL SELECT n.id, n.parent_id, n.name, n.decor_color, n.decor_icon, up.depth + 1
+         FROM nodes n JOIN up ON n.id = up.parent_id
        WHERE up.depth < 200)
-     SELECT id, name FROM up ORDER BY depth DESC`,
+     SELECT id, name, color, icon FROM up ORDER BY depth DESC`,
   )
     .bind(nodeId)
-    .all<{ id: string; name: string }>();
-  return results;
+    .all<{ id: string; name: string; color: string | null; icon: string | null }>();
+  return results.map((r) => ({
+    id: r.id,
+    name: r.name,
+    color: r.color && isFolderColor(r.color) ? r.color : null,
+    icon: r.icon && isFolderIcon(r.icon) ? r.icon : null,
+  }));
 }
 
 async function isDescendantOrSelf(ctx: Ctx, ancestorId: string, nodeId: string): Promise<boolean> {
@@ -346,6 +388,91 @@ export async function renameNode(
   }
   await markManifestDirty(ctx, node.owner_id);
   return getNodeDto(ctx, userId, node.id);
+}
+
+export interface DecorPatch {
+  color?: string | null;
+  icon?: string | null;
+  coverId?: string | null;
+}
+
+/**
+ * Colour, icon and cover for one or more folders (ADR-058). A part left out stays as it is; `null`
+ * clears it. Needs edit access to every folder. The cover must be a ready image with a thumbnail
+ * that the caller may see, in the same space as each folder, so everyone who sees the folder may
+ * see the image too.
+ */
+export async function decorateFolders(
+  ctx: Ctx,
+  userId: string,
+  ids: string[],
+  patch: DecorPatch,
+): Promise<NodeDto[]> {
+  if (patch.color != null && !isFolderColor(patch.color))
+    throw new AppError('VALIDATION', 'unknown colour', { field: 'color' });
+  if (patch.icon != null && !isFolderIcon(patch.icon))
+    throw new AppError('VALIDATION', 'unknown icon', { field: 'icon' });
+  const folders: NodeRecord[] = [];
+  for (const id of new Set(ids)) {
+    const { node } = await requireNode(ctx, userId, id, 'edit');
+    if (node.kind !== 'folder') throw new AppError('BAD_REQUEST', 'not a folder');
+    if (node.parent_id === null) throw new AppError('FORBIDDEN', 'cannot decorate a root folder');
+    if (node.trashed_at !== null) throw new AppError('CONFLICT', 'folder is in the trash');
+    folders.push(node);
+  }
+  if (patch.coverId) {
+    const { node: img } = await requireNode(ctx, userId, patch.coverId, 'view');
+    const blob =
+      img.kind === 'file' && img.status === 'ready' && img.trashed_at === null
+        ? await ctx.env.DB.prepare(
+            'SELECT thumb_key, scan_status, sniffed_mime FROM blobs WHERE id = ?1',
+          )
+            .bind(img.blob_id)
+            .first<{ thumb_key: string | null; scan_status: string; sniffed_mime: string | null }>()
+        : null;
+    if (
+      !blob ||
+      !(blob.sniffed_mime ?? img.mime ?? '').startsWith('image/') ||
+      blob.scan_status === 'infected' ||
+      blob.scan_status === 'quarantined'
+    )
+      throw new AppError('VALIDATION', 'the cover must be an image', {
+        field: 'coverId',
+        reason: 'COVER_NOT_IMAGE',
+      });
+    if (!blob.thumb_key)
+      throw new AppError('CONFLICT', 'no thumbnail yet', { reason: 'NO_THUMBNAIL' });
+    for (const f of folders) {
+      const same =
+        f.space === img.space &&
+        (f.space === 'family' ? f.family_id === img.family_id : f.owner_id === img.owner_id);
+      if (!same)
+        throw new AppError('VALIDATION', 'the cover must be in the same space as the folder', {
+          field: 'coverId',
+          reason: 'COVER_OTHER_SPACE',
+        });
+    }
+  }
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  for (const [key, col] of [
+    ['color', 'decor_color'],
+    ['icon', 'decor_icon'],
+    ['coverId', 'decor_cover_id'],
+  ] as const) {
+    if (patch[key] === undefined) continue;
+    values.push(patch[key]);
+    sets.push(`${col} = ?${values.length + 1}`);
+  }
+  if (sets.length && folders.length) {
+    const DB = ctx.env.DB;
+    await DB.batch(
+      folders.map((f) =>
+        DB.prepare(`UPDATE nodes SET ${sets.join(', ')} WHERE id = ?1`).bind(f.id, ...values),
+      ),
+    );
+  }
+  return Promise.all(folders.map((f) => getNodeDto(ctx, userId, f.id)));
 }
 
 export async function moveNodes(

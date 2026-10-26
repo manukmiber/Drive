@@ -48,10 +48,12 @@ export function StatusBadge({ node }: { node: NodeDto }) {
 
 function Thumb({ node, big }: { node: NodeDto; big?: boolean }) {
   const [failed, setFailed] = useState(false);
-  if (node.hasThumb && !failed && node.status !== 'rejected') {
+  // A folder's cover is another file's thumbnail (ADR-058).
+  const src = node.kind === 'folder' ? node.decor?.coverId : node.hasThumb ? node.id : null;
+  if (src && !failed && node.status !== 'rejected') {
     return (
       <img
-        src={`/api/files/${node.id}/thumbnail`}
+        src={`/api/files/${src}/thumbnail`}
         alt=""
         loading="lazy"
         onError={() => setFailed(true)}
@@ -358,6 +360,11 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
               </div>
               {node.kind === 'file' && (
                 <div className="mx-2 mb-2 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-[var(--bg-subtle)]">
+                  <Thumb node={node} big />
+                </div>
+              )}
+              {node.kind === 'folder' && node.decor?.coverId && (
+                <div className="mx-2 mb-2 flex aspect-[3/1] items-center justify-center overflow-hidden rounded-xl bg-[var(--bg-subtle)]">
                   <Thumb node={node} big />
                 </div>
               )}

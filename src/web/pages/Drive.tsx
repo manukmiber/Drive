@@ -6,11 +6,19 @@ import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { t } from '../lib/i18n';
 import { AdCard } from '../components/AdCard';
 import { FileView, type View } from '../components/explorer/FileView';
+import { decorVars, FolderGlyph } from '../components/FolderGlyph';
 import { errorText } from '../components/explorer/useNodeActions';
 import { toast } from '../components/ui/Toast';
 import { cn } from '../lib/cn';
 import { setCurrentFolder } from '../lib/explorer-store';
-import { copyNode, filesKeys, listChildren, moveNodes, type SortKey } from '../lib/files';
+import {
+  copyNode,
+  filesKeys,
+  listChildren,
+  moveNodes,
+  type NodeDto,
+  type SortKey,
+} from '../lib/files';
 import { useMe } from '../lib/session';
 import { fromDrop, resolveTargets } from '../upload/folders';
 import { takeSharedFiles, toTargets } from '../upload/share-target';
@@ -22,6 +30,37 @@ function readPref<T extends string>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/**
+ * The open folder's decoration as a thin band under the toolbar (ADR-058): its cover when this
+ * viewer may see it, else its colour and icon. A cover that will not load falls back the same way.
+ */
+function FolderBanner({ decor, name }: { decor: NonNullable<NodeDto['decor']>; name: string }) {
+  const [broken, setBroken] = useState(false);
+  if (decor.coverId && !broken)
+    return (
+      <div className="mx-4 mt-3 h-20 overflow-hidden rounded-2xl bg-[var(--bg-subtle)] md:mx-6 md:h-28">
+        <img
+          src={`/api/files/${decor.coverId}/thumbnail`}
+          alt=""
+          onError={() => setBroken(true)}
+          className="h-full w-full object-cover"
+        />
+      </div>
+    );
+  return (
+    <div
+      className={cn(
+        'mx-4 mt-3 flex h-10 items-center gap-2 rounded-2xl px-4 text-sm font-medium md:mx-6',
+        decor.color ? 'decor-band' : 'bg-[var(--bg-subtle)]',
+      )}
+      style={decorVars(decor.color)}
+    >
+      <FolderGlyph color={decor.color} icon={decor.icon} className="h-5 w-5" />
+      <span className="truncate">{name}</span>
+    </div>
+  );
 }
 
 function writePref(key: string, value: string): void {
@@ -182,7 +221,16 @@ export function Drive({ folderId }: { folderId?: string }) {
                 />
               )}
               {i === path.length - 1 ? (
-                <span className="truncate font-semibold tracking-tight">{nameOf(c)}</span>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  {i > 0 && (c.color || c.icon) && (
+                    <FolderGlyph
+                      color={c.color}
+                      icon={c.icon}
+                      className="hidden h-5 w-5 md:block"
+                    />
+                  )}
+                  <span className="truncate font-semibold tracking-tight">{nameOf(c)}</span>
+                </span>
               ) : i === 0 ? (
                 <Link
                   to={c.id === me.data?.space.familyRootId ? '/keluarga' : '/drive'}
@@ -194,9 +242,16 @@ export function Drive({ folderId }: { folderId?: string }) {
                 <Link
                   to="/drive/$folderId"
                   params={{ folderId: c.id }}
-                  className="truncate rounded px-1 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]"
+                  className="flex min-w-0 items-center gap-1 rounded px-1 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]"
                 >
-                  {c.name}
+                  {(c.color || c.icon) && (
+                    <FolderGlyph
+                      color={c.color}
+                      icon={c.icon}
+                      className="hidden h-4 w-4 md:block"
+                    />
+                  )}
+                  <span className="truncate">{c.name}</span>
                 </Link>
               )}
             </span>
@@ -223,6 +278,10 @@ export function Drive({ folderId }: { folderId?: string }) {
           </button>
         </div>
       </div>
+
+      {folder?.decor && folder.parentId && (
+        <FolderBanner key={folder.id} decor={folder.decor} name={folderName} />
+      )}
 
       {q.isPending && <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>}
       {q.isError && <p className="p-6 text-sm text-red-600">{errorText(q.error)}</p>}

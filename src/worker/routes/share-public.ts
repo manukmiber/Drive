@@ -10,6 +10,7 @@ import { requestLang, strings } from '../lib/lang';
 import { track } from '../lib/analytics';
 import { hashIp, hmacBase62, sha256Hex, timingSafeEqual } from '../lib/crypto';
 import { contentDisposition, parseRange } from '../lib/http';
+import { folderBadge } from '../lib/folder-icons';
 import { isPreviewBot, page } from '../lib/pages';
 import { shareAdHtml } from './ads';
 import { serveObject } from '../lib/serve';
@@ -124,6 +125,7 @@ function listingPage(
   files: TreeFile[],
   totalBytes: number,
   ad: string,
+  badge: string,
 ): Response {
   const lang = requestLang(c.req.raw);
   const tr = strings(lang);
@@ -141,7 +143,7 @@ function listingPage(
   const zipUrl = `${base}/${encodeURIComponent(share.title)}?all=1`;
   return page(
     share.title,
-    `<h1>${escapeHtml(share.title)}</h1><p>${escapeHtml(tr.share.listingSummary(files.length, formatBytes(totalBytes)))}</p>
+    `<h1>${badge}${escapeHtml(share.title)}</h1><p>${escapeHtml(tr.share.listingSummary(files.length, formatBytes(totalBytes)))}</p>
 <a class="btn" href="${escapeHtml(zipUrl)}">${escapeHtml(tr.share.downloadAllZip)}</a>
 <ul class="files">${rows}</ul>${more}`,
     {
@@ -152,6 +154,17 @@ function listingPage(
       reportUrl: appPath(c.env, `/lapor?share=${share.id}`),
     },
   );
+}
+
+/** A shared folder's colour and icon (ADR-058); never its cover. */
+async function folderDecorBadge(c: Context<AppBindings>, shareId: string): Promise<string> {
+  const row = await c.env.DB.prepare(
+    `SELECT n.decor_color, n.decor_icon FROM share_items i JOIN nodes n ON n.id = i.node_id
+     WHERE i.share_id = ?1 AND n.kind = 'folder' LIMIT 1`,
+  )
+    .bind(shareId)
+    .first<{ decor_color: string | null; decor_icon: string | null }>();
+  return row ? folderBadge(row.decor_color, row.decor_icon) : '';
 }
 
 type Gate = { share: ShareRow; fp: string } | { response: Response };
@@ -297,6 +310,7 @@ export const sharePublic = new Hono<AppBindings>()
         tree.files,
         tree.totalBytes,
         await shareAdHtml(c, share.created_by),
+        share.kind === 'folder' ? await folderDecorBadge(c, share.id) : '',
       );
     }
 

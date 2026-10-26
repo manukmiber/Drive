@@ -175,6 +175,16 @@ describe('share links (SPEC §6.1)', () => {
     expect(html).not.toContain('<Liburan>');
     expect(html).toContain('pantai.txt');
     expect(html).toContain('Album &lt;Liburan&gt;/Hari 2');
+    expect(html).not.toContain('class="decor"');
+    // A decorated folder shows its colour and icon, never a cover (ADR-058).
+    rt.d1.sqlite
+      .prepare("UPDATE nodes SET decor_color = 'teal', decor_icon = 'camera', decor_cover_id = ? WHERE id = ?")
+      .run(a.id, folder.id);
+    const decorated = await (await visit(rt, sh.url)).text();
+    expect(decorated).toMatch(/<span class="decor" style="--dl:#0f766e;--dd:#2dd4bf"><svg [^>]+>.*<\/svg><\/span>Album/);
+    expect(decorated).not.toContain('thumbnail');
+    rt.d1.sqlite.prepare("UPDATE nodes SET decor_icon = '🏖️' WHERE id = ?").run(folder.id);
+    expect(await (await visit(rt, sh.url)).text()).toContain('<span aria-hidden="true">🏖️</span>');
     const count = () =>
       (
         rt.d1.sqlite.prepare('SELECT download_count FROM shares WHERE id = ?').get(sh.id) as {

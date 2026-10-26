@@ -11,6 +11,7 @@ import {
   breadcrumb,
   copyFile,
   createFolder,
+  decorateFolders,
   deleteForever,
   emptyTrash,
   getNodeDto,
@@ -163,6 +164,24 @@ export const nodes = new Hono<AppBindings>()
       nodes: await restoreNodes(c.get('ctx'), c.get('user')!.id, c.req.valid('json').ids),
     });
   })
+  // Folder decoration (ADR-058): any of colour, icon, cover; null clears, left out keeps.
+  .post(
+    '/nodes/decor',
+    validate(
+      'json',
+      ids.extend({
+        color: z.string().max(20).nullable().optional(),
+        icon: z.string().max(32).nullable().optional(),
+        coverId: id.nullable().optional(),
+      }),
+    ),
+    async (c) => {
+      const { ids: targets, ...patch } = c.req.valid('json');
+      return c.json({
+        nodes: await decorateFolders(c.get('ctx'), c.get('user')!.id, targets, patch),
+      });
+    },
+  )
   .post('/nodes/delete', validate('json', ids), async (c) => {
     return c.json({
       count: await deleteForever(c.get('ctx'), c.get('user')!.id, c.req.valid('json').ids),

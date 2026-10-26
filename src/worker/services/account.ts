@@ -56,7 +56,7 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
       userId,
     ),
     files: await q(
-      `SELECT id, parent_id, kind, name, size, mime, created_at, updated_at, trashed_at FROM nodes
+      `SELECT id, parent_id, kind, name, size, mime, decor_color, decor_icon, decor_cover_id, created_at, updated_at, trashed_at FROM nodes
        WHERE owner_id = ?1 AND space = 'personal' ORDER BY created_at LIMIT 100000`,
       userId,
     ),

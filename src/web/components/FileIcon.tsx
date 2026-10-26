@@ -7,12 +7,11 @@ import {
   FileSpreadsheet,
   FileText,
   FileVideo,
-  Folder,
 } from 'lucide-react';
 import type { NodeDto } from '../lib/files';
+import { FolderGlyph } from './FolderGlyph';
 
-export function iconFor(node: Pick<NodeDto, 'kind' | 'mime' | 'name'>) {
-  if (node.kind === 'folder') return { Icon: Folder, color: 'text-brand-600' };
+export function iconFor(node: Pick<NodeDto, 'mime' | 'name'>) {
   const m = node.mime ?? '';
   const ext = node.name.split('.').pop()?.toLowerCase() ?? '';
   if (m.startsWith('image/')) return { Icon: FileImage, color: 'text-rose-500' };
@@ -37,9 +36,11 @@ export function FileIcon({
   node,
   className = 'h-5 w-5',
 }: {
-  node: Pick<NodeDto, 'kind' | 'mime' | 'name'>;
+  node: Pick<NodeDto, 'kind' | 'mime' | 'name'> & { decor?: NodeDto['decor'] };
   className?: string;
 }) {
+  if (node.kind === 'folder')
+    return <FolderGlyph color={node.decor?.color} icon={node.decor?.icon} className={className} />;
   const { Icon, color } = iconFor(node);
   return <Icon className={`${className} ${color} shrink-0`} aria-hidden="true" />;
 }

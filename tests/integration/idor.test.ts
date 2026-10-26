@@ -124,7 +124,7 @@ describe('IDOR (SPEC §14.1)', () => {
       JSON.stringify([
         rt.d1.sqlite
           .prepare(
-            'SELECT id, parent_id, name, trashed_at, status, blob_id FROM nodes WHERE owner_id = ? ORDER BY id',
+            'SELECT id, parent_id, name, trashed_at, status, blob_id, decor_color, decor_icon, decor_cover_id FROM nodes WHERE owner_id = ? ORDER BY id',
           )
           .all(a.userId),
         rt.d1.sqlite
@@ -146,6 +146,8 @@ describe('IDOR (SPEC §14.1)', () => {
           .prepare('SELECT name, user_id, public, cors_json FROM s3_buckets ORDER BY name')
           .all(),
       ]);
+    // B's own folder, to try A's photo as its cover (ADR-058).
+    const bFolder = await createFolder(b, bRoot, 'Punya B');
     const before = snapshot();
     const body = (bytes: Uint8Array) => ({
       body: bytes,
@@ -158,6 +160,8 @@ describe('IDOR (SPEC §14.1)', () => {
     const attempts: Array<[string, string, unknown?, RequestInit?]> = [
       ['GET', `/api/nodes/${file.id}`],
       ['GET', `/api/nodes/${folder.id}/children`],
+      ['POST', '/api/nodes/decor', { ids: [folder.id], color: 'red' }],
+      ['POST', '/api/nodes/decor', { ids: [bFolder.id], coverId: file.id }],
       ['PATCH', `/api/nodes/${file.id}`, { name: 'dicuri.txt' }],
       ['POST', '/api/nodes/move', { ids: [file.id], targetId: bRoot }],
       [

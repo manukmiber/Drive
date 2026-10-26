@@ -18,6 +18,7 @@ import {
   ImageIcon,
   Info,
   Minimize2,
+  Palette,
   Pencil,
   Share2,
   Star,
@@ -58,6 +59,7 @@ import { Dialog, PromptDialog } from '../ui/Dialog';
 import type { MenuItem } from '../ui/Menu';
 import { toast } from '../ui/Toast';
 import { CompressDialog } from './CompressDialog';
+import { DecorDialog } from './DecorDialog';
 import { Details } from './Details';
 import { MoveDialog } from './MoveDialog';
 import { Preview } from './Preview';
@@ -89,6 +91,7 @@ export function useNodeActions(items: NodeDto[]) {
   const [details, setDetails] = useState<string | null>(null);
   const [sharing, setSharing] = useState<NodeDto[] | null>(null);
   const [compressing, setCompressing] = useState<NodeDto[] | null>(null);
+  const [decorating, setDecorating] = useState<NodeDto[] | null>(null);
   const [editing, setEditing] = useState<EditRequest | null>(null);
   /** Opens the editor for one Drive file (from the preview). */
   const edit = useCallback((node: NodeDto) => {
@@ -290,6 +293,8 @@ export function useNodeActions(items: NodeDto[]) {
         icon: FileCode2,
         onSelect: () => setEditing({ tool: 'text', nodes: files, files: [] }),
       });
+    if (nodes.length && nodes.every((n) => n.kind === 'folder'))
+      list.push({ label: t.decor.action, icon: Palette, onSelect: () => setDecorating(nodes) });
     list.push({ label: t.files.moveTo, icon: FolderInput, onSelect: () => setMoving(ids) });
     if (single)
       list.push({
@@ -383,6 +388,13 @@ export function useNodeActions(items: NodeDto[]) {
       {details && <Details id={details} onClose={() => setDetails(null)} />}
       {sharing && <ShareDialog nodes={sharing} onClose={() => setSharing(null)} />}
       {compressing && <CompressDialog nodes={compressing} onClose={() => setCompressing(null)} />}
+      {decorating && (
+        <DecorDialog
+          folders={decorating}
+          onClose={() => setDecorating(null)}
+          onSaved={() => void refresh()}
+        />
+      )}
     </>
   );
 
