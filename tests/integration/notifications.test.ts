@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { makeRuntime } from '../helpers/runtime';
 import { signIn } from '../helpers/session';
 import { grantPlan, rootOf, uploadText } from '../helpers/files';
+import { noticesOf } from '../helpers/notices';
+import { CRON } from '../../src/shared/constants';
 
 const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
 
@@ -94,5 +96,66 @@ describe('notifications (SPEC §13.2)', () => {
       emailLocked: true,
     });
     expect(prefs.items.some((p) => 'telegram' in p)).toBe(false);
+  });
+});
+
+describe('notices moved to the relay (ADR-064)', () => {
+  it('brings the old D1 rows over and empties the tables', async () => {
+    const rt = await makeRuntime();
+    const s = await signIn(rt, 'pindah@example.com');
+    const hash = 'c'.repeat(64);
+    rt.d1.sqlite
+      .prepare(
+        `INSERT INTO notifications (id, user_id, type, payload_json, read_at, created_at) VALUES ('old1', ?, 'quota', '{"pct":80}', 7, 5)`,
+      )
+      .run(s.userId);
+    rt.d1.sqlite
+      .prepare(
+        `INSERT INTO notification_prefs (user_id, type, channel, enabled) VALUES (?, 'quota', 'email', 0)`,
+      )
+      .run(s.userId);
+    rt.d1.sqlite
+      .prepare(
+        `INSERT INTO email_suppressions (email_hash, reason, created_at) VALUES (?, 'unsubscribe', 1)`,
+      )
+      .run(hash);
+    const { ran, failed } = await rt.runCron(CRON.hourly);
+    expect(failed).toEqual([]);
+    expect(ran).toContain('move_notices_to_relay');
+    for (const t of ['notifications', 'notification_prefs', 'email_suppressions'])
+      expect(rt.d1.sqlite.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get()).toEqual({ n: 0 });
+    expect(await noticesOf(rt, s.userId)).toMatchObject([
+      { id: 'old1', type: 'quota', payload: { pct: 80 }, read_at: 7 },
+    ]);
+    const prefs = (await (await s.req('GET', '/api/notifications/prefs')).json()) as {
+      items: Array<{ type: string; email: boolean }>;
+    };
+    expect(prefs.items.find((p) => p.type === 'quota')?.email).toBe(false);
+    expect(await rt.kv.get(`dev:suppressed:${hash}`)).toBe('1');
+  });
+
+  it('delivers a notice queued before the move from the old table', async () => {
+    const rt = await makeRuntime();
+    const s = await signIn(rt, 'antre@example.com');
+    rt.d1.sqlite
+      .prepare(
+        `INSERT INTO notifications (id, user_id, type, payload_json, created_at) VALUES ('legacy1', ?, 'archive_ready', '{"name":"a.zip","bytes":5}', 9)`,
+      )
+      .run(s.userId);
+    await rt.env.NOTIFY_QUEUE.send({ type: 'notification', notificationId: 'legacy1' });
+    expect((await noticesOf(rt, s.userId)).map((n) => n.id)).toEqual(['legacy1']);
+    expect(rt.d1.sqlite.prepare('SELECT COUNT(*) AS n FROM notifications').get()).toEqual({
+      n: 0,
+    });
+  });
+
+  it('dropped the tables nothing used', async () => {
+    const rt = await makeRuntime();
+    const names = rt.d1.sqlite
+      .prepare(
+        `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('telegram_links', 'contacts')`,
+      )
+      .all();
+    expect(names).toEqual([]);
   });
 });

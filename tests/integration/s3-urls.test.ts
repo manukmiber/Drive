@@ -18,6 +18,7 @@ import { refreshPendingUrls, releaseLapsedUrls } from '../../src/worker/services
 import { APP, makeRuntime } from '../helpers/runtime';
 import { OPS_KEY, RuntimeHandler, S3_ORIGIN, s3Client } from '../helpers/s3';
 import { signIn, type Session } from '../helpers/session';
+import { noticesOf } from '../helpers/notices';
 
 const wib = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d) - WIB_OFFSET_MS;
 
@@ -234,10 +235,8 @@ describe('own Zeiko S3 addresses', () => {
     clock.set(end + 30 * DAY_MS + 1);
     expect(await releaseLapsedUrls(ctx())).toBe(1);
     expect(rt.d1.sqlite.prepare('SELECT COUNT(*) AS n FROM s3_urls').get()).toEqual({ n: 0 });
-    const told = rt.d1.sqlite
-      .prepare(`SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND type = ?`)
-      .get(user.userId, 's3_url_released') as { n: number };
-    expect(told.n).toBe(1);
+    const told = (await noticesOf(rt, user.userId)).filter((n) => n.type === 's3_url_released');
+    expect(told).toHaveLength(1);
 
     await buy(rt, user, { kind: 's3_renew' });
     expect(await buy(rt, user, { kind: 's3_url', url: { type: 'zeiko', name: 'telat' } })).toBe(

@@ -12,9 +12,10 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
   perubahan massal jadi satu tulis.
 - **Drive tidak memakai D1.** Akun, paket, pembayaran, dan data operator di relay. D1 hanya untuk Zeiko S3 (tidak
   berubah: 1 user, 1 D1 pengganti index.txt, ADR-044), plus satu **D1 khusus akses** terpisah untuk sesi login, token
-  API/OAuth, dan link share (jawaban R0, ADR-064). Pohon file dan nama file tidak pernah masuk D1.
+  API/OAuth, dan link share (jawaban R0, ADR-064). Pohon file dan nama file tidak pernah masuk D1. Notifikasi,
+  saklar email, dan berhenti berlangganan disimpan relay (ADR-065, `adapters/notices.ts`).
 - **Kode sekarang belum begitu:** Drive masih memakai D1 (`nodes`, `blobs`, `shares`, sesi, token, dll.). Pindahnya
-  bertahap lewat **fase R di `docs/ROADMAP.md`**, R0 sudah dijawab (ADR-064), kecuali no. 3 (notifikasi).
+  bertahap lewat **fase R di `docs/ROADMAP.md`**, R0 sudah dijawab semua (ADR-064).
   Sampai pindah selesai: **jangan menambah tabel atau kolom D1 untuk Drive**, dan fitur Drive baru di roadmap dibekukan sampai R3
   selesai (keputusan pemilik; fitur S3 boleh jalan).
 

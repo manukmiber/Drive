@@ -586,7 +586,8 @@ aktor `relay-operator`.
 - **Config editor** (harga, kurs, limit, feature flag) dan **audit log viewer**.
 
 ### 13.2 Notifikasi
-- Kanal: in-app (lonceng), email, Telegram (kalau tertaut). Preferensi per jenis dan kanal di Pengaturan.
+- Kanal: in-app (lonceng) dan email (Telegram dicabut ADR-041). Preferensi email per jenis di Pengaturan. Disimpan
+  relay, bukan D1 Drive (ADR-065).
 - Event: file ditolak pemindai, kuota 80/95/100%, pengingat tagihan, pembayaran sukses/gagal, arsip siap, kompres selesai, undangan keluarga, iklan disetujui/ditolak, ringkasan harian iklan.
 
 ### 13.3 Observability

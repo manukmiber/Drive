@@ -14,7 +14,7 @@ import { ulid } from '../lib/ids';
 import { log } from '../lib/log';
 import { ensurePersonalSpace } from './accounts';
 import { payCampaignFromWallet } from './ads';
-import { notificationStmt, notify } from './notify';
+import { notify } from './notify';
 import {
   buyS3Plan,
   quoteS3Plan,
@@ -915,16 +915,17 @@ export async function renewDueSubscriptions(
   let failed = 0;
   for (const sub of results) {
     const toGrace = async (reason: string) => {
-      await DB.batch([
-        DB.prepare(
-          `UPDATE subscriptions SET status = 'grace', status_changed_at = ?2, updated_at = ?3 WHERE id = ?1 AND status = 'active'`,
-        ).bind(sub.id, sub.period_end, now),
-        notificationStmt(ctx, sub.payer_user_id, 'renewal_failed', {
+      const moved = await DB.prepare(
+        `UPDATE subscriptions SET status = 'grace', status_changed_at = ?2, updated_at = ?3 WHERE id = ?1 AND status = 'active'`,
+      )
+        .bind(sub.id, sub.period_end, now)
+        .run();
+      if (moved.meta.changes === 1)
+        await notify(ctx, sub.payer_user_id, 'renewal_failed', {
           stage: 'grace',
           reason,
           deleteAt: sub.period_end + (await ctx.config()).dunning.delete_after_days * DAY_MS,
-        }).stmt,
-      ]);
+        });
       failed++;
     };
     if (sub.cancel_at_period_end || !sub.auto_renew) {

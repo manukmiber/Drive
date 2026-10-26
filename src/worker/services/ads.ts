@@ -20,13 +20,7 @@ import { hmacBase62, timingSafeEqual } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { randomBase62, ulid } from '../lib/ids';
 import { AD_CONTACT } from '../../shared/constants';
-import {
-  invoiceStmts,
-  openPayment,
-  walletBalance,
-  walletStmts,
-  withTax,
-} from './billing';
+import { invoiceStmts, openPayment, walletBalance, walletStmts, withTax } from './billing';
 import { notify } from './notify';
 import { appPath } from '../lib/paths';
 
@@ -486,7 +480,15 @@ async function auditAd(
   await ctx.env.DB.prepare(
     `INSERT INTO audit_logs (id, actor_id, action, target_type, target_id, meta_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
   )
-    .bind(ulid(ctx.now()), actorId, action, targetType, targetId, JSON.stringify(meta ?? null), ctx.now())
+    .bind(
+      ulid(ctx.now()),
+      actorId,
+      action,
+      targetType,
+      targetId,
+      JSON.stringify(meta ?? null),
+      ctx.now(),
+    )
     .run();
 }
 
@@ -543,7 +545,12 @@ export async function reviewCreative(
     `UPDATE ad_creatives SET status = ?2, reject_reason = ?3, reviewed_at = ?4, updated_at = ?4
      WHERE id = ?1 AND status = 'pending'`,
   )
-    .bind(id, decision === 'approve' ? 'approved' : 'rejected', decision === 'reject' ? reason : null, now)
+    .bind(
+      id,
+      decision === 'approve' ? 'approved' : 'rejected',
+      decision === 'reject' ? reason : null,
+      now,
+    )
     .run();
   if (!res.meta.changes) throw new AppError('CONFLICT', 'CREATIVE_STATE');
   const { results: waiting } = await DB.prepare(
@@ -599,7 +606,9 @@ export async function suspendCreative(
   const now = ctx.now();
   const today = wibDate(now);
   const DB = ctx.env.DB;
-  const c = await DB.prepare('SELECT * FROM ad_creatives WHERE id = ?1').bind(id).first<CreativeRow>();
+  const c = await DB.prepare('SELECT * FROM ad_creatives WHERE id = ?1')
+    .bind(id)
+    .first<CreativeRow>();
   if (!c) throw new AppError('NOT_FOUND', 'creative not found');
   const refund = severe ? cfg.ad_refund_on_suspend.severe : cfg.ad_refund_on_suspend.other;
   const { results } = await DB.prepare(
@@ -628,7 +637,8 @@ export async function suspendCreative(
       `UPDATE ad_campaigns SET status = 'cancelled', reason = ?2, updated_at = ?3 WHERE creative_id = ?1 AND status IN ('pending', 'awaiting_payment')`,
     ).bind(id, reason, now),
   ];
-  if (amount > 0) stmts.push(...walletStmts(ctx, c.advertiser_id, amount, 'ad_refund', `suspend:${id}:${now}`));
+  if (amount > 0)
+    stmts.push(...walletStmts(ctx, c.advertiser_id, amount, 'ad_refund', `suspend:${id}:${now}`));
   await DB.batch(stmts);
   await auditAd(ctx, actorId, 'ad.suspend', 'ad_creative', id, {
     severe,
@@ -751,13 +761,18 @@ export async function createCampaign(
       now,
     ),
     ...areas.map((code) =>
-      DB.prepare('INSERT INTO ad_campaign_areas (campaign_id, area_code) VALUES (?1, ?2)').bind(id, code),
+      DB.prepare('INSERT INTO ad_campaign_areas (campaign_id, area_code) VALUES (?1, ?2)').bind(
+        id,
+        code,
+      ),
     ),
     DB.prepare(
       `UPDATE ad_creatives SET status = 'pending', updated_at = ?2 WHERE id = ?1 AND status = 'draft'`,
     ).bind(c.id, now),
   ]);
-  const k = (await DB.prepare('SELECT * FROM ad_campaigns WHERE id = ?1').bind(id).first<CampaignRow>())!;
+  const k = (await DB.prepare('SELECT * FROM ad_campaigns WHERE id = ?1')
+    .bind(id)
+    .first<CampaignRow>())!;
   await auditAd(ctx, actorId, 'ad.campaign_create', 'ad_campaign', id, {
     creativeId: c.id,
     scope: input.scope,
@@ -768,7 +783,9 @@ export async function createCampaign(
   });
   if (status === 'awaiting_payment') {
     await sendCampaignPayment(ctx, id);
-    return (await DB.prepare('SELECT * FROM ad_campaigns WHERE id = ?1').bind(id).first<CampaignRow>())!;
+    return (await DB.prepare('SELECT * FROM ad_campaigns WHERE id = ?1')
+      .bind(id)
+      .first<CampaignRow>())!;
   }
   return k;
 }
@@ -820,7 +837,10 @@ export async function listCampaigns(ctx: Ctx, status?: AdCampaignStatus) {
     businessName: k.business_name,
     advertiserKind: k.advertiser_kind,
     advertiserEmail: k.advertiser_email,
-    areas: (k.area_codes ?? '').split(',').filter(Boolean).map((code) => areaRef(index, code)),
+    areas: (k.area_codes ?? '')
+      .split(',')
+      .filter(Boolean)
+      .map((code) => areaRef(index, code)),
     impressions: k.impressions,
     clicks: k.clicks,
   }));
@@ -858,7 +878,9 @@ async function requireCampaign(ctx: Ctx, id: string): Promise<CampaignRow> {
 }
 
 async function requireOwnCampaign(ctx: Ctx, userId: string, id: string): Promise<CampaignRow> {
-  const k = await ctx.env.DB.prepare('SELECT * FROM ad_campaigns WHERE id = ?1 AND advertiser_id = ?2')
+  const k = await ctx.env.DB.prepare(
+    'SELECT * FROM ad_campaigns WHERE id = ?1 AND advertiser_id = ?2',
+  )
     .bind(id, userId)
     .first<CampaignRow>();
   if (!k) throw new AppError('NOT_FOUND', 'campaign not found');
@@ -899,7 +921,12 @@ export async function payCampaignFromWallet(
   const inv = await invoiceStmts(
     ctx,
     userId,
-    [{ label: `Iklan · ${where} · ${k.start_date} s.d. ${k.end_date} (${k.days} hari)`, amountIdr: k.total_idr }],
+    [
+      {
+        label: `Iklan · ${where} · ${k.start_date} s.d. ${k.end_date} (${k.days} hari)`,
+        amountIdr: k.total_idr,
+      },
+    ],
     null,
   );
   const DB = ctx.env.DB;
@@ -934,13 +961,18 @@ async function qrToken(ctx: Ctx, k: Pick<CampaignRow, 'id' | 'payment_id'>): Pro
   return hmacBase62(ctx.env.DOWNLOAD_SECRET, `adq|${k.id}|${k.payment_id ?? ''}`, 22);
 }
 
-export async function campaignQrUrl(ctx: Ctx, k: Pick<CampaignRow, 'id' | 'payment_id'>): Promise<string> {
+export async function campaignQrUrl(
+  ctx: Ctx,
+  k: Pick<CampaignRow, 'id' | 'payment_id'>,
+): Promise<string> {
   return `${ctx.env.APP_ORIGIN}/ad/qr/${k.id}.png?t=${await qrToken(ctx, k)}`;
 }
 
 /** The QRIS a waiting campaign's email shows, as text to draw; null once it is paid or gone. */
 export async function campaignQris(ctx: Ctx, id: string, token: string): Promise<string | null> {
-  const k = await ctx.env.DB.prepare('SELECT * FROM ad_campaigns WHERE id = ?1').bind(id).first<CampaignRow>();
+  const k = await ctx.env.DB.prepare('SELECT * FROM ad_campaigns WHERE id = ?1')
+    .bind(id)
+    .first<CampaignRow>();
   if (!k?.pay_qris || k.status !== 'awaiting_payment') return null;
   return timingSafeEqual(token, await qrToken(ctx, k)) ? k.pay_qris : null;
 }
@@ -999,7 +1031,14 @@ export async function sendCampaignPayment(
     await DB.prepare(
       `UPDATE ad_campaigns SET payment_id = ?2, pay_amount_idr = ?3, pay_qris = ?4, pay_url = ?5, updated_at = ?6 WHERE id = ?1`,
     )
-      .bind(k.id, payment.paymentId, payment.amountIdr, payment.qrString, payment.checkoutUrl, ctx.now())
+      .bind(
+        k.id,
+        payment.paymentId,
+        payment.amountIdr,
+        payment.qrString,
+        payment.checkoutUrl,
+        ctx.now(),
+      )
       .run();
     await notify(ctx, k.advertiser_id, 'ad_status', {
       ...base,
@@ -1126,7 +1165,12 @@ async function candidates(ctx: Ctx, date: string, area: string): Promise<Candida
   return results;
 }
 
-async function impressionToken(ctx: Ctx, campaignId: string, date: string, area: string): Promise<string> {
+async function impressionToken(
+  ctx: Ctx,
+  campaignId: string,
+  date: string,
+  area: string,
+): Promise<string> {
   return hmacBase62(ctx.env.DOWNLOAD_SECRET, `adi|${campaignId}|${date}|${area}`, 22);
 }
 
@@ -1167,11 +1211,7 @@ async function pool(
   return out;
 }
 
-async function adDto(
-  ctx: Ctx,
-  x: Candidate & { area: string },
-  index: AreaIndex,
-): Promise<AdDto> {
+async function adDto(ctx: Ctx, x: Candidate & { area: string }, index: AreaIndex): Promise<AdDto> {
   return {
     campaignId: x.campaignId,
     creativeId: x.creativeId,
@@ -1236,8 +1276,14 @@ export async function serveRotation(
     turns.push(dtos[best]!);
   }
   const start = Math.floor(Math.random() * turns.length);
-  track(ctx.env.ANALYTICS, 'ad_impression', { index: chain[0] ?? 'ID', blobs: ['served', placement] });
-  return { ads: [...turns.slice(start), ...turns.slice(0, start)], rotateSeconds: cfg.ad_rotate_seconds };
+  track(ctx.env.ANALYTICS, 'ad_impression', {
+    index: chain[0] ?? 'ID',
+    blobs: ['served', placement],
+  });
+  return {
+    ads: [...turns.slice(start), ...turns.slice(0, start)],
+    rotateSeconds: cfg.ad_rotate_seconds,
+  };
 }
 
 /** One ad, for a page with no script to rotate it (the share pages): a weighted random pick. */
@@ -1260,7 +1306,10 @@ export async function serveAd(
       break;
     }
   }
-  track(ctx.env.ANALYTICS, 'ad_impression', { index: chain[0] ?? 'ID', blobs: ['served', placement] });
+  track(ctx.env.ANALYTICS, 'ad_impression', {
+    index: chain[0] ?? 'ID',
+    blobs: ['served', placement],
+  });
   return adDto(ctx, pick, await areaIndex(ctx));
 }
 
@@ -1280,7 +1329,8 @@ export async function recordImpression(
   )
     .bind(campaignId, date, area)
     .run();
-  if (res.meta.changes) track(ctx.env.ANALYTICS, 'ad_impression', { index: campaignId, blobs: ['viewed'] });
+  if (res.meta.changes)
+    track(ctx.env.ANALYTICS, 'ad_impression', { index: campaignId, blobs: ['viewed'] });
   return res.meta.changes === 1;
 }
 
@@ -1404,7 +1454,13 @@ export async function advertiserDashboard(ctx: Ctx, userId: string) {
        JOIN ad_campaigns k ON k.id = s.campaign_id WHERE k.advertiser_id = ?1 ORDER BY s.date`,
     )
       .bind(userId)
-      .all<{ campaign_id: string; date: string; area_code: string; impressions: number; clicks: number }>(),
+      .all<{
+        campaign_id: string;
+        date: string;
+        area_code: string;
+        impressions: number;
+        clicks: number;
+      }>(),
   ]);
   const ctr = (i: number, c: number) => (i ? c / i : 0);
   return {
@@ -1431,13 +1487,19 @@ export async function advertiserDashboard(ctx: Ctx, userId: string) {
           ...campaignDto(k),
           title: k.title,
           payIdr: await withTax(ctx, k.total_idr),
-          areas: areas.filter((a) => a.campaign_id === k.id).map((a) => areaRef(index, a.area_code)),
+          areas: areas
+            .filter((a) => a.campaign_id === k.id)
+            .map((a) => areaRef(index, a.area_code)),
           impressions,
           clicks,
           ctr: ctr(impressions, clicks),
           byDay: [...byDay].map(([date, v]) => ({ date, ...v, ctr: ctr(v.impressions, v.clicks) })),
           byArea: [...byArea]
-            .map(([code, v]) => ({ ...areaRef(index, code), ...v, ctr: ctr(v.impressions, v.clicks) }))
+            .map(([code, v]) => ({
+              ...areaRef(index, code),
+              ...v,
+              ctr: ctr(v.impressions, v.clicks),
+            }))
             .sort((a, b) => b.impressions - a.impressions),
         };
       }),

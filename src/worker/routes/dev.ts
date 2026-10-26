@@ -13,7 +13,15 @@ const DEMO = ['demo@zeiko.local', 'max@zeiko.local', 'baru@zeiko.local'];
 /** The Zeiko Account a dev email stands for: a stable id per address. */
 export function devAccount(email: string): ZeikoAccount {
   const slug = email.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-  return { id: `zk_${slug}`, email, username: slug.slice(0, 30), name: email.split('@')[0] ?? email, emailVerified: true, city: 'Bandung', postalCode: '40115' };
+  return {
+    id: `zk_${slug}`,
+    email,
+    username: slug.slice(0, 30),
+    name: email.split('@')[0] ?? email,
+    emailVerified: true,
+    city: 'Bandung',
+    postalCode: '40115',
+  };
 }
 
 /**
@@ -54,7 +62,10 @@ export const dev = new Hono<AppBindings>()
   .post('/door/v1/ticket', async (c) => {
     const email = getCookie(c, DOOR_COOKIE);
     if (!email) return c.json({ error: { code: 'signed_out', message: 'Sign in first.' } }, 401);
-    return c.json({ ticket: await MockZeikoAccounts.issue(c.env.CONFIG_KV, devAccount(email)), expiresIn: 120 });
+    return c.json({
+      ticket: await MockZeikoAccounts.issue(c.env.CONFIG_KV, devAccount(email)),
+      expiresIn: 120,
+    });
   })
   .post('/door/v1/logout', (c) => {
     deleteCookie(c, DOOR_COOKIE, { path: '/' });
@@ -66,8 +77,19 @@ export const dev = new Hono<AppBindings>()
     return c.json({
       account: devAccount(email),
       // The shape of the real door's /v1/account, as far as the AI Decision page reads it.
-      plan: { id: 'welcome', name: 'Welcome', paygo: false, requests: 100, expiresAt: Date.now() + 20 * 86_400_000 },
-      usage: { used: 27, amount: 100, periodStart: Date.now() - 86_400_000, resetsAt: Date.now() + 29 * 86_400_000 },
+      plan: {
+        id: 'welcome',
+        name: 'Welcome',
+        paygo: false,
+        requests: 100,
+        expiresAt: Date.now() + 20 * 86_400_000,
+      },
+      usage: {
+        used: 27,
+        amount: 100,
+        periodStart: Date.now() - 86_400_000,
+        resetsAt: Date.now() + 29 * 86_400_000,
+      },
       balance: { micro: 2_500_000, text: '$2.50', shared: true },
       key: { id: 'key_dev', masked: 'zk-…dev1', enabled: true },
       chat: { plan: 'free', planName: 'Free', expiresAt: null },
@@ -84,9 +106,16 @@ export const dev = new Hono<AppBindings>()
     if (c.req.method === 'POST') {
       const form = await c.req.parseBody();
       // A demo button sends `email`; the box (and its own button) sends `typed`.
-      const email = String(form.email ?? form.typed ?? '').trim().toLowerCase();
+      const email = String(form.email ?? form.typed ?? '')
+        .trim()
+        .toLowerCase();
       if (!/^[^@\s]+@[^@\s]+$/.test(email)) return c.text('bad email', 400);
-      setCookie(c, DOOR_COOKIE, email, { path: '/', httpOnly: true, sameSite: 'Lax', secure: true });
+      setCookie(c, DOOR_COOKIE, email, {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'Lax',
+        secure: true,
+      });
       return c.redirect(next, 303);
     }
     const pick = DEMO.map(

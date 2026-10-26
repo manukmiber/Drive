@@ -5,7 +5,7 @@ import { log } from '../lib/log';
 import { OPERATOR_EMAIL } from '../../shared/constants';
 import { deliverShareEmail } from '../services/share-send';
 import { purgePool } from '../services/billing';
-import { deliverNotification } from '../services/notify';
+import { deliverLegacyNotification, deliverNotice } from '../services/notify';
 import { processCompressJob } from '../services/compress';
 import { processArchiveJob } from '../services/archives';
 import { processS3Scan, purgeS3Account } from '../services/s3-objects';
@@ -28,7 +28,9 @@ registerQueueHandler('cleanup', async (ctx, body) => {
 });
 
 registerQueueHandler('notify', async (ctx, body) => {
-  if (body.type === 'notification') return deliverNotification(ctx, body.notificationId);
+  if (body.type === 'notice') return deliverNotice(ctx, body);
+  if (body.type === 'notification') return deliverLegacyNotification(ctx, body.notificationId);
+  if (body.type === 'suppress') return ctx.adapters.notices.suppress(body.emailHash, 'unsubscribe');
   if (body.type === 'share_email') return deliverShareEmail(ctx, body.sendId, body.to);
   if (body.type === 'admin_alert') {
     // By email, like every other notice (ADR-041).

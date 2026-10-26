@@ -1,6 +1,7 @@
-// User notifications (SPEC §13.2): one row in `notifications` (in-app bell) + delivery via the
-// `notify` queue by email — the only channel out of the app (ADR-041). Message bodies are rendered at
-// delivery time.
+// User notifications (SPEC §13.2): the in-app bell plus email, the only channel out of the app
+// (ADR-041). Since ADR-064 the relay keeps them (adapters/notices.ts): `notify` queues the notice
+// with its content, and the notify consumer files it with the relay (once per id), then mails it
+// unless the person switched that kind off. Words are rendered here, at delivery and in the bell.
 import { formatBytes, formatDateTime, formatRupiah } from '../../shared/format';
 import { AD_CONTACT } from '../../shared/constants';
 import type { Ctx } from '../context';
@@ -27,30 +28,22 @@ export type NotificationType =
   | 's3_dunning'
   | 's3_url_released';
 
-export function notificationStmt(
-  ctx: Ctx,
-  userId: string,
-  type: NotificationType,
-  payload: Record<string, unknown>,
-) {
-  const id = ulid(ctx.now());
-  return {
-    id,
-    stmt: ctx.env.DB.prepare(
-      'INSERT INTO notifications (id, user_id, type, payload_json, created_at) VALUES (?1, ?2, ?3, ?4, ?5)',
-    ).bind(id, userId, type, JSON.stringify(payload), ctx.now()),
-  };
-}
-
+/** Queue a notice. It reaches the bell once the relay has it (the queue retries until then). */
 export async function notify(
   ctx: Ctx,
   userId: string,
   type: NotificationType,
   payload: Record<string, unknown>,
 ): Promise<string> {
-  const { id, stmt } = notificationStmt(ctx, userId, type, payload);
-  await stmt.run();
-  await ctx.env.NOTIFY_QUEUE.send({ type: 'notification', notificationId: id });
+  const id = ulid(ctx.now());
+  await ctx.env.NOTIFY_QUEUE.send({
+    type: 'notice',
+    id,
+    userId,
+    kind: type,
+    payload,
+    createdAt: ctx.now(),
+  });
   return id;
 }
 
@@ -290,22 +283,51 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
   }
 }
 
-export async function deliverNotification(ctx: Ctx, notificationId: string): Promise<void> {
-  // Queue delivery is at-least-once: remember what was delivered.
-  const marker = `nd:${notificationId}`;
+export async function deliverNotice(
+  ctx: Ctx,
+  n: {
+    id: string;
+    userId: string;
+    kind: string;
+    payload: Record<string, unknown>;
+    createdAt: number;
+  },
+): Promise<void> {
+  const { emailOff } = await ctx.adapters.notices.add({
+    id: n.id,
+    userId: n.userId,
+    type: n.kind,
+    payload: n.payload,
+    createdAt: n.createdAt,
+  });
+  // Queue delivery is at-least-once: remember what was mailed.
+  const marker = `nd:${n.id}`;
   if (await ctx.env.CONFIG_KV.get(marker)) return;
+  const r = render(ctx, n.kind, n.payload);
+  const user = await ctx.env.DB.prepare('SELECT email FROM users WHERE id = ?1')
+    .bind(n.userId)
+    .first<{ email: string }>();
+  if (r && user && (MANDATORY_EMAIL.includes(n.kind) || !emailOff))
+    await ctx.adapters.email.send({ to: [user.email], tag: n.kind, ...noticeEmail(r) });
+  await ctx.env.CONFIG_KV.put(marker, '1', { expirationTtl: 7 * 86_400 });
+}
+
+/** A message queued before ADR-064 points at a row of the old table; deliver it the new way. */
+export async function deliverLegacyNotification(ctx: Ctx, notificationId: string): Promise<void> {
   const row = await ctx.env.DB.prepare(
-    `SELECT n.user_id, n.type, n.payload_json, u.email FROM notifications n JOIN users u ON u.id = n.user_id
-     WHERE n.id = ?1`,
+    'SELECT user_id, type, payload_json, created_at FROM notifications WHERE id = ?1',
   )
     .bind(notificationId)
-    .first<{ user_id: string; type: string; payload_json: string; email: string }>();
+    .first<{ user_id: string; type: string; payload_json: string; created_at: number }>();
   if (!row) return;
-  const r = render(ctx, row.type, JSON.parse(row.payload_json) as Record<string, unknown>);
-  if (!r) return;
-  if (await emailOn(ctx, row.user_id, row.type))
-    await ctx.adapters.email.send({ to: [row.email], tag: row.type, ...noticeEmail(r) });
-  await ctx.env.CONFIG_KV.put(marker, '1', { expirationTtl: 7 * 86_400 });
+  await deliverNotice(ctx, {
+    id: notificationId,
+    userId: row.user_id,
+    kind: row.type,
+    payload: JSON.parse(row.payload_json) as Record<string, unknown>,
+    createdAt: row.created_at,
+  });
+  await ctx.env.DB.prepare('DELETE FROM notifications WHERE id = ?1').bind(notificationId).run();
 }
 
 /**
@@ -334,22 +356,8 @@ export const PREF_TYPES = [
   'ad_status',
 ] as const;
 
-async function emailOn(ctx: Ctx, userId: string, type: string): Promise<boolean> {
-  if (MANDATORY_EMAIL.includes(type)) return true;
-  const off = await ctx.env.DB.prepare(
-    `SELECT 1 AS off FROM notification_prefs WHERE user_id = ?1 AND type = ?2 AND channel = 'email' AND enabled = 0`,
-  )
-    .bind(userId, type)
-    .first();
-  return !off;
-}
-
 export async function getPrefs(ctx: Ctx, userId: string) {
-  const { results } = await ctx.env.DB.prepare(
-    'SELECT type, channel, enabled FROM notification_prefs WHERE user_id = ?1',
-  )
-    .bind(userId)
-    .all<{ type: string; channel: string; enabled: number }>();
+  const results = await ctx.adapters.notices.prefs(userId);
   return PREF_TYPES.map((type) => ({
     type,
     email:
@@ -370,38 +378,15 @@ export async function setPref(
     throw new AppError('VALIDATION', 'unknown notification type');
   if (MANDATORY_EMAIL.includes(type) && !enabled)
     throw new AppError('BAD_REQUEST', 'this notice is mandatory');
-  await ctx.env.DB.prepare(
-    `INSERT INTO notification_prefs (user_id, type, channel, enabled) VALUES (?1, ?2, ?3, ?4)
-     ON CONFLICT (user_id, type, channel) DO UPDATE SET enabled = excluded.enabled`,
-  )
-    .bind(userId, type, channel, enabled ? 1 : 0)
-    .run();
+  await ctx.adapters.notices.setPref(userId, { type, channel, enabled });
 }
 
 export async function listNotifications(ctx: Ctx, userId: string) {
-  const [{ results }, unread] = await Promise.all([
-    ctx.env.DB.prepare(
-      `SELECT id, type, payload_json AS payload, read_at AS readAt, created_at AS createdAt FROM notifications
-       WHERE user_id = ?1 ORDER BY created_at DESC LIMIT 50`,
-    )
-      .bind(userId)
-      .all<{
-        id: string;
-        type: string;
-        payload: string;
-        readAt: number | null;
-        createdAt: number;
-      }>(),
-    ctx.env.DB.prepare(
-      'SELECT COUNT(*) AS n FROM notifications WHERE user_id = ?1 AND read_at IS NULL',
-    )
-      .bind(userId)
-      .first<{ n: number }>(),
-  ]);
+  const { unread, items } = await ctx.adapters.notices.list(userId, 50);
   return {
-    unread: unread?.n ?? 0,
-    items: results.map((n) => {
-      const r = render(ctx, n.type, JSON.parse(n.payload) as Record<string, unknown>);
+    unread,
+    items: items.map((n) => {
+      const r = render(ctx, n.type, n.payload);
       return {
         id: n.id,
         type: n.type,
@@ -416,21 +401,7 @@ export async function listNotifications(ctx: Ctx, userId: string) {
 }
 
 export async function markRead(ctx: Ctx, userId: string, ids: string[] | 'all'): Promise<void> {
-  if (ids === 'all') {
-    await ctx.env.DB.prepare(
-      'UPDATE notifications SET read_at = ?2 WHERE user_id = ?1 AND read_at IS NULL',
-    )
-      .bind(userId, ctx.now())
-      .run();
-    return;
-  }
-  for (const id of ids.slice(0, 100)) {
-    await ctx.env.DB.prepare(
-      'UPDATE notifications SET read_at = ?3 WHERE id = ?1 AND user_id = ?2 AND read_at IS NULL',
-    )
-      .bind(id, userId, ctx.now())
-      .run();
-  }
+  await ctx.adapters.notices.markRead(userId, ids === 'all' ? 'all' : ids.slice(0, 100));
 }
 
 /** Quota 80 / 95 / 100 % notices to whoever pays for the pool, once per threshold and limit. */
@@ -465,4 +436,68 @@ export async function checkQuotaThresholds(ctx: Ctx, poolId: string): Promise<vo
     usedBytes: pool.used_bytes,
     limitBytes: pool.limit_bytes,
   });
+}
+
+/**
+ * ADR-064: brings the rows of Drive's old D1 tables over to the relay, a batch per call, and
+ * deletes what arrived. Once they are empty this is three cheap reads; the tables go in R8.
+ */
+export async function moveNoticesToRelay(ctx: Ctx, batch = 100): Promise<number> {
+  const DB = ctx.env.DB;
+  const [notes, prefs, sups] = await Promise.all([
+    DB.prepare(
+      'SELECT id, user_id, type, payload_json, read_at, created_at FROM notifications ORDER BY created_at LIMIT ?1',
+    )
+      .bind(batch)
+      .all<{
+        id: string;
+        user_id: string;
+        type: string;
+        payload_json: string;
+        read_at: number | null;
+        created_at: number;
+      }>(),
+    DB.prepare('SELECT user_id, type, channel, enabled FROM notification_prefs LIMIT ?1')
+      .bind(batch)
+      .all<{ user_id: string; type: string; channel: string; enabled: number }>(),
+    DB.prepare('SELECT email_hash, reason, created_at FROM email_suppressions LIMIT ?1')
+      .bind(batch)
+      .all<{ email_hash: string; reason: string; created_at: number }>(),
+  ]);
+  const total = notes.results.length + prefs.results.length + sups.results.length;
+  if (!total) return 0;
+  await ctx.adapters.notices.import({
+    notices: notes.results.map((n) => ({
+      id: n.id,
+      userId: n.user_id,
+      type: n.type,
+      payload: JSON.parse(n.payload_json) as Record<string, unknown>,
+      createdAt: n.created_at,
+      readAt: n.read_at,
+    })),
+    prefs: prefs.results.map((p) => ({
+      userId: p.user_id,
+      type: p.type,
+      channel: p.channel,
+      enabled: p.enabled === 1,
+    })),
+    suppressions: sups.results.map((s) => ({
+      emailHash: s.email_hash,
+      reason: s.reason,
+      createdAt: s.created_at,
+    })),
+  });
+  // Three statements whatever the batch (Workers Free counts D1 queries per invocation).
+  await DB.batch([
+    DB.prepare('DELETE FROM notifications WHERE id IN (SELECT value FROM json_each(?1))').bind(
+      JSON.stringify(notes.results.map((n) => n.id)),
+    ),
+    DB.prepare(
+      `DELETE FROM notification_prefs WHERE user_id || '|' || type || '|' || channel IN (SELECT value FROM json_each(?1))`,
+    ).bind(JSON.stringify(prefs.results.map((p) => `${p.user_id}|${p.type}|${p.channel}`))),
+    DB.prepare(
+      'DELETE FROM email_suppressions WHERE email_hash IN (SELECT value FROM json_each(?1))',
+    ).bind(JSON.stringify(sups.results.map((s) => s.email_hash))),
+  ]);
+  return total;
 }

@@ -6,15 +6,21 @@ import { verifyUnsubscribeToken } from '../services/share-send';
 import { escapeHtml } from '../services/email-templates';
 import type { AppBindings } from '../types';
 
-export const integrations = new Hono<AppBindings>().on(['GET', 'POST'], '/berhenti/:token', async (c) => {
+export const integrations = new Hono<AppBindings>().on(
+  ['GET', 'POST'],
+  '/berhenti/:token',
+  async (c) => {
     const email = await verifyUnsubscribeToken(c.get('ctx'), c.req.param('token'));
     if (!email) return page('Link tidak valid', '<h1>Link tidak valid</h1>', { status: 400 });
     if (c.req.method === 'POST' || c.req.query('ok') === '1') {
-      await c.env.DB.prepare(
-        `INSERT INTO email_suppressions (email_hash, reason, created_at) VALUES (?1, 'unsubscribe', ?2) ON CONFLICT DO NOTHING`,
-      )
-        .bind(await sha256Hex(`email|${email}`), c.get('ctx').now())
-        .run();
+      // Kept by the relay (ADR-064). If it is not answering right now, the notify queue keeps
+      // trying: the person is told it is done either way.
+      const emailHash = await sha256Hex(`email|${email}`);
+      try {
+        await c.get('ctx').adapters.notices.suppress(emailHash, 'unsubscribe');
+      } catch {
+        await c.env.NOTIFY_QUEUE.send({ type: 'suppress', emailHash });
+      }
       if (c.req.method === 'POST' && !c.req.header('content-type')?.includes('form'))
         return c.body(null, 204); // one-click
       return page(
@@ -27,4 +33,5 @@ export const integrations = new Hono<AppBindings>().on(['GET', 'POST'], '/berhen
       `<h1>Berhenti menerima email?</h1><p>${escapeHtml(email)} tidak akan menerima email berbagi file dari pengguna Zeiko.</p>
 <form method="post"><button type="submit">Ya, berhenti</button></form>`,
     );
-  });
+  },
+);

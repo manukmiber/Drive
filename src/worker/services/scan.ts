@@ -7,7 +7,7 @@ import type { ScanResult } from '../adapters/scanner';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
 import type { ScanCarry } from '../queues/messages';
-import { checkQuotaThresholds, notificationStmt } from './notify';
+import { checkQuotaThresholds, notify } from './notify';
 import { track } from '../lib/analytics';
 import { virusTotalStep, type VtInput } from './virustotal';
 
@@ -166,17 +166,13 @@ export async function processScan(
         ).bind(result.sha256, detail ?? 'malware', now),
       );
     }
-    const notes = affected.map((n) =>
-      notificationStmt(ctx, n.created_by, 'file_rejected', {
+    await DB.batch(stmts);
+    for (const n of affected)
+      await notify(ctx, n.created_by, 'file_rejected', {
         nodeId: n.id,
         name: n.name,
         reason: detail,
-      }),
-    );
-    stmts.push(...notes.map((x) => x.stmt));
-    await DB.batch(stmts);
-    for (const x of notes)
-      await ctx.env.NOTIFY_QUEUE.send({ type: 'notification', notificationId: x.id });
+      });
     const held = await DB.prepare('SELECT 1 AS h FROM legal_holds WHERE blob_id = ?1')
       .bind(blobId)
       .first<{ h: number }>();

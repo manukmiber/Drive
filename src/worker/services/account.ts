@@ -68,17 +68,12 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
       'SELECT channel, mode, recipient_masked, status, created_at FROM share_sends WHERE user_id = ?1',
       userId,
     ),
-    notifications: await q(
-      'SELECT type, payload_json, read_at, created_at FROM notifications WHERE user_id = ?1',
-      userId,
+    // Kept by the relay (ADR-064). Said plainly when it is not answering, never left out quietly.
+    notifications: await ctx.adapters.notices.list(userId, 500).then(
+      (r) => r.items,
+      () => ({ unavailable: 'Zeiko Accounts is not answering; export again later' }),
     ),
-    telegram:
-      (
-        await q(
-          'SELECT username_lower, allow_receive, linked_at FROM telegram_links WHERE user_id = ?1',
-          userId,
-        )
-      )[0] ?? null,
+    notificationPrefs: await ctx.adapters.notices.prefs(userId).catch(() => null),
     // Access tokens (ADR-061): names, scopes and dates, never the secrets or their hashes.
     apiTokens: await q(
       'SELECT id, name, prefix, scopes, kind, created_at, last_used_at, expires_at, revoked_at FROM api_tokens WHERE user_id = ?1 ORDER BY created_at',
@@ -174,6 +169,14 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
     .all<{ id: string }>();
   const { deleteSubtree } = await import('./nodes');
   for (const { id } of results) {
+    // The relay forgets their notices first: if it is not answering, this account waits for the
+    // next run rather than being half deleted.
+    try {
+      await ctx.adapters.notices.forget(id);
+    } catch (e) {
+      log.warn('account_delete_waits_for_relay', { userId: id, error: String(e) });
+      continue;
+    }
     const pool = await DB.prepare(
       `SELECT id FROM storage_pools WHERE owner_type = 'user' AND owner_id = ?1`,
     )
@@ -207,7 +210,7 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
       DB.prepare('DELETE FROM accounts WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM passkeys WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM two_factors WHERE user_id = ?1').bind(id),
-      DB.prepare('DELETE FROM telegram_links WHERE user_id = ?1').bind(id),
+      // Rows of the old table not yet moved to the relay (ADR-064).
       DB.prepare('DELETE FROM notifications WHERE user_id = ?1').bind(id),
       DB.prepare(
         `UPDATE users SET email = 'deleted+' || id || '@deleted.invalid', name = '', avatar_url = NULL, ad_city_code = NULL, ad_city = NULL, ad_postal_code = NULL,

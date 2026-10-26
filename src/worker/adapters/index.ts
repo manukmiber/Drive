@@ -21,6 +21,7 @@ import { ContainerArchiver, MockArchiver, NoArchiver, type Archiver } from './ar
 import { GraphqlR2Metrics, NoR2Metrics, type R2Metrics } from './r2-metrics';
 import { HttpVirusTotal, MockVirusTotal, type VirusTotal } from './virustotal';
 import { CloudflareHostnames, MockHostnames, type Hostnames } from './hostnames';
+import { MockNotices, RelayNotices, type NoticeStore } from './notices';
 
 export interface Adapters {
   email: EmailSender;
@@ -35,6 +36,8 @@ export interface Adapters {
   virustotal: VirusTotal | null;
   /** Null: no own S3 addresses here (ADR-048). */
   hostnames: Hostnames | null;
+  /** The bell, email switches and unsubscribes: kept by the relay (ADR-064). */
+  notices: NoticeStore;
 }
 
 /** Zeiko Accounts is set up: the door's address and the app token. */
@@ -66,6 +69,11 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
     env.ADAPTER_ACCOUNTS === 'zeiko' && zeikoReady(env)
       ? new RelayZeikoAccounts(env.ZEIKO_DOOR_URL!, env.ZEIKO_APP_TOKEN!)
       : new MockZeikoAccounts(env.CONFIG_KV);
+  // Like sign-in: the relay where Zeiko Accounts is set up, KV rows in dev and tests.
+  const notices: NoticeStore =
+    env.ADAPTER_ACCOUNTS === 'zeiko' && zeikoReady(env)
+      ? new RelayNotices(env.ZEIKO_DOOR_URL!, env.ZEIKO_APP_TOKEN!)
+      : new MockNotices(env.CONFIG_KV, () => clock.now());
   const scanner: Scanner =
     env.ADAPTER_SCANNER === 'container' && env.SCANNER
       ? new ContainerScanner(env.BUCKET, env.SCANNER, Number(env.SCANNER_INSTANCES ?? 3))
@@ -112,5 +120,6 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
     r2metrics,
     virustotal,
     hostnames,
+    notices,
   };
 }

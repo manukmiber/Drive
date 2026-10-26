@@ -465,25 +465,6 @@ export const shareSends = sqliteTable('share_sends', {
   createdAt: ms('created_at').notNull(),
 });
 
-export const contacts = sqliteTable('contacts', {
-  id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
-  displayName: text('display_name').notNull(),
-  channel: text('channel').notNull(),
-  valueEncrypted: text('value_encrypted').notNull(),
-  createdAt: ms('created_at').notNull(),
-});
-
-export const telegramLinks = sqliteTable('telegram_links', {
-  userId: text('user_id').primaryKey(),
-  tgUserId: text('tg_user_id').notNull(),
-  chatId: text('chat_id').notNull(),
-  usernameLower: text('username_lower'),
-  allowReceive: bool('allow_receive').notNull().default(true),
-  linkedAt: ms('linked_at').notNull(),
-  updatedAt: ms('updated_at').notNull(),
-});
-
 export const emailSuppressions = sqliteTable('email_suppressions', {
   emailHash: text('email_hash').primaryKey(),
   reason: text('reason').notNull(),

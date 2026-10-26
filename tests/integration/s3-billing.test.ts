@@ -24,6 +24,7 @@ import {
 import { APP, makeRuntime } from '../helpers/runtime';
 import { OPS_KEY, S3_ORIGIN, s3Client } from '../helpers/s3';
 import { signIn, type Session } from '../helpers/session';
+import { noticesOf } from '../helpers/notices';
 
 /** UTC ms of a WIB wall-clock time. */
 const wib = (y: number, m: number, d: number, h = 0) => Date.UTC(y, m - 1, d, h) - WIB_OFFSET_MS;
@@ -118,14 +119,8 @@ const charges = (rt: DevRuntime, userId: string) =>
       .all(userId) as Array<{ delta_idr: number }>
   ).map((r) => -r.delta_idr);
 
-const notices = (rt: DevRuntime, userId: string, type: string) =>
-  (
-    rt.d1.sqlite
-      .prepare(
-        'SELECT payload_json FROM notifications WHERE user_id = ? AND type = ? ORDER BY created_at',
-      )
-      .all(userId, type) as Array<{ payload_json: string }>
-  ).map((n) => JSON.parse(n.payload_json) as Record<string, unknown>);
+const notices = async (rt: DevRuntime, userId: string, type: string) =>
+  (await noticesOf(rt, userId)).filter((n) => n.type === type).map((n) => n.payload);
 
 async function newKey(s: Session) {
   const res = await s.req('POST', '/api/s3/keys', { label: 'laptop' });
@@ -314,14 +309,14 @@ describe('Zeiko S3 plans (ADR-047)', () => {
     clock.set(end - 3 * DAY_MS + HOUR_MS);
     await remindS3Renewals(ctx());
     await remindS3Renewals(ctx());
-    expect(notices(rt, user.userId, 's3_reminder')).toEqual([
+    expect(await notices(rt, user.userId, 's3_reminder')).toEqual([
       expect.objectContaining({ days: 3, amountIdr: 1_500, creditCovers: false }),
     ]);
 
     clock.set(end + 3 * DAY_MS + HOUR_MS);
     await runS3Dunning(ctx());
     expect(account(rt, user.userId)?.billing_state).toBe('readonly');
-    expect(notices(rt, user.userId, 's3_dunning')).toEqual([
+    expect(await notices(rt, user.userId, 's3_dunning')).toEqual([
       expect.objectContaining({ stage: 'readonly' }),
     ]);
     await expect(

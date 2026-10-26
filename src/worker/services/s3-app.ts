@@ -56,4 +56,3 @@ export async function activeAccount(ctx: Ctx, userId: string) {
     throw new AppError('ACCOUNT_SUSPENDED', 'this Zeiko S3 account is suspended');
   return acc;
 }
-

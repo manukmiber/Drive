@@ -132,7 +132,8 @@ function bindings(env, nsBase, ids) {
         queue: `zeiko-${q}-${env}`,
         max_batch_size: q === 'scan' || q === 'archive' || q === 'compress' ? 1 : 10,
         max_batch_timeout: 5,
-        max_retries: 3,
+        // Notices wait for the relay (ADR-064): ~16 h of retries before the dead-letter queue.
+        max_retries: q === 'notify' ? 20 : 3,
         dead_letter_queue: `zeiko-dlq-${env}`,
       })),
     },

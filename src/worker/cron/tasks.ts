@@ -21,6 +21,7 @@ import { sweepReplication } from '../services/s3-replicas';
 import { deliverS3Logs } from '../services/s3-stats';
 import { refreshPendingUrls, releaseLapsedUrls } from '../services/s3-urls';
 import { cleanupVirusTotal } from '../services/virustotal';
+import { moveNoticesToRelay } from '../services/notify';
 import { registerCronTask } from '.';
 
 registerCronTask(CRON.hourly, {
@@ -207,5 +208,22 @@ registerCronTask(CRON.nightly, {
   async run(ctx) {
     await deletionReminders(ctx);
     await processAccountDeletions(ctx);
+  },
+});
+
+// ADR-064: notices live on the relay. Old D1 rows move over a few batches an hour (a relay that is
+// not answering just means next hour), and read notices past retention are pruned there.
+registerCronTask(CRON.hourly, {
+  name: 'move_notices_to_relay',
+  async run(ctx) {
+    for (let i = 0; i < 3; i++) if (!(await moveNoticesToRelay(ctx))) break;
+  },
+});
+
+registerCronTask(CRON.nightly, {
+  name: 'prune_notices',
+  async run(ctx) {
+    const cfg = await ctx.config();
+    await ctx.adapters.notices.prune(ctx.now() - cfg.log_retention_days * DAY_MS);
   },
 });

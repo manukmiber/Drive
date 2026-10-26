@@ -12,6 +12,7 @@ import { grantPlan, rootOf, uploadText } from '../helpers/files';
 import { makeRuntime } from '../helpers/runtime';
 import { s3Setup, usage } from '../helpers/s3';
 import { signIn } from '../helpers/session';
+import { noticesOf } from '../helpers/notices';
 
 function setVt(rt: DevRuntime, over: Partial<(typeof CONFIG_DEFAULTS)['virustotal']>) {
   rt.d1.sqlite
@@ -70,9 +71,9 @@ describe('VirusTotal (ADR-046)', () => {
       rt.d1.sqlite.prepare('SELECT reason FROM blocked_hashes WHERE sha256 = ?').get(st.sha256),
     ).toEqual({ reason: st.scan_detail });
     expect(verdict(rt, st.sha256)).toEqual({ verdict: 'malicious', uploaded: 1 });
-    expect(
-      rt.d1.sqlite.prepare('SELECT type FROM notifications WHERE user_id = ?').all(s.userId),
-    ).toEqual([{ type: 'file_rejected' }]);
+    expect((await noticesOf(rt, s.userId)).map((n) => ({ type: n.type }))).toEqual([
+      { type: 'file_rejected' },
+    ]);
   });
 
   it('only looks documents up by hash, and leaves ordinary files alone', async () => {

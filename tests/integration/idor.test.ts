@@ -5,6 +5,7 @@ import { APP, makeRuntime } from '../helpers/runtime';
 import { signIn } from '../helpers/session';
 import { imageBody, operator } from '../helpers/ops';
 import { createFolder, grantPlan, rootOf, uploadText } from '../helpers/files';
+import { fileNotice, noticesOf } from '../helpers/notices';
 
 const WEBP = (() => {
   const b = new Uint8Array(2000);
@@ -94,11 +95,7 @@ describe('IDOR (SPEC §14.1)', () => {
     rt.d1.sqlite
       .prepare(`INSERT INTO wallets (user_id, balance_idr, updated_at) VALUES (?, 100000, 0)`)
       .run(b.userId);
-    rt.d1.sqlite
-      .prepare(
-        `INSERT INTO notifications (id, user_id, type, payload_json, created_at) VALUES ('n1', ?, 'quota', '{}', 0)`,
-      )
-      .run(a.userId);
+    await fileNotice(rt, a.userId, { id: 'n1' });
     // Zeiko S3 (ADR-044): both have an account; A has a key and a bucket.
     for (const id of [a.userId, b.userId])
       rt.d1.sqlite
@@ -131,7 +128,7 @@ describe('IDOR (SPEC §14.1)', () => {
       )
       .run(payment, a.userId);
 
-    const snapshot = () =>
+    const snapshot = async () =>
       JSON.stringify([
         rt.d1.sqlite
           .prepare(
@@ -148,9 +145,7 @@ describe('IDOR (SPEC §14.1)', () => {
           .prepare('SELECT id, title, status, image_key FROM ad_creatives ORDER BY id')
           .all(),
         rt.d1.sqlite.prepare('SELECT id, status FROM ad_campaigns ORDER BY id').all(),
-        rt.d1.sqlite
-          .prepare('SELECT id, read_at FROM notifications WHERE user_id = ?')
-          .all(a.userId),
+        (await noticesOf(rt, a.userId)).map((n) => ({ id: n.id, read_at: n.read_at })),
         rt.d1.sqlite.prepare('SELECT node_id FROM node_stars WHERE user_id = ?').all(b.userId),
         rt.d1.sqlite.prepare('SELECT id, revoked_at FROM s3_keys ORDER BY id').all(),
         rt.d1.sqlite
@@ -164,7 +159,7 @@ describe('IDOR (SPEC §14.1)', () => {
       ]);
     // B's own folder, to try A's photo as its cover (ADR-058).
     const bFolder = await createFolder(b, bRoot, 'Punya B');
-    const before = snapshot();
+    const before = await snapshot();
     const body = (bytes: Uint8Array) => ({
       body: bytes,
       headers: {
@@ -263,7 +258,7 @@ describe('IDOR (SPEC §14.1)', () => {
     await rt.settle();
 
     expect(leaks).toEqual([]);
-    expect(JSON.parse(snapshot())).toEqual(JSON.parse(before));
+    expect(JSON.parse(await snapshot())).toEqual(JSON.parse(before));
     // Guessing the anonymous download path without a signed token never yields the content.
     for (const path of [`/d/${file.id}`, `/d/${file.id}/ktp.txt`, `/d/x.y.z/ktp.txt`]) {
       expect(await (await rt.fetch(new Request(`${APP}${path}`))).text()).not.toContain(

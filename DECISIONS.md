@@ -1522,11 +1522,9 @@ pengganti index.txt". Sejak ADR-002 Drive justru menyimpan pohon file di D1 bers
    user; isinya tabel sesi, `api_tokens`, `oauth_grants`, `oauth_codes`, `api_idempotency`, `shares`, `share_items`,
    `share_sends`. Pindahnya di R5 (share) dan R6 (sesi/token/OAuth).
 2. Data operator (laporan & takedown, legal hold, blocklist hash, audit, iklan): **relay**.
-3. Notifikasi, preferensi email, tautan Telegram: **belum diputuskan**, pemilik bertanya dulu gunanya (dijelaskan
-   2026-10-26). Temuan saat menjelaskan: `telegram_links` hanya sisa bot Telegram yang dicabut ADR-041 (dibaca untuk
-   ekspor dan dihapus saat akun dihapus, tidak dipakai fitur apa pun) dan `contacts` tidak pernah dipakai kode; keduanya
-   *usul* dibuang. `notifications` (lonceng di app + email), `notification_prefs` (saklar email per jenis), dan
-   `email_suppressions` (penerima email share yang berhenti berlangganan) menunggu jawaban.
+3. Notifikasi (lonceng + email), preferensi email per jenis, dan daftar berhenti berlangganan email share: **relay**.
+   `telegram_links` (sisa bot Telegram yang dicabut ADR-041) dan `contacts` (tidak pernah dipakai kode): **dibuang**.
+   Pemilik: "Ok kerjakan" (2026-10-26). Dibangun di ADR-065, migrasi `0017`.
 4. Batas kuota/paket: relay sumber kebenarannya dan menulis salinan kecil ke `u/{userId}/` setiap kali berubah. **Ya.**
 5. Index: `index.txt` berisi JSON tabel ringkas ter-gzip. **Ya.** Rincian format di bawah (R1).
 6. Fitur Drive baru dibekukan sampai R3 selesai. **Ya** (fitur S3 tetap boleh jalan).
@@ -1604,12 +1602,16 @@ D6 dan D8 dibangun di atas index ini, bukan di atas FTS5.
 | `shares`, `share_items`, `share_sends` | **D1 khusus akses** (R0 no. 1); item share menunjuk index pemilik + nomor entri |
 | `api_tokens`, `oauth_grants`, `oauth_codes`, `api_idempotency` (A1–A3) | **D1 khusus akses** (R0 no. 1) |
 | `abuse_reports`, `legal_holds`, `blocked_hashes`, `audit_logs`, `ad_*`, `advertisers` | **Relay** (data operator, R0 no. 2) |
-| `notifications`, `notification_prefs`, `email_suppressions` | menunggu jawaban R0 no. 3 |
-| `telegram_links`, `contacts` | *usul:* dibuang (tidak dipakai, lihat R0 no. 3) |
+| `notifications`, `notification_prefs`, `email_suppressions` | **Relay** (R0 no. 3, ADR-065); baris lama dipindah otomatis tiap jam |
+| `telegram_links`, `contacts` | **dibuang** (migrasi `0017`) |
 | `archive_jobs`, `compress_jobs`, `vt_verdicts`, `vt_budget`, `usage_counters`, `counters` | *usul:* objek R2/KV sementara atau Analytics Engine |
 | `manifest_dirty`, `batch_guards` | dibuang |
 
-**Yang masih menunggu pemilik:** R0 no. 3 (notifikasi, preferensi email, daftar berhenti berlangganan).
+**Gabung tulis (pemilik, 2026-10-26: "Ok kerjakan"):** karena R2 hanya menerima satu tulis per detik per key, R3
+menggabungkan perubahan index, tanpa layanan Cloudflare tambahan: upload banyak file ditulis per gelombang (satu
+`changeIndex` untuk semua yang selesai), hasil pindai dan thumbnail ditulis per batch antrean per index, dan operasi
+massal tetap satu request = satu tulis. Belum ada kode yang menulis index (upload masih ke D1), jadi aturan ini dibangun
+bersama R3.
 
 **Fase (rinci di ROADMAP bagian R):** R1 format + pustaka index (CAS etag, benchmark) → R2 baca dari index (explorer,
 detail, breadcrumb, cari, bintang, Sampah) → R3 tulis ke index (upload/kuota, pindai, ganti nama/pindah/salin/Sampah/hapus,
@@ -1620,3 +1622,46 @@ operator di relay (repo Relay) → R8 pindahkan data production, hapus tabel Dri
 `services/` Drive dibangun di atas D1 dan akan dipindah lewat fase di atas. Sampai fase itu selesai, kode yang ada tetap
 jalan apa adanya (production saat ini: 6 node). Fitur Drive baru tidak boleh menambah tabel atau kolom D1 (D1 S3
 maupun D1 khusus akses; yang terakhir hanya menerima tabel sesi, token, OAuth, dan share yang dipindah di R5/R6).
+
+## ADR-065 — Notifikasi, saklar email, dan daftar berhenti berlangganan disimpan relay
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik, jawaban R0 no. 3 di ADR-064: "Ok kerjakan").
+
+**Keputusan.** Lonceng di app, saklar "jangan kirim email untuk jenis X", dan alamat yang berhenti menerima email share
+(sebagai hash) disimpan relay (Akun Zeiko), bukan di D1 Drive. Drive tetap yang menyusun kata-katanya dan memutuskan jenis
+mana yang wajib (`MANDATORY_EMAIL`). `telegram_links` dan `contacts` dibuang (migrasi `0017`).
+
+**Cara kerjanya:**
+- **Relay** (repo `Relay`, `src/accounts/drive_notices.rs`): tabel `drive_notices`, `drive_notice_prefs`, dan
+  `drive_email_suppressions` di `accounts.db`, dikunci dengan id user Drive. Route `/apps/v1/notices*` dan
+  `/apps/v1/suppressions*` dijaga token yang sama dengan sign-in (`ZEIKO_APP_TOKEN`).
+- **Drive** (`adapters/notices.ts`): `RelayNotices` dipakai kalau Akun Zeiko terpasang; `MockNotices` (KV) di dev dan
+  test.
+- **Alur notifikasi:**
+  1. `notify()` mengantre pesan `notice` lengkap dengan isinya; tidak ada lagi baris D1.
+  2. Consumer `notify` menyerahkannya ke relay (sekali per id; relay menjawab apakah emailnya dimatikan).
+  3. Lalu consumer mengirim email, kecuali dimatikan.
+- **Kalau relay mati:**
+  - Antrean `notify` mengulang sampai 20 kali (±16 jam, sebelumnya 3 kali) sebelum masuk dead-letter.
+  - Lonceng dan saklar menjawab `ACCOUNTS_UNAVAILABLE`.
+  - Email share tidak dikirim (cek berhenti berlangganan gagal = tidak kirim, kuota harian tidak terpotong).
+  - Halaman berhenti berlangganan tetap bilang "beres": penulisan ke relay dicoba langsung, dan kalau gagal dititipkan
+    ke antrean.
+  - Penghapusan akun menunggu putaran berikutnya.
+  - Ekspor data menulis terang-terangan bahwa notifikasi belum bisa diambil.
+- **Data lama:**
+  - Cron tiap jam `move_notices_to_relay` memindahkan baris `notifications`, `notification_prefs`, dan
+    `email_suppressions`, 100 per tabel sekali jalan dan tiga putaran per jam, lalu menghapus yang sudah sampai.
+  - Saklar yang diubah di relay sejak itu tidak ditimpa.
+  - Pesan antrean lama (`notification` + id baris D1) masih diantar lewat jalan baru.
+  - Tabelnya dihapus di R8.
+- **Perubahan kecil:** `renewal_failed` sekarang juga dikirim lewat email, sesuai `MANDATORY_EMAIL`. Dulu hanya masuk
+  lonceng karena tidak pernah diantrekan; ini sebuah kelalaian.
+
+**Urutan pasang:** Drive boleh dideploy lebih dulu. Selama relay belum di-update, route-nya masih 404, sehingga
+notifikasi menunggu di antrean dan lonceng kosong. Setelah pemilik menekan update di dashboard relay (atau menjalankan
+`bash install.sh`), antrean dan pemindah data jalan sendiri.
+
+**Test:**
+- Drive: `tests/unit/notices.test.ts` dan `tests/integration/notifications.test.ts` (pindah data lama, pesan antrean
+  lama, tabel yang dibuang); semua test yang memeriksa notifikasi sekarang membaca penyimpanannya (`tests/helpers/notices.ts`).
+- Relay: `tests/drive.rs` dan unit test di `drive_notices.rs`.

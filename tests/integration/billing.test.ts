@@ -7,6 +7,7 @@ import { APP, makeRuntime } from '../helpers/runtime';
 import { signIn, type Session } from '../helpers/session';
 import { rootOf, simpleUpload, uploadText } from '../helpers/files';
 import type { DevRuntime } from '../../dev/env';
+import { noticesOf } from '../helpers/notices';
 
 const T0 = Date.UTC(2026, 9, 10, 3, 0); // 10 Okt 2026 10:00 WIB
 
@@ -84,10 +85,7 @@ const ledgerSum = (rt: DevRuntime, userId: string) =>
       .get(userId) as { s: number }
   ).s;
 
-const notices = (rt: DevRuntime, userId: string) =>
-  rt.d1.sqlite
-    .prepare('SELECT type, payload_json FROM notifications WHERE user_id = ? ORDER BY created_at')
-    .all(userId) as Array<{ type: string; payload_json: string }>;
+const notices = (rt: DevRuntime, userId: string) => noticesOf(rt, userId);
 
 describe('paying by QRIS, one purchase at a time (ADR-041)', () => {
   it('buys a plan by QRIS; webhook replay is idempotent and status only moves forward', async () => {
@@ -103,9 +101,11 @@ describe('paying by QRIS, one purchase at a time (ADR-041)', () => {
     expect((await summary(s)).subscription).toBeNull();
     expect((await summary(s)).pendingPayments.map((p) => p.id)).toEqual([payment.paymentId]);
     const status = async () =>
-      ((await (await s.req('GET', `/api/billing/payments/${payment.paymentId}`)).json()) as {
-        status: string;
-      }).status;
+      (
+        (await (await s.req('GET', `/api/billing/payments/${payment.paymentId}`)).json()) as {
+          status: string;
+        }
+      ).status;
     expect(await status()).toBe('pending');
 
     const ref = `mock_${payment.paymentId}`;
@@ -141,12 +141,17 @@ describe('paying by QRIS, one purchase at a time (ADR-041)', () => {
 
     // A receipt that says what was bought; no invoice is sent or shown, but the books keep one.
     await rt.settle();
-    const types = notices(rt, s.userId).map((n) => n.type);
+    const types = (await notices(rt, s.userId)).map((n) => n.type);
     expect(types).toContain('payment_paid');
     expect(types).not.toContain('invoice');
-    const paid = notices(rt, s.userId).find((n) => n.type === 'payment_paid')!;
-    expect(JSON.parse(paid.payload_json)).toMatchObject({ amountIdr: 1_000, summary: 'Paket Mini aktif.' });
-    expect(rt.d1.sqlite.prepare('SELECT number FROM invoices WHERE user_id = ?').get(s.userId)).toEqual({
+    const paid = (await notices(rt, s.userId)).find((n) => n.type === 'payment_paid')!;
+    expect(JSON.parse(paid.payload_json)).toMatchObject({
+      amountIdr: 1_000,
+      summary: 'Paket Mini aktif.',
+    });
+    expect(
+      rt.d1.sqlite.prepare('SELECT number FROM invoices WHERE user_id = ?').get(s.userId),
+    ).toEqual({
       number: 'ZK-202610-000001',
     });
     expect((await s.req('GET', '/api/billing/ledger')).status).toBe(404);
@@ -168,7 +173,16 @@ describe('paying by QRIS, one purchase at a time (ADR-041)', () => {
     await setConfig(
       rt.env,
       'payment_methods',
-      [{ code: 'qris', label: 'QRIS', min_idr: 10_000, fee_flat_idr: 0, fee_pct: 0.7, active: true }],
+      [
+        {
+          code: 'qris',
+          label: 'QRIS',
+          min_idr: 10_000,
+          fee_flat_idr: 0,
+          fee_pct: 0.7,
+          active: true,
+        },
+      ],
       s.userId,
       clock.now(),
     );
@@ -187,7 +201,8 @@ describe('paying by QRIS, one purchase at a time (ADR-041)', () => {
 
   it('mock checkout page simulates payment outside production', async () => {
     const { rt, s } = await setup();
-    const { payment } = (await checkout(s, { kind: 'plan', code: 'basic' })).body as unknown as Started;
+    const { payment } = (await checkout(s, { kind: 'plan', code: 'basic' }))
+      .body as unknown as Started;
     const pageRes = await rt.fetch(new Request(payment.checkoutUrl));
     expect(await pageRes.text()).toContain('Simulasi pembayaran');
     const paid = await rt.fetch(
@@ -210,7 +225,10 @@ describe('plans (SPEC §12.4)', () => {
     expect(up.amountIdr).toBe(Math.ceil((20_000 * 16) / 31));
     expect((await summary(s)).storage.limitBytes).toBe(120 * 2 ** 30);
     const down = await checkout(s, { kind: 'plan', code: 'mini' });
-    expect(down).toMatchObject({ status: 200, body: { status: 'done', done: { kind: 'downgrade_scheduled' } } });
+    expect(down).toMatchObject({
+      status: 200,
+      body: { status: 'done', done: { kind: 'downgrade_scheduled' } },
+    });
     let sum = await summary(s);
     expect(sum.subscription).toMatchObject({ planCode: 'plus', nextPlanCode: 'mini' });
 
@@ -222,7 +240,11 @@ describe('plans (SPEC §12.4)', () => {
     expect(sum.renewIdr).toBe(1_000); // the plan it was moving to
     await buy(rt, s, { kind: 'renew' });
     sum = await summary(s);
-    expect(sum.subscription).toMatchObject({ planCode: 'mini', nextPlanCode: null, status: 'active' });
+    expect(sum.subscription).toMatchObject({
+      planCode: 'mini',
+      nextPlanCode: null,
+      status: 'active',
+    });
     expect(sum.storage.limitBytes).toBe(3 * 2 ** 30);
   });
 
@@ -240,13 +262,20 @@ describe('plans (SPEC §12.4)', () => {
     clock.set(end - 3 * DAY_MS + 60_000);
     await rt.runCron(CRON.nightly);
     await rt.settle();
-    const reminder = notices(rt, s.userId).find((n) => n.type === 'billing_reminder');
-    expect(JSON.parse(reminder!.payload_json)).toMatchObject({ days: 3, amountIdr: 10_000, creditIdr: 0 });
+    const reminder = (await notices(rt, s.userId)).find((n) => n.type === 'billing_reminder');
+    expect(JSON.parse(reminder!.payload_json)).toMatchObject({
+      days: 3,
+      amountIdr: 10_000,
+      creditIdr: 0,
+    });
 
     const renew = await buy(rt, s, { kind: 'renew' });
     expect(renew.amountIdr).toBe(10_000);
     sum = await summary(s);
-    expect(sum.subscription).toMatchObject({ status: 'active', periodEnd: Date.UTC(2026, 11, 10, 3, 0) });
+    expect(sum.subscription).toMatchObject({
+      status: 'active',
+      periodEnd: Date.UTC(2026, 11, 10, 3, 0),
+    });
     expect(sum.storage.limitBytes).toBe(30 * 2 ** 30);
     clock.set(end + 1);
     await rt.runCron('0 * * * *');
@@ -268,7 +297,7 @@ describe('dunning cycle with a fake clock (SPEC §12.5)', () => {
     await rt.runCron('0 * * * *');
     expect((await summary(s)).subscription?.status).toBe('grace');
     await rt.settle();
-    expect(notices(rt, s.userId).map((m) => m.type)).toContain('renewal_failed');
+    expect((await notices(rt, s.userId)).map((m) => m.type)).toContain('renewal_failed');
 
     clock.set(due + 3 * DAY_MS + 1);
     await rt.runCron('0 19 * * *');
@@ -325,7 +354,7 @@ describe('dunning cycle with a fake clock (SPEC §12.5)', () => {
     expect(sum.subscription).toMatchObject({ status: 'active', planCode: 'mini' });
     expect(sum.subscription!.periodEnd).toBeGreaterThan(clock.now() + 27 * DAY_MS);
     await rt.settle();
-    const paid = notices(rt, s.userId).filter((n) => n.type === 'payment_paid').pop()!;
+    const paid = (await notices(rt, s.userId)).filter((n) => n.type === 'payment_paid').pop()!;
     expect(JSON.parse(paid.payload_json)).toMatchObject({ summary: 'Paketmu aktif lagi.' });
   });
 });
@@ -366,11 +395,20 @@ describe('paying through Zeiko Accounts (ADR-036)', () => {
         amountIdr: 25_123,
         checkoutUrl: 'https://site.test/account/pay?id=pay_zk1',
       });
-      expect(opened[0]).toMatchObject({ accountId: 'zk_qris_example_com', amountIdr: 25_000, method: 'qris' });
+      expect(opened[0]).toMatchObject({
+        accountId: 'zk_qris_example_com',
+        amountIdr: 25_000,
+        method: 'qris',
+      });
 
       const callback = async (body: Record<string, unknown>, key = OPS) =>
         rt.fetch(
-          await ZeikoPaymentProvider.signedRequest(`${APP}/api/payments/webhook/zeiko`, key, body, clock.now()),
+          await ZeikoPaymentProvider.signedRequest(
+            `${APP}/api/payments/webhook/zeiko`,
+            key,
+            body,
+            clock.now(),
+          ),
         );
       const paid = { event: 'paid', id: 'pay_zk1', status: 'paid', amountIdr: 25_123 };
       expect((await callback(paid, 'wrong-key')).status).toBe(401);
@@ -392,7 +430,11 @@ describe('paying through Zeiko Accounts (ADR-036)', () => {
       if (url === 'https://door.test/apps/v1/payments')
         return Response.json({ id: 'pay_zk2', payUrl: 'https://x.test', amountIdr: 50_000 });
       if (url === 'https://door.test/apps/v1/payments/pay_zk2')
-        return Response.json({ id: 'pay_zk2', status: paid ? 'paid' : 'pending', amountIdr: 50_000 });
+        return Response.json({
+          id: 'pay_zk2',
+          status: paid ? 'paid' : 'pending',
+          amountIdr: 50_000,
+        });
       return realFetch(input, init);
     }) as typeof fetch;
     try {

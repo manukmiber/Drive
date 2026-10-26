@@ -131,7 +131,7 @@
         "queue": "zeiko-notify-dev",
         "max_batch_size": 10,
         "max_batch_timeout": 5,
-        "max_retries": 3,
+        "max_retries": 20,
         "dead_letter_queue": "zeiko-dlq-dev"
       },
       {
@@ -340,7 +340,7 @@
             "queue": "zeiko-notify-staging",
             "max_batch_size": 10,
             "max_batch_timeout": 5,
-            "max_retries": 3,
+            "max_retries": 20,
             "dead_letter_queue": "zeiko-dlq-staging"
           },
           {
@@ -550,7 +550,7 @@
             "queue": "zeiko-notify-production",
             "max_batch_size": 10,
             "max_batch_timeout": 5,
-            "max_retries": 3,
+            "max_retries": 20,
             "dead_letter_queue": "zeiko-dlq-production"
           },
           {

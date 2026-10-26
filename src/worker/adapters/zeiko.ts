@@ -35,7 +35,7 @@ interface Answer {
 }
 
 /** The door's `/apps/v1` routes. */
-class Door {
+export class Door {
   /**
    * Called as a plain function, never as `this.fetcher(…)`: the Workers runtime refuses its global
    * `fetch` called with another `this` ("Illegal invocation"), which Node lets through, so the
@@ -196,7 +196,8 @@ export class ZeikoPaymentProvider implements PaymentProvider {
     const body = await req.text();
     const ts = Number(req.headers.get('x-zeiko-timestamp'));
     const sig = req.headers.get('x-zeiko-signature') ?? '';
-    if (!Number.isInteger(ts) || Math.abs(this.now() / 1000 - ts) > WEBHOOK_TOLERANCE_S) return null;
+    if (!Number.isInteger(ts) || Math.abs(this.now() / 1000 - ts) > WEBHOOK_TOLERANCE_S)
+      return null;
     const expected = toHex(await hmacSha256(this.opsToken, `${ts}.${body}`));
     if (!timingSafeEqual(sig, expected)) return null;
     let data: Record<string, unknown>;

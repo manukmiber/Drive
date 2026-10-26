@@ -30,7 +30,20 @@ export type ScanMessage =
 export type ArchiveMessage = { type: 'archive'; jobId: string };
 export type CompressMessage = { type: 'compress'; jobId: string };
 export type NotifyMessage =
+  // A notice for the relay to keep (ADR-064), then mailed unless switched off. It carries its own
+  // content: there is no D1 row to re-read.
+  | {
+      type: 'notice';
+      id: string;
+      userId: string;
+      kind: string;
+      payload: Record<string, unknown>;
+      createdAt: number;
+    }
+  // Sent before ADR-064, still in the queue at the deploy: a row in the old D1 table.
   | { type: 'notification'; notificationId: string }
+  // An address that unsubscribed from share emails, for the relay to keep.
+  | { type: 'suppress'; emailHash: string }
   // The recipient address travels only in the message, never stored raw in D1 (SPEC §6.8).
   | { type: 'share_email'; sendId: string; to: string }
   | { type: 'admin_alert'; text: string };

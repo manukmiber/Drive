@@ -12,7 +12,7 @@ import { putKnownLength } from '../lib/r2-put';
 import { tarSize, tarStream } from '../lib/tar';
 import { collectEntries, type ArchiveContent } from './archive';
 import { requireNode } from './access';
-import { notificationStmt } from './notify';
+import { notify } from './notify';
 
 export type StreamFormat = 'zip_store' | 'zip_deflate';
 export type ArchiveFormat = StreamFormat | 'tar_zst';
@@ -267,14 +267,12 @@ export async function processArchiveJob(
     });
     const expiresAt = ctx.now() + cfg.archive_link_ttl_hours * 3600_000;
     const name = job.name ?? archiveName(ctx, content, job.format);
-    const n = notificationStmt(ctx, job.user_id, 'archive_ready', { jobId, name, bytes: out.size });
-    await DB.batch([
-      DB.prepare(
-        `UPDATE archive_jobs SET status = 'done', progress = 100, out_key = ?2, out_bytes = ?3, expires_at = ?4, error = NULL, updated_at = ?5 WHERE id = ?1`,
-      ).bind(jobId, key, out.size, expiresAt, ctx.now()),
-      n.stmt,
-    ]);
-    await ctx.env.NOTIFY_QUEUE.send({ type: 'notification', notificationId: n.id });
+    await DB.prepare(
+      `UPDATE archive_jobs SET status = 'done', progress = 100, out_key = ?2, out_bytes = ?3, expires_at = ?4, error = NULL, updated_at = ?5 WHERE id = ?1`,
+    )
+      .bind(jobId, key, out.size, expiresAt, ctx.now())
+      .run();
+    await notify(ctx, job.user_id, 'archive_ready', { jobId, name, bytes: out.size });
     return 'done';
   } catch (e) {
     log.warn('archive_failed', { jobId, error: String(e) });

@@ -16,7 +16,7 @@ import { withKnownLength } from '../lib/zip';
 import { requireNode, type NodeRecord } from './access';
 import { consumeCredits, creditBalance, refundCredits } from './credits';
 import { markManifestDirty, requireWritableFolder, uniqueName } from './nodes';
-import { notificationStmt } from './notify';
+import { notify } from './notify';
 import { addUsedIfFits } from './quota';
 
 export interface CompressOptions {
@@ -423,14 +423,12 @@ async function maybeNotifyBatch(ctx: Ctx, job: JobRow): Promise<void> {
   const marker = `cn:${job.batch_id ?? job.id}`;
   if (await ctx.env.CONFIG_KV.get(marker)) return;
   await ctx.env.CONFIG_KV.put(marker, '1', { expirationTtl: 7 * 86_400 });
-  const n = notificationStmt(ctx, job.user_id, 'compress_done', {
+  await notify(ctx, job.user_id, 'compress_done', {
     done: s.done,
     skipped: s.skipped,
     failed: s.failed,
     savedBytes: s.saved,
   });
-  await n.stmt.run();
-  await ctx.env.NOTIFY_QUEUE.send({ type: 'notification', notificationId: n.id });
 }
 
 function hashBytes(bytes: Uint8Array): { sha256: string; crc32: number } {

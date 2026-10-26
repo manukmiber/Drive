@@ -161,6 +161,11 @@ export async function sendShareEmail(
   if (message && SPAM.test(message))
     throw new AppError('VALIDATION', 'message looks like spam', { reason: 'SPAM' });
   await verifyTurnstile(ctx, input.turnstileToken, ip);
+  // Unsubscribes are kept by the relay (ADR-064). Asked before anything is counted: a relay that
+  // is not answering means nothing is sent, and the day's allowance is left alone.
+  const blockedTo = new Set<string>();
+  for (const to of recipients)
+    if (await ctx.adapters.notices.suppressed(await sha256Hex(`email|${to}`))) blockedTo.add(to);
   const quotaKey = `share_email:${user.id}:${wibDate(ctx.now())}`;
   if (
     !(await consumeUsage(ctx, quotaKey, recipients.length, cfg.share_email_daily_limit, DAY_MS))
@@ -172,12 +177,7 @@ export async function sendShareEmail(
   let queued = 0;
   let suppressed = 0;
   for (const to of recipients) {
-    const hash = await sha256Hex(`email|${to}`);
-    const blocked = await ctx.env.DB.prepare(
-      'SELECT 1 AS b FROM email_suppressions WHERE email_hash = ?1',
-    )
-      .bind(hash)
-      .first();
+    const blocked = blockedTo.has(to);
     const sendId = await insertSend(ctx, {
       shareId,
       userId: user.id,

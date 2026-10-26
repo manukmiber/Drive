@@ -309,10 +309,13 @@ export const ops = new Hono<AppBindings>()
     },
   )
   // A reported file, for five minutes, on the user-content origin; audited (SPEC §13.1).
-  .post('/reports/:id/preview', validate('json', z.object({ nodeId: z.string().max(40) })), async (c) =>
-    c.json(
-      await reviewPreview(c.get('ctx'), OPS_ACTOR, c.req.param('id'), c.req.valid('json').nodeId),
-    ),
+  .post(
+    '/reports/:id/preview',
+    validate('json', z.object({ nodeId: z.string().max(40) })),
+    async (c) =>
+      c.json(
+        await reviewPreview(c.get('ctx'), OPS_ACTOR, c.req.param('id'), c.req.valid('json').nodeId),
+      ),
   )
   // ── Scanner ──
   .get('/scanner', async (c) => c.json(await scannerStats(c.get('ctx'))))
@@ -332,8 +335,10 @@ export const ops = new Hono<AppBindings>()
     async (c) =>
       c.json({ items: await listCreativesForReview(c.get('ctx'), c.req.valid('query').status) }),
   )
-  .get('/ads/areas', validate('query', z.object({ q: z.string().max(60).default('') })), async (c) =>
-    c.json({ areas: await searchAreas(c.get('ctx'), c.req.valid('query').q) }),
+  .get(
+    '/ads/areas',
+    validate('query', z.object({ q: z.string().max(60).default('') })),
+    async (c) => c.json({ areas: await searchAreas(c.get('ctx'), c.req.valid('query').q) }),
   )
   .get(
     '/ads/advertiser',
@@ -393,7 +398,10 @@ export const ops = new Hono<AppBindings>()
   })
   .post(
     '/ads/:id/review',
-    validate('json', z.object({ decision: z.enum(['approve', 'reject']), reason: z.string().max(500) })),
+    validate(
+      'json',
+      z.object({ decision: z.enum(['approve', 'reject']), reason: z.string().max(500) }),
+    ),
     async (c) => {
       const b = c.req.valid('json');
       if (b.decision === 'reject' && !b.reason.trim())

@@ -8,7 +8,8 @@ export type Lang = 'id' | 'en';
 export function requestLang(req: Request): Lang {
   const cookie = /(?:^|;\s*)zk_lang=(id|en)(?:;|$)/.exec(req.headers.get('cookie') ?? '');
   if (cookie) return cookie[1] as Lang;
-  const first = (req.headers.get('accept-language') ?? '').split(',')[0]?.trim().toLowerCase() ?? '';
+  const first =
+    (req.headers.get('accept-language') ?? '').split(',')[0]?.trim().toLowerCase() ?? '';
   if (first.startsWith('en')) return 'en';
   return 'id';
 }

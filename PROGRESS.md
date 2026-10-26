@@ -11,7 +11,12 @@ Semua yang di bawah ini yang menyimpan data Drive di D1 (pohon file, share, sesi
 lewat fase R di `docs/ROADMAP.md`.
 - [x] Keputusan dan peta pindah ditulis: ADR-064, SPEC §2–§4, `CLAUDE.md`, ROADMAP (fase R), `PLAN.md`, `peta-file.md`.
 - [x] R0: pemilik menjawab (2026-10-26): share/token/sesi ke D1 khusus akses; data operator ke relay; salinan kuota
-  dari relay; `index.txt` JSON ringkas ter-gzip; fitur Drive baru dibekukan sampai R3. **Belum:** no. 3 (notifikasi).
+  dari relay; `index.txt` JSON ringkas; fitur Drive baru dibekukan sampai R3; no. 3 notifikasi ke relay;
+  R3 menggabungkan tulis index (batas R2 1 tulis/detik per key).
+- [x] Notifikasi, saklar email, berhenti berlangganan disimpan relay (ADR-065): `adapters/notices.ts`, antrean `notify`
+  20 kali ulang, cron `move_notices_to_relay` dan `prune_notices`, migrasi `0017` buang `telegram_links` + `contacts`;
+  relay `ab49789` (`/apps/v1/notices*`). **Relay live perlu di-update pemilik** (dashboard → update, atau
+  `bash install.sh`); sampai itu notifikasi menunggu di antrean.
 - [x] R1 format + pustaka index (2026-10-26): `shared/drive-index.ts` (format v1: header + satu baris JSON per entri,
   polos di R2), `services/drive-index.ts` (`IndexDoc`, `readIndex`, `changeIndex` bersyarat etag + ulang + tunggu 429),
   shim R2 (put atomik per key, `limitWritesPerKey`), `npm run bench:index`, 17 test. Angka di ADR-064.

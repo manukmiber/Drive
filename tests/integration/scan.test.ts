@@ -5,6 +5,7 @@ import { processScan } from '../../src/worker/services/scan';
 import { makeRuntime } from '../helpers/runtime';
 import { signIn } from '../helpers/session';
 import { grantPlan, pool, rootOf, uploadText } from '../helpers/files';
+import { noticesOf } from '../helpers/notices';
 
 const EICAR = 'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*';
 
@@ -38,9 +39,9 @@ describe('scan pipeline (SPEC §3, §14.2)', () => {
         .prepare('SELECT COUNT(*) AS n FROM blocked_hashes WHERE sha256 = ?')
         .get(row.sha256),
     ).toEqual({ n: 1 });
-    expect(
-      rt.d1.sqlite.prepare('SELECT type FROM notifications WHERE user_id = ?').all(s.userId),
-    ).toEqual([{ type: 'file_rejected' }]);
+    expect((await noticesOf(rt, s.userId)).map((n) => ({ type: n.type }))).toEqual([
+      { type: 'file_rejected' },
+    ]);
     // Rejected files can't be downloaded
     expect((await s.req('GET', `/api/files/${node.id}/download`)).status).toBe(403);
   });

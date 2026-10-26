@@ -29,6 +29,7 @@ import { describe, expect, it } from 'vitest';
 import type { ShimD1Database } from '../../dev/shims/d1';
 import { MIB } from '../../src/shared/constants';
 import { s3Client, s3Setup, S3_ORIGIN, usage } from '../helpers/s3';
+import { noticesOf } from '../helpers/notices';
 
 const text = async (body: unknown) =>
   (body as { transformToString(): Promise<string> }).transformToString();
@@ -488,11 +489,7 @@ describe('Zeiko S3 with the AWS SDK', () => {
       404,
     );
     expect(usage(rt, user.userId).used).toBe(0);
-    const note = rt.d1.sqlite
-      .prepare(
-        `SELECT payload_json FROM notifications WHERE user_id = ? AND type = 'file_rejected'`,
-      )
-      .get(user.userId) as { payload_json: string };
+    const note = (await noticesOf(rt, user.userId)).find((n) => n.type === 'file_rejected')!;
     expect(JSON.parse(note.payload_json).name).toBe('unduhan/eicar.com');
   });
 

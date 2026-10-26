@@ -4,13 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
-import {
-  createBucket,
-  createKey,
-  revokeKey,
-  s3Overview,
-  setBucketPublic,
-} from '../services/s3';
+import { createBucket, createKey, revokeKey, s3Overview, setBucketPublic } from '../services/s3';
 import { deleteBucket } from '../services/s3-objects';
 import { browseObjects, deleteKeys, objectLink, uploadObject } from '../services/s3-browse';
 import { CORS_METHODS, getBucketCors, MAX_CORS_RULES, setBucketCors } from '../services/s3-cors';

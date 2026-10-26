@@ -69,21 +69,20 @@ ${ad.creativeId ? `<a class="adr" href="${escapeHtml(appPath(c.env, `/lapor?ad=$
 
 const placement = z.enum(AD_PLACEMENTS);
 
-export const adsApi = new Hono<AppBindings>()
-  .get(
-    '/',
-    validate('query', z.object({ placement, exclude: z.string().max(400).optional() })),
-    async (c) => {
-      const q = c.req.valid('query');
-      const ctx = c.get('ctx');
-      c.header('Cache-Control', 'private, no-store');
-      if (!(await adsAllowedForUser(ctx, c.get('user')?.id ?? null)))
-        return c.json({ ads: [], rotateSeconds: 0 });
-      const exclude = q.exclude ? q.exclude.split(',').slice(0, 20) : [];
-      const placed: AdPlacement = q.placement;
-      return c.json(await serveRotation(ctx, placed, await viewerChain(c), exclude));
-    },
-  );
+export const adsApi = new Hono<AppBindings>().get(
+  '/',
+  validate('query', z.object({ placement, exclude: z.string().max(400).optional() })),
+  async (c) => {
+    const q = c.req.valid('query');
+    const ctx = c.get('ctx');
+    c.header('Cache-Control', 'private, no-store');
+    if (!(await adsAllowedForUser(ctx, c.get('user')?.id ?? null)))
+      return c.json({ ads: [], rotateSeconds: 0 });
+    const exclude = q.exclude ? q.exclude.split(',').slice(0, 20) : [];
+    const placed: AdPlacement = q.placement;
+    return c.json(await serveRotation(ctx, placed, await viewerChain(c), exclude));
+  },
+);
 
 /** The advertiser's own page (rule 6, ADR-043): their campaigns and their numbers. */
 export const advertiser = new Hono<AppBindings>()
@@ -135,7 +134,10 @@ export const adPublic = new Hono<AppBindings>()
   )
   // The QR in an ad's payment email (ADR-043). Mail clients fetch it once, through their proxy.
   .get('/qr/:file', async (c) => {
-    const id = c.req.param('file').replace(/\.png$/, '').slice(0, 40);
+    const id = c.req
+      .param('file')
+      .replace(/\.png$/, '')
+      .slice(0, 40);
     const text = await campaignQris(c.get('ctx'), id, (c.req.query('t') ?? '').slice(0, 40));
     if (!text) return c.body(null, 404);
     return new Response(await qrPng(text), {
