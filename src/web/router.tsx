@@ -39,6 +39,7 @@ const FamilyPage = page(() => import('./pages/Family'), 'FamilyPage');
 const JoinFamily = page(() => import('./pages/Family'), 'JoinFamily');
 const Settings = page(() => import('./pages/Settings'), 'Settings');
 const ApiDocs = page(() => import('./pages/ApiDocs'), 'ApiDocs');
+const OAuthAuthorize = page(() => import('./pages/OAuthAuthorize'), 'OAuthAuthorize');
 const Compress = page(() => import('./pages/Compress'), 'Compress');
 const Advertiser = page(() => import('./pages/Advertiser'), 'Advertiser');
 const Downloads = page(() => import('./pages/Downloads'), 'Downloads');
@@ -82,6 +83,11 @@ function DriveFolder() {
 
 const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/masuk', component: SignIn }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/oauth/authorize',
+    component: OAuthAuthorize,
+  }),
   reportRoute,
   createRoute({
     getParentRoute: () => rootRoute,

@@ -222,6 +222,14 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Login aplikasi OAuth 2.0 + PKCE (A3, ADR-063, 2026-10-26)
+- [x] Klien pihak pertama (Android, desktop, CLI), halaman persetujuan `/oauth/authorize`, code + PKCE S256,
+  `/api/v1/oauth/token` (code, refresh dengan rotasi + deteksi pemakaian ulang), `/api/v1/oauth/revoke`.
+- [x] Pengaturan → Aplikasi tersambung (putuskan); `/.well-known/assetlinks.json`.
+- [ ] Pemilik: migrasi `0016` di D1 remote, deploy; untuk App Links: `androidPackage` + `androidCertSha256` di
+  `deploy/production.json`.
+- [ ] Belum: device flow (RFC 8628), aplikasi pihak ketiga.
+
 ## API publik v1 + OpenAPI (A2, ADR-062, 2026-10-26)
 - [x] `/api/v1`: akun, Drive (list cursor, detail, cari, unduh, Sampah, folder, ganti nama, pindah, salin), upload
   multipart, share, Zeiko S3 (key, bucket, publik, CORS); scope per operasi; Idempotency-Key; 300/menit per token.

@@ -1456,3 +1456,36 @@ tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.t
 
 **Konsekuensi:** `services/s3-app.ts` (error S3 → error app, akun aktif) dipakai `/api/s3` dan v1. Test:
 `tests/integration/api-v1.test.ts` (dokumen, kontrak, pagination, idempotency, scope per endpoint, IDOR, S3).
+
+## ADR-063 — Login aplikasi Zeiko: OAuth 2.0 + PKCE
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: roadmap A3, "pick acak 3 API").
+
+**Keputusan:**
+- Drive menjadi authorization server untuk **aplikasi pihak pertama saja**, ditetapkan di kode (`OAUTH_CLIENTS` di
+  `services/oauth.ts`, bukan tabel): `zeiko-android` (App Links `https://<APP_ORIGIN>/app/callback` dan skema sendiri
+  `id.biz.zeiko.drive:/oauth/callback`), `zeiko-desktop` dan `zeiko-cli` (loopback `http://127.0.0.1` atau `[::1]`, port
+  bebas, path `/callback`, RFC 8252 §7.3). Redirect URI dicocokkan persis; `localhost` tidak diterima (RFC 8252 §8.3).
+- **Persetujuan** di SPA `/oauth/authorize` dengan sesi Drive biasa (login lewat pintu seperti sekarang; relay tidak
+  berubah; `next` di `/masuk` sekarang boleh membawa query). API-nya cookie: `GET/POST /api/oauth/authorize`. Klien atau
+  redirect yang salah ditampilkan sebagai error di halaman, tidak pernah diarahkan. PKCE `S256` dan `state` wajib;
+  scope ⊆ scope klien. Tolak → `error=access_denied`.
+- **Code**: 43 karakter acak, disimpan hash, 60 detik (`oauth_code_ttl_seconds`), sekali pakai. Klaim code dan pembuatan
+  grant dalam satu batch D1 (`changes() = 1`), jadi dua penukaran bersamaan hanya satu yang menang. Code dipakai ulang →
+  semua yang dibuat penukaran pertama dicabut.
+- **Token** memakai tabel A1: access `zkd_…` (`oauth_access`, 1 jam, `oauth_access_ttl_seconds`), refresh `zkr_…`
+  (`oauth_refresh`, 90 hari, `oauth_refresh_ttl_days`, tidak pernah diterima sebagai Bearer). Keduanya membawa
+  `grant_id` (tabel `oauth_grants`, migrasi `0016`). Setiap refresh memberi pasangan baru dan mematikan refresh lama;
+  **refresh lama dipakai lagi → seluruh grant dan tokennya dicabut** (ada yang menyalin). `POST /api/v1/oauth/token`
+  (form atau JSON, error `{error, error_description}` RFC 6749, `Cache-Control: no-store`, rate limit `RL_AUTH` per IP) dan
+  `POST /api/v1/oauth/revoke` (RFC 7009: access token mati sendiri, refresh token memutus grant) ada di daftar endpoint
+  v1 sebagai endpoint publik.
+- Pengaturan → Token & aplikasi: "Aplikasi tersambung" (scope, tersambung, terakhir dipakai, Putuskan). Ekspor data
+  memuat grant; hapus akun menghapus grant, code, dan token.
+- `/.well-known/assetlinks.json` dari `ANDROID_APP_PACKAGE` + `ANDROID_CERT_SHA256` (`deploy/<env>.json` →
+  `androidPackage`, `androidCertSha256`); 404 sampai diisi. Terdaftar di readiness (`app_links`); sampai siap, aplikasi
+  Android memakai skema sendiri.
+- **Ditunda:** device flow (RFC 8628) untuk CLI/TV: CLI memakai loopback dulu. **Langkah berikutnya:** aplikasi pihak
+  ketiga (pendaftaran klien, review, halaman developer, klien rahasia) belum didukung.
+
+**Konsekuensi:** test `tests/integration/oauth.test.ts` (alur PKCE, redirect/klien/scope salah, code dua kali,
+kedaluwarsa, rotasi + deteksi pemakaian ulang, revoke, putuskan dari Pengaturan, assetlinks).

@@ -23,8 +23,10 @@ export interface Endpoint {
   responses: Record<number, ZodType | null>;
   /** Takes an Idempotency-Key header (POSTs that make something). */
   idempotent?: boolean;
-  /** Served without a token (the OpenAPI document itself). */
+  /** Served without a token (the OpenAPI document, OAuth's token endpoint). */
   public?: boolean;
+  /** The body may be application/x-www-form-urlencoded as well as JSON (OAuth, RFC 6749). */
+  form?: boolean;
 }
 
 /** /nodes/{id} → /nodes/:id */
@@ -109,7 +111,12 @@ export function openApiDocument(endpoints: readonly Endpoint[], serverUrl: strin
         ? {
             requestBody: {
               required: true,
-              content: { 'application/json': { schema: json(ep.body, 'input') } },
+              content: {
+                ...(ep.form
+                  ? { 'application/x-www-form-urlencoded': { schema: json(ep.body, 'input') } }
+                  : {}),
+                'application/json': { schema: json(ep.body, 'input') },
+              },
             },
           }
         : ep.binary

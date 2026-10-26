@@ -20,6 +20,14 @@ const EXPIRY = [
   ['never', null],
 ] as const;
 
+interface ConnectedApp {
+  id: string;
+  name: string;
+  scopes: Scope[];
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
 interface TokenInfo {
   id: string;
   name: string;
@@ -45,6 +53,11 @@ export function AccessTokens() {
   const [busy, setBusy] = useState(false);
   const [secret, setSecret] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<TokenInfo | null>(null);
+  const [disconnecting, setDisconnecting] = useState<ConnectedApp | null>(null);
+  const apps = useQuery({
+    queryKey: ['tokens', 'apps'],
+    queryFn: () => api<{ apps: ConnectedApp[] }>('/api/tokens/apps'),
+  });
   const refresh = () => qc.invalidateQueries({ queryKey: ['tokens'] });
 
   async function create(e: FormEvent) {
@@ -114,6 +127,36 @@ export function AccessTokens() {
         </ul>
       ) : (
         q.data && <p className="mt-3 text-sm text-[var(--fg-muted)]">{t.tokens.empty}</p>
+      )}
+
+      <h3 className="mt-5 text-sm font-medium">{t.tokens.appsTitle}</h3>
+      {apps.data && apps.data.apps.length > 0 ? (
+        <ul className="mt-1 divide-y divide-[var(--border)]">
+          {apps.data.apps.map((a) => (
+            <li key={a.id} className="flex items-start gap-3 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{a.name}</p>
+                <p className="mt-0.5 text-xs text-[var(--fg-muted)]">
+                  {a.scopes.map((s) => t.tokens.scope[s]).join(' · ')}
+                </p>
+                <p className="mt-0.5 text-xs text-[var(--fg-muted)]">
+                  {t.tokens.connectedOn(formatDate(a.createdAt))}
+                  {' · '}
+                  {a.lastUsedAt ? t.tokens.lastUsed(formatDate(a.lastUsedAt)) : t.tokens.neverUsed}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                className="h-9 px-3 text-red-600"
+                onClick={() => setDisconnecting(a)}
+              >
+                {t.tokens.disconnect}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        apps.data && <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.tokens.appsEmpty}</p>
       )}
 
       <form
@@ -200,6 +243,37 @@ export function AccessTokens() {
             <Copy className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
+      </Dialog>
+
+      <Dialog
+        open={disconnecting !== null}
+        title={disconnecting ? t.tokens.disconnectTitle(disconnecting.name) : ''}
+        onClose={() => setDisconnecting(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDisconnecting(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                const a = disconnecting;
+                setDisconnecting(null);
+                if (!a) return;
+                void sendJson('DELETE', `/api/tokens/apps/${a.id}`)
+                  .then(() => {
+                    toast(t.tokens.disconnected);
+                    return refresh();
+                  })
+                  .catch(() => toast(t.errors.generic, { tone: 'error' }));
+              }}
+            >
+              {t.tokens.disconnect}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm">{t.tokens.disconnectBody}</p>
       </Dialog>
 
       <Dialog

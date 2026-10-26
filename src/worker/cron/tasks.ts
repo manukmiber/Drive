@@ -120,6 +120,8 @@ registerCronTask(CRON.nightly, {
       DB.prepare(`DELETE FROM archive_jobs WHERE updated_at < ?1 AND out_key IS NULL`).bind(cutoff),
       // Idempotency-Key answers are kept a day (ADR-062).
       DB.prepare('DELETE FROM api_idempotency WHERE created_at < ?1').bind(ctx.now() - DAY_MS),
+      // OAuth codes live a minute (ADR-063); the rows go after a day.
+      DB.prepare('DELETE FROM oauth_codes WHERE expires_at < ?1').bind(ctx.now() - DAY_MS),
     ]);
   },
 });

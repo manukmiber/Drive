@@ -34,7 +34,8 @@ export type FeatureId =
   | 'r2_meters'
   | 'async_archives'
   | 'antivirus'
-  | 'captcha';
+  | 'captcha'
+  | 'app_links';
 
 export interface Feature {
   id: FeatureId;
@@ -261,6 +262,27 @@ export async function readiness(ctx: Ctx): Promise<Feature[]> {
           Boolean(env.TURNSTILE_SECRET_KEY),
           'The same Turnstile widget → Secret key. Paste it here.',
         ),
+      ],
+    },
+    {
+      id: 'app_links',
+      title: 'Android app sign-in through App Links',
+      what: 'The Android app gets its sign-in answer on https://drive.zeiko.biz.id/app/callback, which only the real app can open. Until then it uses its own id.biz.zeiko.drive: address, which also works (ADR-063).',
+      hidden: false,
+      after: [],
+      needs: [
+        {
+          name: 'ANDROID_APP_PACKAGE',
+          kind: 'cloudflare',
+          ok: Boolean(env.ANDROID_APP_PACKAGE),
+          how: 'The Android app’s package name (e.g. id.biz.zeiko.drive): put it in deploy/production.json as "androidPackage" and deploy.',
+        },
+        {
+          name: 'ANDROID_CERT_SHA256',
+          kind: 'cloudflare',
+          ok: Boolean(env.ANDROID_CERT_SHA256),
+          how: 'The SHA-256 fingerprint of the app’s signing certificate (Play Console → App signing), AA:BB:… form, comma separated if more than one: deploy/production.json "androidCertSha256", then deploy.',
+        },
       ],
     },
     {

@@ -12,11 +12,17 @@ import { contentLength } from '../lib/http';
 import { honoPath, openApiDocument, type Endpoint } from '../lib/openapi';
 import { apiHeaders } from '../middleware/base';
 import { errorBody } from '../middleware/errors';
-import { enforceRateLimit } from '../middleware/ratelimit';
+import { clientIp, enforceRateLimit } from '../middleware/ratelimit';
 import { API_RATE_PER_MINUTE, scope, tokenAuth } from '../middleware/token';
 import { requireNode } from '../services/access';
 import { ensurePersonalSpace } from '../services/accounts';
 import { parseType, search } from '../services/browse';
+import {
+  exchangeCode,
+  OAuthError,
+  refresh,
+  revokeToken as revokeOAuthToken,
+} from '../services/oauth';
 import { downloadUrl } from '../services/download';
 import {
   breadcrumb,
@@ -73,6 +79,28 @@ function op<
 }
 
 const userId = (c: C) => c.get('user')!.id;
+
+const TOKEN_REQUEST = z.object({
+  grant_type: z.enum(['authorization_code', 'refresh_token']),
+  client_id: z.string().max(100),
+  code: z.string().max(200).optional(),
+  redirect_uri: z.string().max(2048).optional(),
+  code_verifier: z.string().max(128).optional(),
+  refresh_token: z.string().max(100).optional(),
+});
+const REVOKE_REQUEST = z.object({
+  token: z.string().max(100),
+  client_id: z.string().max(100),
+  token_type_hint: z.string().max(40).optional(),
+});
+
+/** OAuth clients send forms (RFC 6749); JSON is taken too. */
+async function formOrJson(c: C): Promise<unknown> {
+  const type = c.req.header('content-type') ?? '';
+  if (type.includes('application/x-www-form-urlencoded'))
+    return Object.fromEntries(new URLSearchParams(await c.req.text()));
+  return c.req.json().catch(() => ({}));
+}
 const nodeParam = z.object({ id: S.ulidId });
 const idParam = z.object({ id: z.string().min(1).max(64) });
 const bucketParam = z.object({ name: z.string().min(3).max(63) });
@@ -82,6 +110,79 @@ const NODES = z.object({ items: z.array(S.Node) });
 const COUNT = z.object({ count: z.number().int() });
 
 export const ENDPOINTS: readonly Op[] = [
+  // ── sign-in for Zeiko's apps (OAuth 2.0 + PKCE, ADR-063) ──
+  op(
+    {
+      method: 'post',
+      path: '/oauth/token',
+      scope: null,
+      tag: 'Sign-in',
+      summary:
+        'Trade an authorization code (with its PKCE verifier) or a refresh token for an access token and a new refresh token',
+      public: true,
+      form: true,
+      body: TOKEN_REQUEST,
+      responses: { 200: S.OAuthTokens, 400: S.OAuthError, 401: S.OAuthError },
+    },
+    async (c) => {
+      await enforceRateLimit(c.env, 'RL_AUTH', `oauth:${clientIp(c.req.raw)}`);
+      c.header('Cache-Control', 'no-store');
+      c.header('Pragma', 'no-cache');
+      try {
+        const b = TOKEN_REQUEST.safeParse(await formOrJson(c));
+        if (!b.success) throw new OAuthError('invalid_request', 'missing or malformed parameters');
+        const p = b.data;
+        if (p.grant_type === 'authorization_code') {
+          if (!p.code || !p.redirect_uri || !p.code_verifier)
+            throw new OAuthError(
+              'invalid_request',
+              'code, redirect_uri and code_verifier are required',
+            );
+          return c.json(
+            await exchangeCode(c.get('ctx'), {
+              code: p.code,
+              redirectUri: p.redirect_uri,
+              clientId: p.client_id,
+              codeVerifier: p.code_verifier,
+            }),
+          );
+        }
+        if (!p.refresh_token) throw new OAuthError('invalid_request', 'refresh_token is required');
+        return c.json(
+          await refresh(c.get('ctx'), { refreshToken: p.refresh_token, clientId: p.client_id }),
+        );
+      } catch (e) {
+        if (e instanceof OAuthError)
+          return c.json({ error: e.error, error_description: e.message }, e.status as 400);
+        throw e;
+      }
+    },
+  ),
+  op(
+    {
+      method: 'post',
+      path: '/oauth/revoke',
+      scope: null,
+      tag: 'Sign-in',
+      summary:
+        'Sign the app out (RFC 7009): an access token ends itself, a refresh token ends the whole connection',
+      public: true,
+      form: true,
+      body: REVOKE_REQUEST,
+      responses: { 200: null, 400: S.OAuthError },
+    },
+    async (c) => {
+      const b = REVOKE_REQUEST.safeParse(await formOrJson(c));
+      if (!b.success)
+        return c.json(
+          { error: 'invalid_request', error_description: 'token and client_id are required' },
+          400,
+        );
+      await revokeOAuthToken(c.get('ctx'), b.data.token, b.data.client_id);
+      return c.body(null, 200);
+    },
+  ),
+
   // ── account ──
   op(
     {
@@ -754,19 +855,13 @@ function build() {
   app.use('*', async (c, next) =>
     (c.req.header('content-type') ?? '').includes('application/json') ? jsonLimit(c, next) : next(),
   );
-  app.use('*', tokenAuth);
-  app.use('*', async (c, next) => {
-    await next();
-    c.header('X-RateLimit-Limit', String(API_RATE_PER_MINUTE));
-    c.header('RateLimit-Policy', `${API_RATE_PER_MINUTE};w=60`);
-  });
-  for (const { def, handle } of ENDPOINTS) {
+  const register = ({ def, handle }: Op) => {
     const guards: MiddlewareHandler<AppBindings>[] = [];
     if (def.scope) guards.push(scope(def.scope));
     if (def.idempotent) guards.push(idempotency);
     const run: MiddlewareHandler<AppBindings> = async (c) => {
       let body: unknown;
-      if (def.body) {
+      if (def.body && !def.form) {
         const raw: unknown = await c.req.json().catch(() => {
           throw new AppError('VALIDATION', 'the body must be JSON');
         });
@@ -779,7 +874,16 @@ function build() {
       });
     };
     app.on([def.method.toUpperCase()], [honoPath(def.path)], ...guards, run);
-  }
+  };
+  // Without a token: OAuth's own endpoints (the app has no token yet).
+  for (const ep of ENDPOINTS) if (ep.def.public) register(ep);
+  app.use('*', tokenAuth);
+  app.use('*', async (c, next) => {
+    await next();
+    c.header('X-RateLimit-Limit', String(API_RATE_PER_MINUTE));
+    c.header('RateLimit-Policy', `${API_RATE_PER_MINUTE};w=60`);
+  });
+  for (const ep of ENDPOINTS) if (!ep.def.public) register(ep);
   app.all('*', (c) => c.json(errorBody('NOT_FOUND', 'no such endpoint'), 404));
   return app;
 }

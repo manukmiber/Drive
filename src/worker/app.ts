@@ -34,6 +34,8 @@ import { billing } from './routes/billing';
 import { payments } from './routes/payments';
 import { ops } from './routes/ops';
 import { tokens } from './routes/tokens';
+import { oauth } from './routes/oauth';
+import { assetLinks } from './routes/well-known';
 import { v1 } from './routes/v1';
 import { notifications } from './routes/notifications';
 import { family } from './routes/family';
@@ -108,6 +110,7 @@ export function createApp() {
   api.route('/family', family);
   api.route('/s3', s3);
   api.route('/tokens', tokens);
+  api.route('/oauth', oauth);
   api.route('/', nodes);
   api.all('*', (c) => c.json(errorBody('NOT_FOUND', 'no such endpoint'), 404));
   app.route('/api', api);
@@ -118,6 +121,7 @@ export function createApp() {
   app.route('/ad', adPublic);
   app.route('/', sharePublic);
   app.route('/__dev', dev);
+  app.route('/.well-known', assetLinks);
 
   // Web Share Target without the service worker (first launch) → just open the Drive.
   app.post('/share-target', (c) => c.redirect(appPath(c.env, '/drive'), 303));

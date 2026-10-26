@@ -1384,6 +1384,16 @@ export const t = {
     manageTokens: 'Kelola token',
     docsLink: 'Dokumentasi API',
   },
+  oauth: {
+    title: (app: string) => `${app} ingin memakai Zeiko Drive-mu`,
+    signedInAs: (email: string) => `Masuk sebagai ${email}`,
+    wants: 'Aplikasi ini akan bisa:',
+    allow: 'Izinkan',
+    deny: 'Batal',
+    note: 'Kamu bisa memutuskannya kapan saja di Pengaturan → Token & aplikasi.',
+    invalid: 'Link masuk ini tidak valid. Kembali ke aplikasinya dan coba lagi.',
+    returning: 'Kembali ke aplikasi…',
+  },
   tokens: {
     title: 'Token & aplikasi',
     intro:
@@ -1416,6 +1426,13 @@ export const t = {
     revokeTitle: (n: string) => `Cabut “${n}”?`,
     revokeBody: 'Semua yang memakai token ini langsung berhenti bekerja.',
     revoked: 'Token dicabut',
+    appsTitle: 'Aplikasi tersambung',
+    appsEmpty: 'Belum ada aplikasi yang masuk.',
+    connectedOn: (d: string) => `Tersambung ${d}`,
+    disconnect: 'Putuskan',
+    disconnectTitle: (n: string) => `Putuskan “${n}”?`,
+    disconnectBody: 'Aplikasi itu langsung keluar dan harus meminta izin lagi.',
+    disconnected: 'Aplikasi diputuskan',
     tooMany: 'Jumlah tokenmu sudah maksimal. Cabut salah satu dulu.',
   },
   settings: {

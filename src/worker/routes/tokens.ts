@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
+import { disconnectApp, listApps } from '../services/oauth';
 import { createToken, listTokens, revokeToken, TOKEN_SCOPES } from '../services/tokens';
 import type { AppBindings } from '../types';
 
@@ -23,6 +24,12 @@ export const tokens = new Hono<AppBindings>()
     async (c) =>
       c.json(await createToken(c.get('ctx'), c.get('user')!.id, c.req.valid('json')), 201),
   )
+  // Apps signed in through OAuth (ADR-063).
+  .get('/apps', async (c) => c.json({ apps: await listApps(c.get('ctx'), c.get('user')!.id) }))
+  .delete('/apps/:id', async (c) => {
+    await disconnectApp(c.get('ctx'), c.get('user')!.id, c.req.param('id'));
+    return c.body(null, 204);
+  })
   .delete('/:id', async (c) => {
     await revokeToken(c.get('ctx'), c.get('user')!.id, c.req.param('id'));
     return c.body(null, 204);

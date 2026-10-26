@@ -14,9 +14,12 @@ export type TokenScope = (typeof TOKEN_SCOPES)[number];
 export type TokenKind = 'personal' | 'oauth_access' | 'oauth_refresh';
 
 export const TOKEN_PREFIX = 'zkd_';
+/** Refresh tokens of connected apps (ADR-063): never accepted as a Bearer token. */
+export const REFRESH_PREFIX = 'zkr_';
 const ID_LEN = 8;
 const SECRET_LEN = 32;
 export const TOKEN_RE = /^zkd_[0-9A-Za-z]{40}$/;
+export const REFRESH_RE = /^zkr_[0-9A-Za-z]{40}$/;
 /** last_used_at is written at most this often per token (D1 writes on Workers Free). */
 const TOUCH_EVERY_MS = 5 * 60_000;
 
@@ -35,6 +38,8 @@ export interface TokenRow {
   last_used_at: number | null;
   expires_at: number | null;
   revoked_at: number | null;
+  /** The connected app this token belongs to (ADR-063); null for personal tokens. */
+  grant_id?: string | null;
 }
 
 export interface TokenDto {
@@ -61,10 +66,13 @@ const toDto = (r: TokenRow): TokenDto => ({
 });
 
 /** A new token's secret and its row values; the caller stores it (personal, or OAuth in A3). */
-export async function mintToken(): Promise<{ token: string; prefix: string; hash: string }> {
+export async function mintToken(
+  kind: 'access' | 'refresh' = 'access',
+): Promise<{ token: string; prefix: string; hash: string }> {
+  const head = kind === 'refresh' ? REFRESH_PREFIX : TOKEN_PREFIX;
   const id = randomBase62(ID_LEN);
-  const token = `${TOKEN_PREFIX}${id}${randomBase62(SECRET_LEN)}`;
-  return { token, prefix: `${TOKEN_PREFIX}${id}`, hash: await sha256Hex(token) };
+  const token = `${head}${id}${randomBase62(SECRET_LEN)}`;
+  return { token, prefix: `${head}${id}`, hash: await sha256Hex(token) };
 }
 
 export interface CreateTokenInput {
@@ -115,8 +123,8 @@ export async function createToken(
 
 export async function insertToken(ctx: Ctx, row: TokenRow): Promise<void> {
   await ctx.env.DB.prepare(
-    `INSERT INTO api_tokens (id, user_id, name, prefix, secret_hash, scopes, kind, created_at, expires_at)
-     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+    `INSERT INTO api_tokens (id, user_id, name, prefix, secret_hash, scopes, kind, created_at, expires_at, grant_id)
+     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
   )
     .bind(
       row.id,
@@ -128,6 +136,7 @@ export async function insertToken(ctx: Ctx, row: TokenRow): Promise<void> {
       row.kind,
       row.created_at,
       row.expires_at,
+      row.grant_id ?? null,
     )
     .run();
 }
@@ -173,19 +182,10 @@ export async function authenticateToken(
   const fail = () =>
     new AppError('UNAUTHORIZED', 'a valid access token is required', { reason: 'bad_token' });
   if (!TOKEN_RE.test(token)) throw fail();
-  const row = await ctx.env.DB.prepare(
-    `SELECT t.*, u.email AS u_email, u.name AS u_name, u.status AS u_status
-     FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.prefix = ?1`,
-  )
-    .bind(token.slice(0, TOKEN_PREFIX.length + ID_LEN))
-    .first<TokenRow & { u_email: string; u_name: string; u_status: SessionUser['status'] }>();
-  const hash = await sha256Hex(token);
-  // Compared even when no row matched, so a miss and a wrong secret take the same time.
-  const same = timingSafeEqual(row?.secret_hash ?? '0'.repeat(64), hash);
+  const row = await findToken(ctx, token);
   const now = ctx.now();
   if (
     !row ||
-    !same ||
     !kinds.includes(row.kind) ||
     row.revoked_at !== null ||
     (row.expires_at !== null && row.expires_at <= now)
@@ -204,6 +204,28 @@ export async function authenticateToken(
     token: row,
     scopes: scopesOf(row.scopes),
   };
+}
+
+/**
+ * The row of a whole token (access or refresh) with its owner, or null when the id is unknown or
+ * the secret is wrong; the hash is compared in constant time either way.
+ */
+export async function findToken(
+  ctx: Ctx,
+  token: string,
+): Promise<
+  (TokenRow & { u_email: string; u_name: string; u_status: SessionUser['status'] }) | null
+> {
+  const row = await ctx.env.DB.prepare(
+    `SELECT t.*, u.email AS u_email, u.name AS u_name, u.status AS u_status
+     FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.prefix = ?1`,
+  )
+    .bind(token.slice(0, TOKEN_PREFIX.length + ID_LEN))
+    .first<TokenRow & { u_email: string; u_name: string; u_status: SessionUser['status'] }>();
+  const hash = await sha256Hex(token);
+  // Compared even when no row matched, so a miss and a wrong secret take the same time.
+  const same = timingSafeEqual(row?.secret_hash ?? '0'.repeat(64), hash);
+  return row && same ? row : null;
 }
 
 export function requireScope(auth: Pick<TokenAuth, 'scopes'>, scope: TokenScope): void {

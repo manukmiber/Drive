@@ -1355,6 +1355,16 @@ export const en: Strings = {
     manageTokens: 'Manage tokens',
     docsLink: 'API documentation',
   },
+  oauth: {
+    title: (app: string) => `${app} wants to use your Zeiko Drive`,
+    signedInAs: (email: string) => `Signed in as ${email}`,
+    wants: 'It will be able to:',
+    allow: 'Allow',
+    deny: 'Cancel',
+    note: 'You can disconnect it any time in Settings → Tokens & apps.',
+    invalid: 'This sign-in link is not valid. Go back to the app and try again.',
+    returning: 'Going back to the app…',
+  },
   tokens: {
     title: 'Tokens & apps',
     intro:
@@ -1387,6 +1397,13 @@ export const en: Strings = {
     revokeTitle: (n: string) => `Revoke “${n}”?`,
     revokeBody: 'Anything using this token stops working at once.',
     revoked: 'Token revoked',
+    appsTitle: 'Connected apps',
+    appsEmpty: 'No apps signed in.',
+    connectedOn: (d: string) => `Connected ${d}`,
+    disconnect: 'Disconnect',
+    disconnectTitle: (n: string) => `Disconnect “${n}”?`,
+    disconnectBody: 'The app is signed out at once and has to ask again.',
+    disconnected: 'App disconnected',
     tooMany: 'You have the most tokens allowed. Revoke one first.',
   },
   settings: {

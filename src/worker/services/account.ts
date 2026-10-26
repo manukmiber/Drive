@@ -84,6 +84,11 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
       'SELECT id, name, prefix, scopes, kind, created_at, last_used_at, expires_at, revoked_at FROM api_tokens WHERE user_id = ?1 ORDER BY created_at',
       userId,
     ),
+    // Apps connected through OAuth (ADR-063).
+    connectedApps: await q(
+      'SELECT id, client_id, scopes, created_at, last_used_at, revoked_at FROM oauth_grants WHERE user_id = ?1 ORDER BY created_at',
+      userId,
+    ),
     // Zeiko S3 (ADR-044): the account, key ids (never the secrets) and buckets. Objects are listed
     // through the S3 API itself.
     s3: {
@@ -197,6 +202,8 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
       DB.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
       // Access tokens and app connections (ADR-061).
       DB.prepare('DELETE FROM api_tokens WHERE user_id = ?1').bind(id),
+      DB.prepare('DELETE FROM oauth_grants WHERE user_id = ?1').bind(id),
+      DB.prepare('DELETE FROM oauth_codes WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM accounts WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM passkeys WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM two_factors WHERE user_id = ?1').bind(id),

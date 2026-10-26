@@ -117,6 +117,25 @@ export const Me = z.strictObject({
   }),
 });
 
+export const OAuthTokens = z.strictObject({
+  access_token: z.string(),
+  token_type: z.literal('Bearer'),
+  expires_in: z.number().int(),
+  refresh_token: z.string(),
+  scope: z.string(),
+});
+
+export const OAuthError = z.strictObject({
+  error: z.enum([
+    'invalid_request',
+    'invalid_client',
+    'invalid_grant',
+    'unsupported_grant_type',
+    'invalid_scope',
+  ]),
+  error_description: z.string(),
+});
+
 export const CorsRule = z.object({
   id: z.string().max(255).optional(),
   allowedOrigins: z.array(z.string().max(1024)).min(1).max(100),

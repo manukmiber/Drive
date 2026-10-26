@@ -76,7 +76,7 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 | --- | --------------------------------------------------- | ----------------- | ------ | ---------- | ----------------- |
 | A1  | Token akses + auth Bearer                           | Diminta (fondasi) | M      | –          | selesai (ADR-061) |
 | A2  | API publik v1 + OpenAPI (Drive + kelola S3)         | Diminta           | L      | A1         | selesai (ADR-062) |
-| A3  | Login aplikasi (OAuth 2.0 + PKCE) untuk APK/desktop | Diminta           | M      | A1, A2     | belum             |
+| A3  | Login aplikasi (OAuth 2.0 + PKCE) untuk APK/desktop | Diminta           | M      | A1, A2     | selesai (ADR-063) |
 | A4  | SDK TypeScript (Drive + S3)                         | Diminta           | M      | A2 (A3)    | belum             |
 | A5  | SDK untuk APK (Kotlin/Flutter)                      | Diminta, nanti    | M      | A2, A3     | belum             |
 | A6  | Webhook Drive + S3                                  | Niche             | M      | A1, D4     | belum             |

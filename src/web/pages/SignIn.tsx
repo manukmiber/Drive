@@ -8,10 +8,13 @@ import { t } from '../lib/i18n';
 import { meQueryKey } from '../lib/session';
 import { signInSilently, sitePage, zeikoConfig, type SilentResult } from '../lib/zeiko';
 
-/** Only same-app paths are accepted as a return target (no open redirect). */
+/**
+ * Only same-app paths are accepted as a return target (no open redirect). A query is kept (an app's
+ * sign-in request, ADR-063), with plain URL characters only.
+ */
 function nextPath(): string {
   const next = new URLSearchParams(location.search).get('next');
-  return next && /^\/(?!\/)[\w\-/]*$/.test(next) ? next : '/';
+  return next && /^\/(?!\/)[\w\-/]*(\?[\w\-.~%&=+]*)?$/.test(next) ? next : '/';
 }
 
 /**
@@ -33,7 +36,9 @@ export function SignIn() {
     const r = await signInSilently();
     if (r === 'signed-in') {
       await qc.invalidateQueries({ queryKey: meQueryKey });
-      await navigate({ to: nextPath() as '/' });
+      const to = nextPath();
+      if (to.includes('?')) location.assign(to);
+      else await navigate({ to: to as '/' });
       return;
     }
     setState(r);

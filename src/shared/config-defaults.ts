@@ -161,6 +161,10 @@ export const configSchema = z.object({
   // ── Access tokens (ADR-061) ──
   /** Working personal tokens one user may have. */
   api_tokens_max_per_user: int().min(1).max(100).default(20),
+  // Zeiko's own apps signing in (OAuth 2.0 + PKCE, ADR-063).
+  oauth_code_ttl_seconds: int().min(10).max(600).default(60),
+  oauth_access_ttl_seconds: int().min(300).max(86_400).default(3_600),
+  oauth_refresh_ttl_days: int().min(1).max(365).default(90),
 
   // ── Zeiko S3 (ADR-044) ──
   s3_max_buckets_per_account: int().min(1).default(100),

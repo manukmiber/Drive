@@ -38,6 +38,9 @@ export interface Env {
   /** `none` = no Container `archiver`: TAR.ZST and large deflate ZIPs are unavailable. */
   ADAPTER_ARCHIVER?: 'mock' | 'container' | 'none';
   TURNSTILE_SITE_KEY?: string;
+  /** The Android app's package and signing-certificate SHA-256 fingerprints (comma separated), for App Links (ADR-063). */
+  ANDROID_APP_PACKAGE?: string;
+  ANDROID_CERT_SHA256?: string;
   SCANNER_INSTANCES?: string;
   /** This environment's R2 bucket, as Cloudflare's analytics name it (ADR-037). */
   R2_BUCKET_NAME?: string;
