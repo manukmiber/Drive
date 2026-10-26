@@ -2,7 +2,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { Copy, Crown, MessageCircle, Send, Users } from 'lucide-react';
-import QRCode from 'qrcode';
 import { useEffect, useState } from 'react';
 import { formatBytes, formatDate, formatRupiah } from '../../shared/format';
 import { t } from '../lib/i18n';
@@ -13,6 +12,7 @@ import { Dialog } from '../components/ui/Dialog';
 import { toast } from '../components/ui/Toast';
 import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { cn } from '../lib/cn';
+import { qrDataUrl } from '../lib/qr';
 import { meQueryKey, useMe } from '../lib/session';
 import type { Catalog } from '../lib/types';
 import { useCheckout } from './Billing';
@@ -49,9 +49,9 @@ function InvitePanel({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState('');
   const make = useMutation({
     mutationFn: () => postJson<{ url: string }>('/api/family/invites', { channel: 'link' }),
-    onSuccess: async ({ url: u }) => {
+    onSuccess: ({ url: u }) => {
       setUrl(u);
-      setQr(await QRCode.toDataURL(u, { margin: 1, width: 200 }));
+      setQr(qrDataUrl(u, 400));
       onDone();
     },
     onError: (e) => toast(errText(e), { tone: 'error' }),
@@ -103,7 +103,9 @@ function InvitePanel({ onDone }: { onDone: () => void }) {
               <Send className="h-4 w-4" /> Telegram
             </Button>
           </div>
-          {qr && <img src={qr} alt="QR undangan" className="h-40 w-40 rounded-xl bg-white p-2" />}
+          {qr && (
+            <img src={qr} alt={t.family.inviteQr} className="h-40 w-40 rounded-xl bg-white p-2" />
+          )}
           <div className="flex gap-2">
             <input
               value={email}

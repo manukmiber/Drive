@@ -1351,3 +1351,19 @@ tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.t
 **Konsekuensi:** satu subquery per baris folder yang punya sampul. Test: `tests/integration/decor.test.ts`,
 `tests/unit/folder-decor.test.ts`, `shares.test.ts` (badge share), `idor.test.ts`.
 
+
+## ADR-059 — Logo Zeiko di tengah QR share
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: roadmap D15, "lanjut all in 12 fitur").
+
+**Keputusan:**
+- Satu rencana QR di `src/shared/qr.ts` (`qrPlan`): error correction H, quiet zone 2 modul, dan petak putih di tengah
+  (sisi ganjil, ≤ 9% luas modul) tempat tanda Z Zeiko (kotak indigo `#4338ca` + Z putih, sama dengan favicon). Dari
+  rencana yang sama keluar SVG (`qrSvg`, unduhan SVG) dan piksel RGBA (`qrRaster`, gambar di layar, unduhan PNG, salin
+  gambar, layar penuh). Yang dites = yang diunduh orang.
+- **9%, bukan 20%:** dengan petak 12–16% beberapa versi QR (13, 18) sudah tidak terbaca decoder (`jsqr`). Di 9%
+  setiap panjang link 20–600 karakter terbaca (dicek satu per satu saat menyetel; test memakai beberapa panjang tetap).
+- QR undangan keluarga ikut memakai logo (`src/web/lib/qr.ts`). **QRIS pembayaran iklan (`lib/qr-png.ts`) tetap tanpa
+  logo**: kode bayar tidak diubah-ubah.
+
+**Konsekuensi:** paket `qrcode` tetap dipakai untuk matriksnya; `jsqr` hanya devDependency untuk test
+(`tests/unit/qr.test.ts`).

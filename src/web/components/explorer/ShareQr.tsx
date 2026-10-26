@@ -1,13 +1,15 @@
-// QR for a share link (SPEC §6.2): error correction H, download as PNG or SVG, copy the image,
-// and a full-screen view so another phone can scan it easily. Drawn in the browser.
+// QR for a share link (SPEC §6.2): error correction H with the Zeiko mark in the middle (ADR-059),
+// download as PNG or SVG, copy the image, and a full-screen view so another phone can scan it
+// easily. Drawn in the browser from the same plan as the SVG.
 import { Copy, Download, Maximize2, X } from 'lucide-react';
-import QRCode from 'qrcode';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { qrSvg } from '../../../shared/qr';
+import { qrCanvas } from '../../lib/qr';
 import { t } from '../../lib/i18n';
 import { Button } from '../Button';
 import { toast } from '../ui/Toast';
 
-const OPTS = { errorCorrectionLevel: 'H' as const, margin: 2 };
+const PNG_WIDTH = 720;
 
 function save(href: string, name: string): void {
   const a = document.createElement('a');
@@ -22,17 +24,10 @@ function save(href: string, name: string): void {
 const fileBase = (title: string) => `QR ${title}`.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80);
 
 export function ShareQr({ url, title }: { url: string; title: string }) {
-  const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null);
   const [big, setBig] = useState(false);
-  useEffect(() => {
-    const c = document.createElement('canvas');
-    void QRCode.toCanvas(c, url, { ...OPTS, width: 720 }).then(() => setCanvas(c));
-  }, [url]);
-  const src = canvas?.toDataURL('image/png');
-  const pngBlob = () =>
-    new Promise<Blob | null>((resolve) =>
-      canvas ? canvas.toBlob(resolve, 'image/png') : resolve(null),
-    );
+  const canvas = useMemo(() => qrCanvas(url, PNG_WIDTH), [url]);
+  const src = useMemo(() => canvas.toDataURL('image/png'), [canvas]);
+  const pngBlob = () => new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
 
   const downloadPng = async () => {
     const b = await pngBlob();
@@ -41,8 +36,8 @@ export function ShareQr({ url, title }: { url: string; title: string }) {
     save(href, `${fileBase(title)}.png`);
     setTimeout(() => URL.revokeObjectURL(href), 60_000);
   };
-  const downloadSvg = async () => {
-    const svg = await QRCode.toString(url, { ...OPTS, type: 'svg' });
+  const downloadSvg = () => {
+    const svg = qrSvg(url);
     const href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
     save(href, `${fileBase(title)}.svg`);
     setTimeout(() => URL.revokeObjectURL(href), 60_000);
@@ -59,8 +54,6 @@ export function ShareQr({ url, title }: { url: string; title: string }) {
   };
   const canCopy = typeof ClipboardItem !== 'undefined' && Boolean(navigator.clipboard?.write);
 
-  if (!src)
-    return <p className="py-8 text-center text-sm text-[var(--fg-muted)]">{t.common.loading}</p>;
   return (
     <div className="space-y-3">
       <div className="flex justify-center">
@@ -71,7 +64,7 @@ export function ShareQr({ url, title }: { url: string; title: string }) {
         <Button variant="secondary" onClick={() => void downloadPng()}>
           <Download className="h-4 w-4" /> {t.share.qrDownloadPng}
         </Button>
-        <Button variant="secondary" onClick={() => void downloadSvg()}>
+        <Button variant="secondary" onClick={downloadSvg}>
           <Download className="h-4 w-4" /> {t.share.qrDownloadSvg}
         </Button>
         {canCopy && (

@@ -65,6 +65,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `strings.id.ts` ★ / `strings.en.ts` ★ | **Semua teks UI.** Kuncinya sama dan dicek oleh tipe `Strings`. |
 | `config-defaults.ts` ★ | Semua angka bisnis (metode bayar QRIS + crypto, biaya tetap, dst.). |
 | `format.ts` ★ | Format angka, rupiah, tanggal; `setDateLocale`. |
+| `qr.ts` | QR share dengan logo di tengah: `qrPlan`, `qrSvg`, `qrRaster` (ADR-059). Kanvasnya di web `lib/qr.ts`. |
 | `constants.ts`, `enums.ts`, `time.ts`, `preview.ts`, `ad-policy.ts`, `legal.id.ts` | Konstanta, enum, waktu WIB, jenis pratinjau, kebijakan iklan, draf kebijakan. |
 
 ### `src/worker/` — inti

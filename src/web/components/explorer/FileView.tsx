@@ -202,7 +202,7 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
   const kebab = (node: NodeDto) => (
     <button
       type="button"
-      aria-label={`Aksi untuk ${node.name}`}
+      aria-label={t.a11y.actionsFor(node.name)}
       className="shrink-0 rounded-full p-1.5 hover:bg-[var(--border)]"
       onClick={(e) => {
         e.stopPropagation();
