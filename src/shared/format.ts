@@ -46,7 +46,11 @@ let dateTimeFmt = new Intl.DateTimeFormat('id-ID', {
 /** Month names in the UI language (the web app sets this once at start; ADR-036). */
 export function setDateLocale(locale: string): void {
   dateFmt = new Intl.DateTimeFormat(locale, dateOpts);
-  dateTimeFmt = new Intl.DateTimeFormat(locale, { ...dateOpts, hour: '2-digit', minute: '2-digit' });
+  dateTimeFmt = new Intl.DateTimeFormat(locale, {
+    ...dateOpts,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 export function formatDate(ms: number): string {

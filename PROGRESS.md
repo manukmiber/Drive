@@ -184,3 +184,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   putar + luruskan, perbaiki noda, blur lensa, vinyet, efek (glow, butiran, pudar), teks, bingkai, ukuran piksel pas.
 - [x] Dites di Chrome (dev), HP 360/390 px, terang/gelap, Indonesia/Inggris: semua alat, batal/terapkan, Looks,
   simpan resolusi penuh.
+- [x] PDF: duplikat halaman, halaman kosong, centang/silang, stabilo, tutup putih, gambar, tinta merah, isi formulir
+  (kunci isian), tanda air, nomor halaman, jadikan gambar, ambil teks. Dites di Chrome (dev), HP 360 px, gelap,
+  Indonesia: hasil disimpan lalu diperiksa (isian "Budi Santoso" tersimpan, tanda air dan nomor 1–3 di tiap halaman,
+  centang tertanam), 5 halaman → 5 JPG, teks .txt.

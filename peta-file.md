@@ -138,7 +138,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `editors/doc/*` | `read.ts` (mammoth → HTML bersih), `write.ts` (docx/html → .docx; halaman HTML), `DocEditor.tsx` (TipTap), `DocxPreview.tsx` (docx-preview, dibersihkan, muat lebar layar), `picture.ts` (gambar → PNG/JPEG ≤1600 px). |
 | `editors/sheet/*` | `csv.ts` (CSV/TSV: pemisah, kutip, angka yang aman), `xlsx.ts` (FortuneExcel + exceljs, angka tetap angka), `SheetEditor.tsx` (FortuneSheet), `locale.ts` + `fortune-id.ts` (teks FortuneSheet dalam bahasa Indonesia). Plugin `fortuneSheetFixes` di `vite.config.ts` membuang `new Function`. |
 | `editors/zip/*` | `zip.ts` (daftar isi ZIP/ZIP64, path aman, CRC-32, inflate lewat fflate), `tree.ts` (folder dari path), `ZipViewer.tsx` (lihat, unduh satu, bongkar ke Drive lewat antrean upload). |
-| `editors/pdf/*` | `ops.ts` (pdf-lib: halaman, stempel, gambar→PDF, kompres JPEG), `pdfjs.ts` (build legacy), `PdfView.tsx` (juga pratinjau), `PdfEditor.tsx`, `SignaturePad.tsx`, `stamps.ts`. |
+| `editors/pdf/*` | `ops.ts` (pdf-lib: halaman, stempel, stabilo/tutup putih, tanda air, nomor halaman, formulir, halaman kosong, gambar→PDF, kompres JPEG), `pdfjs.ts` (build legacy; halaman → gambar/teks), `PdfView.tsx` (juga pratinjau), `PdfEditor.tsx` (tab Lihat/Halaman/Isi & TTD), `PdfTools.tsx` (tab Formulir dan Alat, ADR-052), `SignaturePad.tsx`, `stamps.ts` (tanda tangan, teks, ✓/✗, gambar). |
 | `pages/Tools.tsx` | `/alat`: editor untuk file dari perangkat. |
 
 ### `dev/` (menjalankan Worker asli di Node, ADR-001)

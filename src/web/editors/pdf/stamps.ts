@@ -1,5 +1,5 @@
-// Pictures put on PDF pages (ADR-050): signatures drawn, typed or photographed, text and dates.
-// Each becomes a trimmed PNG. Signatures can be remembered on this device only (localStorage).
+// Pictures put on PDF pages (ADR-050, ADR-052): signatures drawn, typed or photographed, text,
+// dates, ticks and crosses, and pictures from the device. Each becomes a trimmed PNG. Signatures can be remembered on this device only (localStorage).
 
 export interface StampImage {
   png: Uint8Array;
@@ -7,6 +7,8 @@ export interface StampImage {
   url: string;
   /** Height ÷ width in pixels. */
   ratio: number;
+  /** How wide it is put on a page at first, in page widths (marks are small). */
+  width?: number;
 }
 
 /** The smallest canvas around what is not transparent. */
@@ -52,16 +54,19 @@ export function fromDataUrl(url: string): StampImage | null {
 }
 
 /** Null when nothing was drawn. */
-export function fromCanvas(canvas: HTMLCanvasElement): StampImage | null {
-  const t = trim(canvas);
+export function fromCanvas(canvas: HTMLCanvasElement, pad = 4): StampImage | null {
+  const t = trim(canvas, pad);
   return t ? fromDataUrl(t.toDataURL('image/png')) : null;
 }
 
 export const INK = { black: '#111827', blue: '#1d3fbf' } as const;
 export type Ink = keyof typeof INK;
+/** Text and marks may be red too; signatures stay black or blue. */
+export const MARK_INK = { ...INK, red: '#b91c1c' } as const;
+export type MarkInk = keyof typeof MARK_INK;
 
 /** Text as a picture (any script works, unlike the PDF's standard fonts). */
-export function textStamp(text: string, ink: Ink, script = false): StampImage | null {
+export function textStamp(text: string, ink: MarkInk, script = false): StampImage | null {
   const size = 96;
   const font = script
     ? `italic ${size}px "Segoe Script", "Brush Script MT", "Snell Roundhand", "URW Chancery L", cursive`
@@ -73,10 +78,62 @@ export function textStamp(text: string, ink: Ink, script = false): StampImage | 
   c.width = Math.min(4000, w);
   c.height = size * 1.6;
   ctx.font = font;
-  ctx.fillStyle = INK[ink];
+  ctx.fillStyle = MARK_INK[ink];
   ctx.textBaseline = 'middle';
   ctx.fillText(text, 20, c.height / 2);
   return fromCanvas(c);
+}
+
+/** A tick or a cross, drawn (not a font character, so it looks the same everywhere). */
+export function markStamp(kind: 'check' | 'cross', ink: MarkInk): StampImage | null {
+  const c = document.createElement('canvas');
+  c.width = c.height = 160;
+  const ctx = c.getContext('2d')!;
+  ctx.strokeStyle = MARK_INK[ink];
+  ctx.lineWidth = 20;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if (kind === 'check') {
+    ctx.moveTo(28, 86);
+    ctx.lineTo(64, 122);
+    ctx.lineTo(132, 38);
+  } else {
+    ctx.moveTo(36, 36);
+    ctx.lineTo(124, 124);
+    ctx.moveTo(124, 36);
+    ctx.lineTo(36, 124);
+  }
+  ctx.stroke();
+  const mark = fromCanvas(c);
+  return mark && { ...mark, width: 0.05 };
+}
+
+/** A picture from the device (a logo, a company stamp), upright, long side at most 1200 px. */
+export async function pictureStamp(file: Blob): Promise<StampImage | null> {
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const s = Math.min(1, 1200 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, Math.round(bmp.width * s));
+  c.height = Math.max(1, Math.round(bmp.height * s));
+  c.getContext('2d')!.drawImage(bmp, 0, 0, c.width, c.height);
+  return fromCanvas(c);
+}
+
+/** Words as a picture in any colour, for a watermark the standard fonts can't write. */
+export function wordsPicture(text: string, colour: string): StampImage | null {
+  const size = 160;
+  const font = `bold ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d')!;
+  ctx.font = font;
+  c.width = Math.min(6000, Math.ceil(ctx.measureText(text).width) + 40);
+  c.height = size * 1.5;
+  ctx.font = font;
+  ctx.fillStyle = colour;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 20, c.height / 2);
+  return fromCanvas(c, 0);
 }
 
 /** A photo of a signature on paper: near-white becomes transparent, the ink takes `ink`. */

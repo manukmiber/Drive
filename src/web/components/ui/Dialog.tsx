@@ -34,7 +34,7 @@ export function Dialog({
         <div className="p-5">
           <h2 className="text-lg font-semibold">{title}</h2>
           <div className="mt-3 text-sm">{children}</div>
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="mt-5 flex flex-wrap justify-end gap-2">
             {footer ?? (
               <Button variant="ghost" onClick={onClose}>
                 {t.common.close}

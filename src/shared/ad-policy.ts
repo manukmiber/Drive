@@ -192,6 +192,7 @@ export function adCampaignPricePerDay(
   const bundle = Math.max(1, p.ad_bundle_cities);
   const full = Math.floor(n / bundle);
   const rest = n % bundle;
-  const price = full * p.ad_price_bundle_idr + Math.min(rest * p.ad_price_city_idr, p.ad_price_bundle_idr);
+  const price =
+    full * p.ad_price_bundle_idr + Math.min(rest * p.ad_price_city_idr, p.ad_price_bundle_idr);
   return Math.min(price, p.ad_price_national_idr);
 }

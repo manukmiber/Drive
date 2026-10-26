@@ -1071,7 +1071,7 @@ spreadsheet, docs, dll? ambil dari github boleh kok gausah bikin dari awal".
   tidak dipakai, keduanya hanya `v4`). Temuan `undici` (tinggi) ada di `wrangler`/`miniflare`, alat dev, sudah ada
   sebelumnya.
 
-## ADR-052 — Editor foto ala Snapseed
+## ADR-052 — Editor foto ala Snapseed dan alat PDF yang lebih lengkap
 
 **Status:** diterima (pemilik, 2026-10-26). **Konteks:** pemilik: "aku mau kita punya editor yang ga kaleng²… tambahin
 banyak fitur tapi jangan bikin bingung user dengan tombolnya", lalu "tambahkan fitur editing aja, kek snapseed minimal".
@@ -1096,6 +1096,22 @@ Hapus/ganti latar belakang dibatalkan pemilik (butuh model AI), jadi tidak ada m
 - Struktur menekan beda yang besar (tepi tajam) supaya tekstur naik tanpa halo; blur besar dihitung di salinan kecil
   lalu diperbesar (cepat di HP).
 
+- **Alat PDF** (pemilik: "More editor PDF"), tetap pdf-lib + pdf.js, tanpa library baru. Lima tab: Lihat, Halaman,
+  Isi & TTD, Formulir (hanya kalau PDF-nya punya isian), Alat.
+  - Halaman: tambahan **Duplikat** (stempelnya ikut) dan **Halaman kosong** seukuran halaman yang dipilih. Halaman
+    kosong tidak membuat hasilnya dianggap gabungan, jadi "ganti file asli" tetap ada.
+  - Isi & TTD: tambahan **centang** dan **silang** (digambar, bukan huruf), **stabilo** (kotak kuning *multiply*, teks
+    tetap terbaca), **tutup putih**, **gambar** dari perangkat (logo, stempel), dan tinta merah untuk teks/tanda.
+    Tanda tangan tetap hitam/biru. Tutup putih hanya menutupi tampilan; teks di bawahnya masih bisa disalin, dan
+    editor mengatakannya (untuk menghapus sungguhan: Kecilkan → Paling kecil, yang menjadikan halaman gambar).
+  - Formulir: isian teks, centang, pilihan, dan radio dari AcroForm diisi lewat daftar per halaman, lalu disimpan di
+    file yang sama; bisa dikunci (*flatten*). Kalau halaman diubah urutannya atau digabung, isian otomatis dikunci
+    supaya tidak hilang. Font standar PDF hanya punya huruf Latin; huruf lain ditolak dengan pesan yang jelas.
+  - Alat: **tanda air** (tulisan miring di tengah tiap halaman, kepekatan dan ukuran; huruf non-Latin ditulis
+    sebagai gambar), **nomor halaman** (3 posisi, 3 bentuk, mulai dari), Kecilkan (yang lama), **Jadikan gambar**
+    (JPG/PNG 150/300 dpi per halaman) dan **Ambil teks** (.txt). Semuanya bekerja pada PDF seperti akan disimpan,
+    stempel dan isian ikut. Tanda air dan nomor halaman terlihat di atas halaman selama mengedit.
+
 **Konsekuensi:**
 - Menyimpan foto 2 MP dengan semua efek ±1,5 detik di HP uji; foto 12 MP bisa beberapa detik (ada tanda memproses).
-- Belum ada: kuas lokal (selective/brush), perspektif, hapus latar.
+- Belum ada: kuas lokal (selective/brush), perspektif, hapus latar, sensor PDF permanen, sandi PDF, OCR.

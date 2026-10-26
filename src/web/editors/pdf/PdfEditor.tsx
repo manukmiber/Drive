@@ -1,13 +1,19 @@
-// PDF tools (ADR-050): view; arrange pages (turn, delete, reorder, take some out, split, add PDFs or
-// pictures); sign (signature, text, date); squeeze. Pages and stamps are only a list until saving,
-// when pdf-lib makes the file once.
+// PDF tools (ADR-050, ADR-052): view; arrange pages (turn, delete, reorder, duplicate, blank pages,
+// take some out, split, add PDFs or pictures); fill & sign (signature, text, date, ticks, crosses,
+// highlights, white-outs, pictures); fill in the form; tools (squeeze, watermark, page numbers,
+// pictures, text). Pages and stamps are only a list until saving, when pdf-lib makes the file once.
 import {
   ArrowLeft,
   ArrowRight,
   CalendarDays,
   Check,
+  Copy,
+  Eraser,
+  File as FileBlank,
   FileOutput,
   FilePlus2,
+  Highlighter,
+  Image as ImageIcon,
   ImagePlus,
   PenLine,
   RotateCcw,
@@ -45,31 +51,59 @@ import {
 } from '../ui';
 import {
   PdfError,
+  blankPdf,
   buildPdf,
+  formFields,
   imagesToPdf,
+  latinOnly,
   pageSizeFor,
   quarter,
-  shrinkImages,
   type Box,
+  type Extras,
+  type FormField,
   type PageImage,
   type PageRef,
   type Quarter,
-  type Recompress,
   type Stamp,
 } from './ops';
+import {
+  ExtrasPreview,
+  FormTab,
+  ToolsTab,
+  failText,
+  type FormState,
+  type UiExtras,
+} from './PdfTools';
 import { PageCanvas, PageList, usePasswordPrompt, type ViewPage } from './PdfView';
-import { openPdf, pageAsJpeg, pageSize, type PDFDocumentProxy } from './pdfjs';
+import { openPdf, pageSize, type PDFDocumentProxy } from './pdfjs';
 import { SignaturePad } from './SignaturePad';
-import { forgetSignature, savedSignatures, textStamp, type StampImage } from './stamps';
+import {
+  MARK_INK,
+  forgetSignature,
+  markStamp,
+  pictureStamp,
+  savedSignatures,
+  textStamp,
+  wordsPicture,
+  type MarkInk,
+  type StampImage,
+} from './stamps';
 
-type Tab = 'view' | 'pages' | 'sign' | 'compress';
+type Tab = 'view' | 'pages' | 'sign' | 'form' | 'more';
 
-interface Placed extends Stamp {
+/** A stamp as placed: its picture to show (none for highlights and white-outs). */
+type Placed = Stamp & {
   id: string;
   url: string;
-  /** Height ÷ width of the picture, in pixels. */
+  /** Height ÷ width of the picture, in pixels (0 for a shade). */
   ratio: number;
-}
+};
+
+const SHADES = {
+  highlight: { color: [1, 0.92, 0.23] as [number, number, number], opacity: 0.45, multiply: true },
+  whiteout: { color: [1, 1, 1] as [number, number, number], opacity: 1, multiply: false },
+};
+type Shade = keyof typeof SHADES;
 
 interface Work {
   pages: PageRef[];
@@ -80,6 +114,8 @@ interface Loaded {
   bytes: Uint8Array[];
   pdfs: PDFDocumentProxy[];
   names: string[];
+  /** Blank pages added here: their documents don't make the result a merge. */
+  blank: boolean[];
   /** Locked with a password: pdf-lib can't change it, only view. */
   readOnly: boolean;
 }
@@ -104,32 +140,6 @@ async function imagePage(blob: Blob): Promise<PageImage> {
     kind: png ? 'png' : 'jpg',
     ...pageSizeFor(c.width, c.height),
   };
-}
-
-const recompress: Recompress = async (jpeg, size) => {
-  const max = 1600;
-  if (Math.max(size.width, size.height) <= max && jpeg.length < 150_000) return null;
-  const bmp = await createImageBitmap(
-    new Blob([jpeg as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }),
-  );
-  const s = Math.min(1, max / Math.max(bmp.width, bmp.height));
-  const c = document.createElement('canvas');
-  c.width = Math.max(1, Math.round(bmp.width * s));
-  c.height = Math.max(1, Math.round(bmp.height * s));
-  const ctx = c.getContext('2d')!;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, c.width, c.height);
-  ctx.drawImage(bmp, 0, 0, c.width, c.height);
-  const b = await new Promise<Blob | null>((ok) => c.toBlob(ok, 'image/jpeg', 0.7));
-  return b
-    ? { bytes: new Uint8Array(await b.arrayBuffer()), width: c.width, height: c.height }
-    : null;
-};
-
-function failText(e: unknown): string {
-  return e instanceof PdfError && e.code === 'ENCRYPTED'
-    ? t.editor.encryptedNoEdit
-    : t.editor.cannotOpen;
 }
 
 export function PdfEditor({ request, onClose }: { request: EditRequest; onClose: () => void }) {
@@ -177,6 +187,7 @@ export function PdfEditor({ request, onClose }: { request: EditRequest; onClose:
           bytes: files.map((f) => f.bytes),
           pdfs,
           names: files.map((f) => f.name),
+          blank: files.map(() => false),
           readOnly: locked,
         });
     })().catch(() => alive && setOpenError(t.editor.cannotOpen));
@@ -265,19 +276,71 @@ function Workspace({
     [work.pages, docs.pdfs],
   );
   const baseName = docs.names[0]!;
-  const merged = docs.names.length > 1;
+  const joined = docs.names.filter((_, i) => !docs.blank[i]).length;
+  const merged = joined > 1;
 
   const stampMap = (w: Work) =>
     new Map(
       Object.entries(w.stamps).map(([k, list]) => [
         k,
-        list.map(({ png, box, rot }) => ({ png, box, rot })),
+        list.map(({ id: _id, url: _url, ratio: _ratio, ...stamp }): Stamp => stamp),
       ]),
     );
 
+  // Watermark, page numbers and the form: not steps of the history, saved with the file.
+  const [extras, setExtras] = useState<UiExtras>(() => ({
+    watermark: { on: false, text: t.editor.watermarkDefault, opacity: 25, size: 70 },
+    numbers: { on: false, pos: 'bottom-center', format: 'n', start: 1 },
+  }));
+  const [form, setForm] = useState<FormState>({ values: {}, flatten: false });
+  const [fields, setFields] = useState<FormField[]>([]);
+  useEffect(() => {
+    if (docs.readOnly) return;
+    let alive = true;
+    formFields(loaded.bytes[0]!).then(
+      (f) => alive && setFields(f),
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [loaded.bytes, docs.readOnly]);
+
+  function opsExtras(): Extras {
+    const out: Extras = {};
+    const w = extras.watermark;
+    if (w.on && w.text.trim()) {
+      const base = {
+        opacity: w.opacity / 100,
+        size: w.size / 100,
+        color: [0.5, 0.5, 0.5] as [number, number, number],
+      };
+      if (latinOnly(w.text)) out.watermark = { ...base, text: w.text };
+      else {
+        const pic = wordsPicture(w.text.trim(), '#808080');
+        if (pic) out.watermark = { ...base, png: pic.png, ratio: pic.ratio };
+      }
+    }
+    const n = extras.numbers;
+    if (n.on)
+      out.numbers = {
+        pos: n.pos,
+        start: n.start,
+        label: (i, total) =>
+          n.format === 'n'
+            ? String(i)
+            : n.format === 'n/N'
+              ? `${i} / ${total}`
+              : t.editor.pageLabel(i, total),
+      };
+    if (fields.length && (Object.keys(form.values).length || form.flatten))
+      out.form = { values: form.values, flatten: form.flatten };
+    return out;
+  }
+
   async function make(pages: PageRef[], w: Work = work): Promise<Uint8Array | null> {
     try {
-      return await buildPdf(docs.bytes, pages, stampMap(w));
+      return await buildPdf(docs.bytes, pages, stampMap(w), opsExtras());
     } catch (e) {
       toast(failText(e), { tone: 'error' });
       return null;
@@ -304,16 +367,55 @@ function Workspace({
   }
 
   const [savedAt, setSavedAt] = useState(0);
+  const sideState = JSON.stringify({ extras, form });
+  const [savedSide, setSavedSide] = useState(sideState);
   // Adding a PDF adds pages, so the history covers it.
-  const dirty = hist.at !== savedAt;
+  const dirty = hist.at !== savedAt || sideState !== savedSide;
   const tabs: Array<[Tab, string]> = docs.readOnly
     ? [['view', t.editor.view]]
     : [
         ['view', t.editor.view],
         ['pages', t.editor.pagesTab],
-        ['sign', t.editor.sign],
-        ['compress', t.editor.compressTab],
+        ['sign', t.editor.fillSign],
+        ...(fields.length ? [['form', t.editor.formTab] as [Tab, string]] : []),
+        ['more', t.editor.moreTab],
       ];
+
+  /** Adds documents' pages at `at` (the end by default). */
+  async function addDocs(
+    add: Array<{ name: string; bytes: Uint8Array }>,
+    at = work.pages.length,
+    blank = false,
+  ) {
+    const pdfs: PDFDocumentProxy[] = [];
+    for (const a of add) {
+      const d = await openPdf(a.bytes);
+      if ((await d.getPermissions()) !== null) {
+        void d.loadingTask.destroy();
+        throw new PdfError('ENCRYPTED');
+      }
+      pdfs.push(d);
+    }
+    added.current.push(...pdfs);
+    const start = docs.bytes.length;
+    setDocs((d) => ({
+      ...d,
+      bytes: [...d.bytes, ...add.map((a) => a.bytes)],
+      pdfs: [...d.pdfs, ...pdfs],
+      names: [...d.names, ...add.map((a) => a.name)],
+      blank: [...d.blank, ...add.map(() => blank)],
+    }));
+    const fresh = pdfs.flatMap((pdf, i) =>
+      Array.from({ length: pdf.numPages }, (_, index) => ({
+        key: `${start + i}:${index}`,
+        src: start + i,
+        index,
+        rotate: 0 as Quarter,
+      })),
+    );
+    commit({ ...work, pages: [...work.pages.slice(0, at), ...fresh, ...work.pages.slice(at)] });
+    return fresh.length;
+  }
 
   async function addSources(files: File[], images: boolean) {
     if (!files.length) return;
@@ -331,38 +433,7 @@ function Workspace({
             bytes: new Uint8Array(await fromFile(f, max).blob.arrayBuffer()),
           });
       }
-      const pdfs: PDFDocumentProxy[] = [];
-      for (const a of add) {
-        const d = await openPdf(a.bytes);
-        if ((await d.getPermissions()) !== null) {
-          void d.loadingTask.destroy();
-          throw new PdfError('ENCRYPTED');
-        }
-        pdfs.push(d);
-      }
-      added.current.push(...pdfs);
-      const start = docs.bytes.length;
-      setDocs((d) => ({
-        ...d,
-        bytes: [...d.bytes, ...add.map((a) => a.bytes)],
-        pdfs: [...d.pdfs, ...pdfs],
-        names: [...d.names, ...add.map((a) => a.name)],
-      }));
-      commit({
-        ...work,
-        pages: [
-          ...work.pages,
-          ...pdfs.flatMap((pdf, i) =>
-            Array.from({ length: pdf.numPages }, (_, index) => ({
-              key: `${start + i}:${index}`,
-              src: start + i,
-              index,
-              rotate: 0 as Quarter,
-            })),
-          ),
-        ],
-      });
-      toast(t.editor.added(pdfs.reduce((s, p) => s + p.numPages, 0)));
+      toast(t.editor.added(await addDocs(add)));
     } catch (e) {
       toast(e instanceof TooLargeError ? t.editor.tooLarge(formatBytes(e.max)) : failText(e), {
         tone: 'error',
@@ -370,9 +441,35 @@ function Workspace({
     }
   }
 
+  /** A blank page the size of the page at `like`, put after it. */
+  async function addBlank(like: number) {
+    try {
+      const v = views[like]!;
+      const page = await v.pdf.getPage(v.number);
+      const size = pageSize(page, 1, (page.rotate + v.extra) % 360);
+      await addDocs(
+        [{ name: t.editor.blankPage, bytes: await blankPdf(size.width, size.height) }],
+        like + 1,
+        true,
+      );
+    } catch (e) {
+      toast(failText(e), { tone: 'error' });
+    }
+  }
+
+  const total = work.pages.length;
+  const preview = (view: ViewPage, size: { w: number; h: number }) => (
+    <ExtrasPreview
+      extras={extras}
+      index={work.pages.findIndex((p) => p.key === view.key)}
+      total={total}
+      size={size}
+    />
+  );
+
   return (
     <EditorFrame
-      title={merged ? t.editor.mergePdfs(docs.names.length) : baseName}
+      title={merged ? t.editor.mergePdfs(joined) : baseName}
       onClose={onClose}
       dirty={dirty}
       actions={
@@ -401,10 +498,13 @@ function Workspace({
           <button
             key={id}
             type="button"
-            onClick={() => setTab(id)}
+            onClick={(e) => {
+              setTab(id);
+              e.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }}
             aria-current={tab === id ? 'page' : undefined}
             className={cn(
-              'shrink-0 border-b-2 px-3 py-2.5 text-sm',
+              'shrink-0 border-b-2 px-2.5 py-2.5 text-sm sm:px-3',
               tab === id
                 ? 'border-brand-600 font-semibold text-[var(--fg)]'
                 : 'border-transparent text-[var(--fg-muted)]',
@@ -419,7 +519,19 @@ function Workspace({
           {t.editor.encryptedNoEdit}
         </p>
       )}
-      {tab === 'view' && <PageList pages={views} />}
+      {tab === 'view' && (
+        <PageList
+          pages={views}
+          overlay={(view, size) => (
+            <>
+              {preview(view, size)}
+              {(work.stamps[view.key] ?? []).map((s) => (
+                <StampPicture key={s.id} s={s} size={size} className="pointer-events-none" />
+              ))}
+            </>
+          )}
+        />
+      )}
       {tab === 'pages' && (
         <PagesTab
           work={work}
@@ -429,15 +541,21 @@ function Workspace({
           make={make}
           baseName={baseName}
           onAdd={(files, images) => void addSources(files, images)}
+          onBlank={(like) => void addBlank(like)}
           setBusy={setBusy}
         />
       )}
-      {tab === 'sign' && <SignTab work={work} views={views} commit={commit} replace={replace} />}
-      {tab === 'compress' && (
-        <CompressTab
+      {tab === 'sign' && (
+        <SignTab work={work} views={views} commit={commit} replace={replace} preview={preview} />
+      )}
+      {tab === 'form' && <FormTab fields={fields} form={form} onChange={setForm} />}
+      {tab === 'more' && (
+        <ToolsTab
+          extras={extras}
+          onExtras={setExtras}
           make={() => make(work.pages)}
           baseName={baseName}
-          onResult={(r) => setResults({ list: [r], replaceable: !merged, whole: true })}
+          onResults={(list, whole) => setResults({ list, replaceable: whole && !merged, whole })}
         />
       )}
       {busy && <Busy label={busy.label} progress={busy.progress} />}
@@ -446,7 +564,11 @@ function Workspace({
         source={first}
         replaceable={results?.replaceable ?? false}
         onClose={() => setResults(null)}
-        onSaved={() => results?.whole && setSavedAt(hist.at)}
+        onSaved={() => {
+          if (!results?.whole) return;
+          setSavedAt(hist.at);
+          setSavedSide(sideState);
+        }}
       />
     </EditorFrame>
   );
@@ -465,6 +587,7 @@ function PagesTab({
   make,
   baseName,
   onAdd,
+  onBlank,
   setBusy,
 }: {
   work: Work;
@@ -474,6 +597,8 @@ function PagesTab({
   make: (pages: PageRef[]) => Promise<Uint8Array | null>;
   baseName: string;
   onAdd: (files: File[], images: boolean) => void;
+  /** A blank page after page `like` (from 0), its size. */
+  onBlank: (like: number) => void;
   setBusy: (b: { label: string; progress: number | null } | null) => void;
 }) {
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -507,6 +632,21 @@ function PagesTab({
     commit({ ...work, pages: left });
     setSel(new Set());
   };
+  /** Each chosen page twice, its stamps too. */
+  const duplicate = () => {
+    const pages: PageRef[] = [];
+    const stamps = { ...work.stamps };
+    for (const p of work.pages) {
+      pages.push(p);
+      if (!sel.has(p.key)) continue;
+      const key = `${p.src}:${p.index}:${newId()}`;
+      pages.push({ ...p, key });
+      const list = stamps[p.key];
+      if (list) stamps[key] = list.map((x) => ({ ...x, id: newId() }));
+    }
+    commit({ pages, stamps });
+  };
+  const lastChosen = work.pages.reduce((at, p, i) => (sel.has(p.key) ? i : at), -1);
   const shift = (dir: -1 | 1) => {
     const pages = [...work.pages];
     const order = dir === -1 ? pages.keys() : [...pages.keys()].reverse();
@@ -582,6 +722,7 @@ function PagesTab({
           disabled={none}
           onClick={() => shift(1)}
         />
+        <ToolButton icon={Copy} label={t.editor.duplicate} disabled={none} onClick={duplicate} />
         <ToolButton icon={Trash2} label={t.common.delete} disabled={none} onClick={del} />
         <ToolButton
           icon={FileOutput}
@@ -594,6 +735,11 @@ function PagesTab({
           label={t.editor.splitAll}
           disabled={work.pages.length < 2}
           onClick={() => void splitAll()}
+        />
+        <ToolButton
+          icon={FileBlank}
+          label={t.editor.blankPage}
+          onClick={() => onBlank(lastChosen >= 0 ? lastChosen : work.pages.length - 1)}
         />
         <ToolButton
           icon={FilePlus2}
@@ -672,24 +818,37 @@ function SignTab({
   views,
   commit,
   replace,
+  preview,
 }: {
   work: Work;
   views: ViewPage[];
   commit: (w: Work) => void;
   replace: (w: Work) => void;
+  /** The watermark and page numbers, drawn under the stamps. */
+  preview: (view: ViewPage, size: { w: number; h: number }) => ReactNode;
 }) {
   const [pad, setPad] = useState(false);
   const [asking, setAsking] = useState(false);
-  const [armed, setArmed] = useState<StampImage | null>(null);
+  // What the next tap (a picture) or drag (a shade) puts on a page.
+  const [armed, setArmed] = useState<StampImage | Shade | null>(null);
+  const [ink, setInk] = useState<MarkInk>('black');
   const [chosen, setChosen] = useState<string | null>(null);
   const [saved, setSaved] = useState(savedSignatures);
+  const picture = useRef<HTMLInputElement>(null);
+  const shade = typeof armed === 'string' ? armed : null;
+
+  const add = (key: string, s: Placed) => {
+    commit({ ...work, stamps: { ...work.stamps, [key]: [...(work.stamps[key] ?? []), s] } });
+    setChosen(s.id);
+    setArmed(null);
+  };
 
   async function place(view: ViewPage, u: number, v: number) {
-    if (!armed) return setChosen(null);
+    if (!armed || typeof armed === 'string') return setChosen(null);
     // The page's own shape (what is on screen may still be a placeholder), so the stamp keeps its own.
     const page = await view.pdf.getPage(view.number);
     const shown = pageSize(page, 1, (page.rotate + view.extra) % 360);
-    const w = Math.min(0.9, armed.ratio > 0.5 ? 0.2 : 0.3);
+    const w = Math.min(0.9, armed.width ?? (armed.ratio > 0.5 ? 0.2 : 0.3));
     const h = Math.min(0.9, (w * shown.width * armed.ratio) / shown.height);
     const box: Box = {
       x: Math.max(0, Math.min(1 - w, u - w / 2)),
@@ -697,21 +856,10 @@ function SignTab({
       w,
       h,
     };
-    const s: Placed = {
-      id: newId(),
-      png: armed.png,
-      url: armed.url,
-      ratio: armed.ratio,
-      box,
-      rot: 0,
-    };
-    commit({
-      ...work,
-      stamps: { ...work.stamps, [view.key]: [...(work.stamps[view.key] ?? []), s] },
-    });
-    setChosen(s.id);
-    setArmed(null);
+    add(view.key, { id: newId(), png: armed.png, url: armed.url, ratio: armed.ratio, box, rot: 0 });
   }
+  const placeShade = (key: string, kind: Shade, box: Box) =>
+    add(key, { id: newId(), kind: 'shade', ...SHADES[kind], box, rot: 0, url: '', ratio: 0 });
   const update = (key: string, id: string, box: Box, done: boolean) => {
     const next = {
       ...work,
@@ -737,8 +885,72 @@ function SignTab({
         <ToolButton
           icon={CalendarDays}
           label={t.editor.addDate}
-          onClick={() => setArmed(textStamp(formatDate(Date.now()), 'black'))}
+          onClick={() => setArmed(textStamp(formatDate(Date.now()), ink))}
         />
+        <ToolButton
+          icon={Check}
+          label={t.editor.markCheck}
+          onClick={() => setArmed(markStamp('check', ink))}
+        />
+        <ToolButton
+          icon={X}
+          label={t.editor.markCross}
+          onClick={() => setArmed(markStamp('cross', ink))}
+        />
+        <ToolButton
+          icon={Highlighter}
+          label={t.editor.highlight}
+          active={shade === 'highlight'}
+          onClick={() => setArmed(shade === 'highlight' ? null : 'highlight')}
+        />
+        <ToolButton
+          icon={Eraser}
+          label={t.editor.whiteout}
+          active={shade === 'whiteout'}
+          onClick={() => setArmed(shade === 'whiteout' ? null : 'whiteout')}
+        />
+        <ToolButton
+          icon={ImageIcon}
+          label={t.editor.addPicture}
+          onClick={() => picture.current?.click()}
+        />
+        <input
+          ref={picture}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f)
+              void pictureStamp(f).then(
+                (p) => p && setArmed(p),
+                () => toast(t.editor.cannotOpen, { tone: 'error' }),
+              );
+          }}
+        />
+        <span
+          className="mx-1 flex shrink-0 items-center gap-1.5"
+          role="radiogroup"
+          aria-label={t.editor.ink}
+        >
+          {(Object.keys(MARK_INK) as MarkInk[]).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="radio"
+              aria-checked={ink === k}
+              aria-label={t.editor.inks[k]}
+              title={t.editor.inks[k]}
+              onClick={() => setInk(k)}
+              className={cn(
+                'h-6 w-6 rounded-full border-2 border-white shadow',
+                ink === k && 'ring-2 ring-brand-500',
+              )}
+              style={{ backgroundColor: MARK_INK[k] }}
+            />
+          ))}
+        </span>
         {saved.map((s) => (
           <span key={s.url} className="relative shrink-0">
             <button
@@ -747,7 +959,7 @@ function SignTab({
               aria-label={t.editor.useSaved}
               className={cn(
                 'flex h-12 w-24 items-center justify-center rounded-xl border border-[var(--border)] bg-white p-1',
-                armed?.url === s.url && 'ring-2 ring-brand-500',
+                typeof armed !== 'string' && armed?.url === s.url && 'ring-2 ring-brand-500',
               )}
             >
               <img src={s.url} alt="" className="max-h-full max-w-full" />
@@ -768,21 +980,28 @@ function SignTab({
       </div>
       {armed && (
         <p className="absolute inset-x-3 top-16 z-10 mx-auto max-w-md rounded-xl bg-brand-600 px-3 py-2 text-center text-xs text-white shadow-lg">
-          {t.editor.placeHint}
+          {shade ? t.editor.shadeHint : t.editor.placeHint}
+          {shade === 'whiteout' && (
+            <span className="mt-1 block opacity-90">{t.editor.whiteoutNote}</span>
+          )}
         </p>
       )}
       <PageList
         pages={views}
         onPageClick={(view, u, v) => void place(view, u, v)}
         overlay={(view, size) => (
-          <StampLayer
-            stamps={work.stamps[view.key] ?? []}
-            size={size}
-            chosen={chosen}
-            onChoose={setChosen}
-            onMove={(id, box, done) => update(view.key, id, box, done)}
-            onRemove={(id) => removeStamp(view.key, id)}
-          />
+          <>
+            {preview(view, size)}
+            <StampLayer
+              stamps={work.stamps[view.key] ?? []}
+              size={size}
+              chosen={chosen}
+              onChoose={setChosen}
+              onMove={(id, box, done) => update(view.key, id, box, done)}
+              onRemove={(id) => removeStamp(view.key, id)}
+            />
+            {shade && <ShadeDraw kind={shade} onDone={(box) => placeShade(view.key, shade, box)} />}
+          </>
         )}
       />
       <SignaturePad
@@ -802,14 +1021,83 @@ function SignTab({
         onCancel={() => setAsking(false)}
         onSubmit={(text) => {
           setAsking(false);
-          setArmed(textStamp(text, 'black'));
+          setArmed(textStamp(text, ink));
         }}
       />
     </div>
   );
 }
 
-/** Stamps on one page: drag to move, drag the corner to resize (same shape), × to remove. */
+/** Dragging out a highlight or a white-out on one page; a tap makes one of a line's size. */
+function ShadeDraw({ kind, onDone }: { kind: Shade; onDone: (box: Box) => void }) {
+  const [rect, setRect] = useState<Box | null>(null);
+  const start = useRef<[number, number] | null>(null);
+  const at = (e: PointerEvent<HTMLDivElement>): [number, number] => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return [
+      Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)),
+      Math.max(0, Math.min(1, (e.clientY - r.top) / r.height)),
+    ];
+  };
+  const box = (a: [number, number], b: [number, number]): Box => ({
+    x: Math.min(a[0], b[0]),
+    y: Math.min(a[1], b[1]),
+    w: Math.abs(b[0] - a[0]),
+    h: Math.abs(b[1] - a[1]),
+  });
+  const { color, opacity, multiply } = SHADES[kind];
+  return (
+    <div
+      className="absolute inset-0 z-10 cursor-crosshair touch-none"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        start.current = at(e);
+        setRect(box(start.current, start.current));
+      }}
+      onPointerMove={(e) => start.current && setRect(box(start.current, at(e)))}
+      onPointerUp={(e) => {
+        const a = start.current;
+        start.current = null;
+        setRect(null);
+        if (!a) return;
+        let b = box(a, at(e));
+        if (b.w < 0.02 && b.h < 0.01) {
+          const w = 0.3;
+          const h = 0.025;
+          b = {
+            x: Math.max(0, Math.min(1 - w, a[0] - w / 2)),
+            y: Math.max(0, Math.min(1 - h, a[1] - h / 2)),
+            w,
+            h,
+          };
+        }
+        onDone(b);
+      }}
+    >
+      {rect && (
+        <span
+          className="pointer-events-none absolute outline-1 outline-brand-500 outline-dashed"
+          style={{
+            left: `${rect.x * 100}%`,
+            top: `${rect.y * 100}%`,
+            width: `${rect.w * 100}%`,
+            height: `${rect.h * 100}%`,
+            background: `rgb(${color.map((c) => c * 255).join(',')})`,
+            opacity,
+            mixBlendMode: multiply ? 'multiply' : undefined,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Stamps on one page: drag to move, drag the corner to resize (pictures keep their shape, shades
+ * don't), × to remove.
+ */
 function StampLayer({
   stamps,
   size,
@@ -852,6 +1140,12 @@ function StampLayer({
         x: Math.max(0, Math.min(1 - b.w, b.x + dx)),
         y: Math.max(0, Math.min(1 - b.h, b.y + dy)),
       };
+    } else if (stamps.find((s) => s.id === d.id)?.kind === 'shade') {
+      next = {
+        ...b,
+        w: Math.max(0.01, Math.min(1 - b.x, b.w + dx)),
+        h: Math.max(0.005, Math.min(1 - b.y, b.h + dy)),
+      };
     } else {
       const k = b.h / b.w;
       const w = Math.max(0.03, Math.min(1 - b.x, b.w + dx, (1 - b.y) / k));
@@ -868,7 +1162,6 @@ function StampLayer({
   const items: ReactNode[] = stamps.map((s) => {
     const bw = s.box.w * size.w;
     const bh = s.box.h * size.h;
-    const sideways = s.rot % 180 !== 0;
     const on = chosen === s.id;
     return (
       <div
@@ -883,19 +1176,7 @@ function StampLayer({
         onPointerUp={up}
         onClick={(e) => e.stopPropagation()}
       >
-        <img
-          src={s.url}
-          alt=""
-          draggable={false}
-          className="pointer-events-none absolute max-w-none select-none"
-          style={{
-            width: sideways ? bh : bw,
-            height: sideways ? bw : bh,
-            left: (bw - (sideways ? bh : bw)) / 2,
-            top: (bh - (sideways ? bw : bh)) / 2,
-            transform: s.rot ? `rotate(${s.rot}deg)` : undefined,
-          }}
-        />
+        <StampPicture s={s} size={size} className="pointer-events-none" fill />
         {on && (
           <>
             <button
@@ -923,109 +1204,52 @@ function StampLayer({
   return <>{items}</>;
 }
 
-function CompressTab({
-  make,
-  baseName,
-  onResult,
+/** One stamp as it will be written: a picture (turned with its page) or a shade. */
+function StampPicture({
+  s,
+  size,
+  className,
+  fill = false,
 }: {
-  make: () => Promise<Uint8Array | null>;
-  baseName: string;
-  onResult: (r: Result) => void;
+  s: Placed;
+  size: { w: number; h: number };
+  className?: string;
+  /** Fills its parent (which is the stamp's box) instead of placing itself on the page. */
+  fill?: boolean;
 }) {
-  const [mode, setMode] = useState<'balanced' | 'small'>('balanced');
-  const [progress, setProgress] = useState<number | null>(null);
-  const [out, setOut] = useState<{ before: number; blob: Blob } | null>(null);
-
-  async function run() {
-    setOut(null);
-    setProgress(0);
-    try {
-      const src = await make();
-      if (!src) return;
-      let bytes: Uint8Array;
-      if (mode === 'balanced') {
-        bytes = await shrinkImages(src, recompress, setProgress);
-      } else {
-        const pdf = await openPdf(src);
-        try {
-          const pages: PageImage[] = [];
-          for (let n = 1; n <= pdf.numPages; n++) {
-            const page = await pdf.getPage(n);
-            const jpg = await pageAsJpeg(page, page.rotate, 110, 0.6);
-            pages.push({ ...jpg, kind: 'jpg' });
-            setProgress(n / pdf.numPages);
-          }
-          bytes = await imagesToPdf(pages);
-        } finally {
-          void pdf.loadingTask.destroy();
-        }
-      }
-      setOut({
-        before: src.length,
-        blob: new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' }),
-      });
-    } catch (e) {
-      toast(failText(e), { tone: 'error' });
-    } finally {
-      setProgress(null);
-    }
-  }
-
-  const option = (id: 'balanced' | 'small', title: string, body: string) => (
-    <label
-      className={cn(
-        'flex cursor-pointer gap-3 rounded-xl border border-[var(--border)] bg-[var(--card)] p-3',
-        mode === id && 'border-brand-500 bg-[var(--accent-soft)]',
-      )}
-    >
-      <input type="radio" checked={mode === id} onChange={() => setMode(id)} className="mt-0.5" />
-      <span>
-        <span className="block text-sm font-medium">{title}</span>
-        <span className="block text-xs text-[var(--fg-muted)]">{body}</span>
-      </span>
-    </label>
-  );
-  const smaller = out && out.blob.size < out.before;
+  const bw = s.box.w * size.w;
+  const bh = s.box.h * size.h;
+  const at = fill ? { left: 0, top: 0 } : { left: s.box.x * size.w, top: s.box.y * size.h };
+  if (s.kind === 'shade')
+    return (
+      <span
+        className={cn('absolute', className)}
+        style={{
+          ...at,
+          width: bw,
+          height: bh,
+          background: `rgb(${s.color.map((c) => c * 255).join(',')})`,
+          opacity: s.opacity,
+          mixBlendMode: s.multiply ? 'multiply' : undefined,
+        }}
+      />
+    );
+  const sideways = s.rot % 180 !== 0;
+  const iw = sideways ? bh : bw;
+  const ih = sideways ? bw : bh;
   return (
-    <div className="relative min-h-0 flex-1 overflow-auto bg-[var(--bg-subtle)] p-4">
-      <div className="mx-auto max-w-md space-y-3">
-        {option('balanced', t.editor.compressBalanced, t.editor.compressBalancedDesc)}
-        {option('small', t.editor.compressSmall, t.editor.compressSmallDesc)}
-        <Button onClick={() => void run()} disabled={progress !== null} className="w-full">
-          {t.editor.compressStart}
-        </Button>
-        {out && (
-          <div className="z-card space-y-3 rounded-2xl p-4 text-sm">
-            {smaller ? (
-              <p>
-                {t.editor.compressResult(
-                  formatBytes(out.before),
-                  formatBytes(out.blob.size),
-                  Math.round((1 - out.blob.size / out.before) * 100),
-                )}
-              </p>
-            ) : (
-              <p>{t.editor.notSmaller}</p>
-            )}
-            {smaller && (
-              <Button
-                className="w-full"
-                onClick={() =>
-                  onResult({
-                    blob: out.blob,
-                    name: resultName(baseName, 'pdf', t.editor.compressedSuffix),
-                  })
-                }
-              >
-                {t.common.save}
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-      {progress !== null && (
-        <Busy label={t.editor.progress(Math.round(progress * 100))} progress={progress} />
-      )}
-    </div>
+    <img
+      src={s.url}
+      alt=""
+      draggable={false}
+      className={cn('absolute max-w-none select-none', className)}
+      style={{
+        width: iw,
+        height: ih,
+        left: (fill ? 0 : s.box.x * size.w) + (bw - iw) / 2,
+        top: (fill ? 0 : s.box.y * size.h) + (bh - ih) / 2,
+        transform: s.rot ? `rotate(${s.rot}deg)` : undefined,
+      }}
+    />
   );
 }

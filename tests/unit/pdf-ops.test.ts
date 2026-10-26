@@ -238,3 +238,124 @@ describe('pictures and squeezing', () => {
     expect(kept.contents.length).toBe(photo.length);
   });
 });
+
+describe('marks, extras and forms (ADR-052)', () => {
+  /** The text on each page with where it sits on the page as shown (fractions from top-left). */
+  async function texts(bytes: Uint8Array) {
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    const task = pdfjs.getDocument({ data: bytes.slice() });
+    const doc = await task.promise;
+    const out: Array<Array<{ str: string; u: number; v: number }>> = [];
+    for (let n = 1; n <= doc.numPages; n++) {
+      const page = await doc.getPage(n);
+      const vp = page.getViewport({ scale: 1 });
+      const content = await page.getTextContent();
+      out.push(
+        content.items.flatMap((it) => {
+          if (!('str' in it) || !it.str.trim()) return [];
+          const [x, y] = vp.convertToViewportPoint(it.transform[4], it.transform[5]);
+          return [{ str: it.str, u: x / vp.width, v: y / vp.height }];
+        }),
+      );
+    }
+    await task.destroy();
+    return out;
+  }
+
+  it('puts page numbers where they are asked for, on turned pages too', async () => {
+    const src = await makePdf([
+      [600, 800],
+      [600, 800],
+    ]);
+    const out = await buildPdf([src], [ref(0, 0), ref(0, 1, 90)], new Map(), {
+      numbers: { pos: 'bottom-center', label: (n, total) => `${n} / ${total}`, start: 1 },
+    });
+    const [p1, p2] = await texts(out);
+    for (const [page, label] of [
+      [p1!, '1 / 2'],
+      [p2!, '2 / 2'],
+    ] as const) {
+      const n = page.find((t) => t.str === label)!;
+      expect(n).toBeTruthy();
+      expect(n.u).toBeGreaterThan(0.4);
+      expect(n.u).toBeLessThan(0.5);
+      expect(n.v).toBeGreaterThan(0.9);
+    }
+  });
+
+  it('writes a watermark across every page, in its middle', async () => {
+    const src = await makePdf([[600, 800]]);
+    const out = await buildPdf([src], [ref(0, 0)], new Map(), {
+      watermark: { text: 'RAHASIA', opacity: 0.3, size: 0.6, color: [0.5, 0.5, 0.5] },
+    });
+    const w = (await texts(out))[0]!.find((t) => t.str === 'RAHASIA')!;
+    // The baseline starts below-left of the middle, going up to the right.
+    expect(w.u).toBeGreaterThan(0.1);
+    expect(w.u).toBeLessThan(0.5);
+    expect(w.v).toBeGreaterThan(0.5);
+  });
+
+  it('maps highlights onto the page for every rotation', async () => {
+    const { shadeRect } = await import('../../src/web/editors/pdf/ops');
+    for (const r of Q) {
+      const rect = shadeRect({ x: 0.1, y: 0.2, w: 0.3, h: 0.4 }, r, crop);
+      const [u0, v0] = shown(rect.x, rect.y, r);
+      const [u1, v1] = shown(rect.x + rect.width, rect.y + rect.height, r);
+      expect(Math.min(u0, u1)).toBeCloseTo(0.1);
+      expect(Math.max(u0, u1)).toBeCloseTo(0.4);
+      expect(Math.min(v0, v1)).toBeCloseTo(0.2);
+      expect(Math.max(v0, v1)).toBeCloseTo(0.6);
+    }
+    const src = await makePdf([[600, 800]]);
+    const shade = {
+      kind: 'shade' as const,
+      box: { x: 0.1, y: 0.1, w: 0.5, h: 0.05 },
+      rot: 0 as Quarter,
+      color: [1, 0.9, 0.2] as [number, number, number],
+      opacity: 0.5,
+      multiply: true,
+    };
+    const out = await buildPdf([src], [ref(0, 0)], new Map([['0:0', [shade]]]));
+    const page = (await PDFDocument.load(out)).getPage(0);
+    const gs = page.node.Resources()?.lookup(PDFName.of('ExtGState'));
+    expect(String(gs)).toContain('/Multiply');
+  });
+
+  it('lists form fields and fills them, in place or flattened', async () => {
+    const src = await makePdf([[600, 800]], true);
+    const { formFields } = await import('../../src/web/editors/pdf/ops');
+    expect(await formFields(src)).toEqual([
+      { name: 'name', kind: 'text', value: '', options: [], multiline: false, page: 0 },
+    ]);
+    const filled = await buildPdf([src], [ref(0, 0)], new Map(), {
+      form: { values: { name: 'Budi Santoso' }, flatten: false },
+    });
+    expect((await PDFDocument.load(filled)).getForm().getTextField('name').getText()).toBe(
+      'Budi Santoso',
+    );
+    const flat = await buildPdf([src], [ref(0, 0)], new Map(), {
+      form: { values: { name: 'Budi Santoso' }, flatten: true },
+    });
+    expect((await PDFDocument.load(flat)).getForm().getFields()).toHaveLength(0);
+    expect((await texts(flat))[0]!.some((t) => t.str.includes('Budi Santoso'))).toBe(true);
+  });
+
+  it('says so when the form text needs letters the standard font lacks', async () => {
+    const src = await makePdf([[600, 800]], true);
+    await expect(
+      buildPdf([src], [ref(0, 0)], new Map(), {
+        form: { values: { name: '山田' }, flatten: false },
+      }),
+    ).rejects.toMatchObject({ code: 'FONT' });
+    const { latinOnly } = await import('../../src/web/editors/pdf/ops');
+    expect(latinOnly('Rp 10.000 – “lunas” café')).toBe(true);
+    expect(latinOnly('山田')).toBe(false);
+  });
+
+  it('makes a blank A4 page', async () => {
+    const { blankPdf } = await import('../../src/web/editors/pdf/ops');
+    const d = await PDFDocument.load(await blankPdf());
+    expect(d.getPageCount()).toBe(1);
+    expect(d.getPage(0).getSize()).toEqual({ width: 595, height: 842 });
+  });
+});

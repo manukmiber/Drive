@@ -61,11 +61,12 @@ export function renderPage(
   return page.render({ canvas, viewport: vp });
 }
 
-/** The page as a JPEG at `dpi` (the "small" squeeze), with its size in points as shown. */
-export async function pageAsJpeg(
+/** The page as a picture at `dpi` (on white), with its size in points as shown. */
+export async function pageAsImage(
   page: PDFPageProxy,
   rotation: number,
   dpi: number,
+  type: 'image/jpeg' | 'image/png',
   quality: number,
 ) {
   const pts = page.getViewport({ scale: 1, rotation });
@@ -78,8 +79,31 @@ export async function pageAsJpeg(
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   await page.render({ canvas, canvasContext: ctx, viewport: vp }).promise;
   const blob = await new Promise<Blob>((ok, fail) =>
-    canvas.toBlob((b) => (b ? ok(b) : fail(new Error('encode'))), 'image/jpeg', quality),
+    canvas.toBlob((b) => (b ? ok(b) : fail(new Error('encode'))), type, quality),
   );
   canvas.width = canvas.height = 0;
-  return { bytes: new Uint8Array(await blob.arrayBuffer()), width: pts.width, height: pts.height };
+  return { blob, width: pts.width, height: pts.height };
+}
+
+/** The page as a JPEG at `dpi` (the "small" squeeze), with its size in points as shown. */
+export async function pageAsJpeg(
+  page: PDFPageProxy,
+  rotation: number,
+  dpi: number,
+  quality: number,
+) {
+  const { blob, width, height } = await pageAsImage(page, rotation, dpi, 'image/jpeg', quality);
+  return { bytes: new Uint8Array(await blob.arrayBuffer()), width, height };
+}
+
+/** The page's text, lines kept. */
+export async function pageText(page: PDFPageProxy): Promise<string> {
+  const content = await page.getTextContent();
+  let out = '';
+  for (const it of content.items) {
+    if (!('str' in it)) continue;
+    out += it.str;
+    if (it.hasEOL) out += '\n';
+  }
+  return out.trim();
 }
