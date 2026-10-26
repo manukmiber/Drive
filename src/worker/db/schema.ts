@@ -433,6 +433,7 @@ export const shares = sqliteTable('shares', {
   disabledReason: text('disabled_reason'),
   lastDownloadAt: ms('last_download_at'),
   createdAt: ms('created_at').notNull(),
+  showListing: bool('show_listing').notNull(),
 });
 
 export const shareItems = sqliteTable(

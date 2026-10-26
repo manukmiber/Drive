@@ -43,6 +43,7 @@ export const shares = new Hono<AppBindings>()
         expiresInHours: hours.optional(),
         maxDownloads: z.number().int().min(1).max(1_000_000).nullable().optional(),
         password: password.optional(),
+        showListing: z.boolean().optional(),
       }),
     ),
     async (c) =>
@@ -69,6 +70,7 @@ export const shares = new Hono<AppBindings>()
         expiresInHours: hours.optional(),
         maxDownloads: z.number().int().min(1).max(1_000_000).nullable().optional(),
         password: password.optional(),
+        showListing: z.boolean().optional(),
       }),
     ),
     async (c) =>

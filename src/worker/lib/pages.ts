@@ -9,7 +9,10 @@ body{margin:0;font-family:system-ui,sans-serif;background:#f6f7fb;color:#111827;
 input{width:100%;box-sizing:border-box;height:44px;border:1px solid #e5e7eb;border-radius:12px;padding:0 12px;font-size:15px}
 button,.btn{display:inline-block;margin-top:12px;width:100%;height:44px;border:0;border-radius:999px;background:#4338ca;color:#fff;font-size:15px;font-weight:600;text-align:center;line-height:44px;text-decoration:none;cursor:pointer}
 .err{color:#dc2626}.foot{margin-top:18px;font-size:12px;color:#6b7280;display:flex;justify-content:space-between}
-.foot a{color:#6b7280}@media(prefers-color-scheme:dark){body{background:#0f1117;color:#e5e7eb}.card{background:#161925;border-color:#262a36}p{color:#9ca3af}input{background:#0f1117;color:#e5e7eb;border-color:#262a36}}`;
+.foot a{color:#6b7280}.card.wide{max-width:640px}.muted{color:#6b7280;font-size:12px}
+.files{list-style:none;margin:16px 0 0;padding:0;max-height:60vh;overflow:auto}.files li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 0;border-top:1px solid #e5e7eb;font-size:14px}
+.files a{color:#4338ca;text-decoration:none;font-weight:500;word-break:break-word;flex:1 1 60%}.files a:hover{text-decoration:underline}.files .size{color:#6b7280;font-size:12px;margin-left:auto;white-space:nowrap}.files .muted{flex-basis:100%;order:3}
+@media(prefers-color-scheme:dark){body{background:#0f1117;color:#e5e7eb}.card{background:#161925;border-color:#262a36}p{color:#9ca3af}input{background:#0f1117;color:#e5e7eb;border-color:#262a36}.files li{border-color:#262a36}.files a{color:#a5b4fc}}`;
 
 export function page(
   title: string,
@@ -21,11 +24,13 @@ export function page(
     ad?: string;
     lang?: 'id' | 'en';
     reportLabel?: string;
+    /** Wider card, for the list of a shared folder's files. */
+    wide?: boolean;
   } = {},
 ): Response {
   const html = `<!doctype html><html lang="${opts.lang ?? 'id'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>${escapeHtml(title)} · Zeiko Drive</title>${opts.head ?? ''}<style>${STYLE}</style></head>
-<body><main class="card"><p class="brand">Zeiko Drive</p>${body}
+<body><main class="card${opts.wide ? ' wide' : ''}"><p class="brand">Zeiko Drive</p>${body}
 <div class="foot"><a href="/">zeiko.biz.id</a>${opts.reportUrl ? `<a href="${escapeHtml(opts.reportUrl)}">${escapeHtml(opts.reportLabel ?? 'Laporkan')}</a>` : ''}</div>
 ${opts.ad ?? ''}</main></body></html>`;
   return new Response(html, {

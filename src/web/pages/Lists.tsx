@@ -1,11 +1,23 @@
 // Cross-folder views: Cari, Terbaru, Berbintang, Dibagikan (SPEC §8.1, §6).
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { Copy, FolderOpen, Link2Off, Lock } from 'lucide-react';
+import {
+  Copy,
+  FolderOpen,
+  Link2Off,
+  ListTree,
+  Lock,
+  QrCode,
+  Search as SearchIcon,
+  Settings2,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { formatDateTime } from '../../shared/format';
 import { t } from '../lib/i18n';
 import { FileView } from '../components/explorer/FileView';
+import { ShareQr } from '../components/explorer/ShareQr';
+import { ShareSettings } from '../components/explorer/ShareSettings';
+import { Dialog } from '../components/ui/Dialog';
 import { errorText } from '../components/explorer/useNodeActions';
 import { toast } from '../components/ui/Toast';
 import { cn } from '../lib/cn';
@@ -131,16 +143,38 @@ export function Shared() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['shares', 'mine'], queryFn: () => listShares() });
   const [showOld, setShowOld] = useState(false);
+  const [query, setQuery] = useState('');
+  const [editing, setEditing] = useState<ShareDto | null>(null);
+  const [qrFor, setQrFor] = useState<ShareDto | null>(null);
   useEffect(() => void (document.title = `${t.nav.shared} · Zeiko`), []);
+  const needle = query.trim().toLowerCase();
   const items = (q.data?.items ?? []).filter(
-    (s) => showOld || shareStatus(s).label === t.share.statusActive,
+    (s) =>
+      (showOld || shareStatus(s).label === t.share.statusActive) &&
+      (!needle || s.title.toLowerCase().includes(needle)),
   );
+  const refresh = () => qc.invalidateQueries({ queryKey: ['shares'] });
+  const iconButton = 'rounded-full p-2 hover:bg-[var(--bg-subtle)]';
   return (
     <div>
       <Header title={t.nav.shared}>
+        <label className="relative">
+          <SearchIcon
+            className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-[var(--fg-muted)]"
+            aria-hidden="true"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t.share.search}
+            aria-label={t.share.search}
+            className="h-9 w-44 rounded-full border border-[var(--border)] bg-transparent pr-3 pl-8 text-sm sm:w-56"
+          />
+        </label>
         <label className="flex items-center gap-2 text-xs text-[var(--fg-muted)]">
           <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} />{' '}
-          Tampilkan link lama
+          {t.share.showOld}
         </label>
       </Header>
       {q.isPending && <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>}
@@ -157,7 +191,13 @@ export function Shared() {
                   {s.hasPassword && (
                     <Lock
                       className="h-3 w-3 shrink-0 text-[var(--fg-muted)]"
-                      aria-label={t.a11y.usePassword}
+                      aria-label={t.share.passwordProtected}
+                    />
+                  )}
+                  {s.showListing && (
+                    <ListTree
+                      className="h-3 w-3 shrink-0 text-[var(--fg-muted)]"
+                      aria-label={t.share.listingBadge}
                     />
                   )}
                   <span className={`rounded-full px-2 py-0.5 text-[11px] ${st.tone}`}>
@@ -166,7 +206,11 @@ export function Shared() {
                 </p>
                 <p className="text-xs text-[var(--fg-muted)]">
                   {t.share.downloads(s.downloadCount)}
-                  {s.maxDownloads ? ` / ${s.maxDownloads}` : ''} ·{' '}
+                  {s.maxDownloads ? ` / ${s.maxDownloads}` : ''}
+                  {s.lastDownloadAt
+                    ? ` (${t.share.lastDownload(formatDateTime(s.lastDownloadAt))})`
+                    : ''}{' '}
+                  ·{' '}
                   {s.expiresAt ? t.share.expiresOn(formatDateTime(s.expiresAt)) : t.share.noExpiry}
                 </p>
               </div>
@@ -174,7 +218,7 @@ export function Shared() {
                 <Link
                   to="/drive/$folderId"
                   params={{ folderId: s.nodeIds[0]! }}
-                  className="hidden rounded-full p-2 hover:bg-[var(--bg-subtle)] sm:block"
+                  className={cn(iconButton, 'hidden sm:block')}
                   aria-label={t.files.open}
                   title={t.files.open}
                   disabled={s.kind !== 'folder'}
@@ -186,7 +230,7 @@ export function Shared() {
                 <>
                   <button
                     type="button"
-                    className="rounded-full p-2 hover:bg-[var(--bg-subtle)]"
+                    className={iconButton}
                     aria-label={t.share.copyLink}
                     title={t.share.copyLink}
                     onClick={() =>
@@ -199,14 +243,32 @@ export function Shared() {
                   </button>
                   <button
                     type="button"
-                    className="rounded-full p-2 text-red-600 hover:bg-[var(--bg-subtle)]"
+                    className={cn(iconButton, 'hidden sm:block')}
+                    aria-label={t.share.qr}
+                    title={t.share.qr}
+                    onClick={() => setQrFor(s)}
+                  >
+                    <QrCode className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className={iconButton}
+                    aria-label={t.share.manage}
+                    title={t.share.manage}
+                    onClick={() => setEditing(s)}
+                  >
+                    <Settings2 className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(iconButton, 'text-red-600')}
                     aria-label={t.share.revoke}
                     title={t.share.revoke}
                     onClick={() =>
                       void revokeShare(s.id)
                         .then(() => {
                           toast(t.share.revoked);
-                          return qc.invalidateQueries({ queryKey: ['shares'] });
+                          return refresh();
                         })
                         .catch((e) => toast(errorText(e), { tone: 'error' }))
                     }
@@ -219,6 +281,28 @@ export function Shared() {
           );
         })}
       </ul>
+      {editing && (
+        <Dialog open title={t.share.manage} onClose={() => setEditing(null)}>
+          <p className="mb-3 truncate text-[var(--fg-muted)]">{editing.title}</p>
+          <ShareSettings
+            key={editing.id}
+            share={editing}
+            onChange={(s) => {
+              setEditing(s);
+              void refresh();
+            }}
+            onRevoked={() => {
+              setEditing(null);
+              void refresh();
+            }}
+          />
+        </Dialog>
+      )}
+      {qrFor && (
+        <Dialog open title={t.share.qr} onClose={() => setQrFor(null)}>
+          <ShareQr url={qrFor.url} title={qrFor.title} />
+        </Dialog>
+      )}
     </div>
   );
 }

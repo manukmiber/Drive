@@ -1,7 +1,6 @@
 // "Bagikan" (SPEC §6): one click makes a link and copies it; settings and send options below.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, Link2, Mail, MessageCircle, QrCode, Send, Share2 } from 'lucide-react';
-import QRCode from 'qrcode';
 import { useEffect, useRef, useState } from 'react';
 import { formatDateTime } from '../../../shared/format';
 import { t } from '../../lib/i18n';
@@ -11,9 +10,6 @@ import {
   emailShare,
   listShares,
   logShareSend,
-  regenerateShare,
-  revokeShare,
-  updateShare,
   type NodeDto,
   type ShareDto,
 } from '../../lib/files';
@@ -21,9 +17,9 @@ import { Button } from '../Button';
 import { Turnstile, useTurnstileSiteKey } from '../Turnstile';
 import { Dialog } from '../ui/Dialog';
 import { toast } from '../ui/Toast';
+import { ShareQr } from './ShareQr';
+import { ShareSettings } from './ShareSettings';
 import { errorText } from './useNodeActions';
-
-const EXPIRY = [1, 24, 168, 720, 0];
 
 async function copy(text: string): Promise<boolean> {
   try {
@@ -32,12 +28,6 @@ async function copy(text: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function hoursLeft(s: ShareDto): number {
-  if (!s.expiresAt) return 0;
-  const h = Math.round((s.expiresAt - s.createdAt) / 3600_000);
-  return EXPIRY.reduce((best, x) => (x && Math.abs(x - h) < Math.abs(best - h) ? x : best), 720);
 }
 
 export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () => void }) {
@@ -57,7 +47,6 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
     ) ?? null;
   const share = own ?? active;
   const [copied, setCopied] = useState(false);
-  const [qr, setQr] = useState<string | null>(null);
   const [panel, setPanel] = useState<'none' | 'email' | 'qr' | 'settings'>('none');
   // Hidden until Drive sends real email (ADR-049).
   const emailOk = useCatalog().data?.capabilities?.emailShare !== false;
@@ -65,11 +54,6 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
   const [captcha, setCaptcha] = useState<string | null>(null);
   const needsCaptcha = Boolean(useTurnstileSiteKey());
   const [message, setMessage] = useState('');
-  const [expiryInput, setExpiry] = useState<number | null>(null);
-  const [password, setPassword] = useState('');
-  const [maxDlInput, setMaxDl] = useState<string | null>(null);
-  const expiry = expiryInput ?? (share ? hoursLeft(share) : 720);
-  const maxDl = maxDlInput ?? (share?.maxDownloads ? String(share.maxDownloads) : '');
   const started = useRef(false);
 
   const create = useMutation({
@@ -92,27 +76,6 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
     started.current = true;
     if (!active) create.mutate();
   }, [single, existing.isPending, active, create]);
-
-  useEffect(() => {
-    if (panel === 'qr' && share)
-      void QRCode.toDataURL(share.url, { margin: 1, width: 240 }).then(setQr);
-  }, [panel, share]);
-
-  const save = async () => {
-    if (!share) return;
-    try {
-      const { share: s } = await updateShare(share.id, {
-        expiresInHours: expiry || null,
-        maxDownloads: maxDl ? Number(maxDl) : null,
-        ...(password ? { password } : {}),
-      });
-      setShare(s);
-      setPassword('');
-      toast(t.share.saved);
-    } catch (e) {
-      toast(errorText(e), { tone: 'error' });
-    }
-  };
 
   const send = async (channel: 'whatsapp' | 'telegram' | 'webshare') => {
     if (!share) return;
@@ -194,7 +157,8 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
               ? t.share.expiresOn(formatDateTime(share.expiresAt))
               : t.share.noExpiry}{' '}
             · {t.share.downloads(share.downloadCount)}
-            {share.hasPassword && ' · 🔒'}
+            {share.hasPassword && ` · 🔒 ${t.share.passwordProtected}`}
+            {share.showListing && ` · ${t.share.listingBadge}`}
           </p>
 
           <div>
@@ -246,80 +210,26 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
               </Button>
             </div>
           )}
-          {panel === 'qr' && (
-            <div className="flex justify-center">
-              {qr && (
-                <img src={qr} alt={t.share.qr} className="h-60 w-60 rounded-xl bg-white p-2" />
-              )}
-            </div>
-          )}
+          {panel === 'qr' && <ShareQr url={share.url} title={share.title} />}
 
           <details
             className="rounded-xl border border-[var(--border)] p-3"
             open={panel === 'settings'}
           >
             <summary className="cursor-pointer text-sm font-medium">{t.share.linkSettings}</summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="text-xs text-[var(--fg-muted)]">
-                {t.share.expiry}
-                <select
-                  value={expiry}
-                  onChange={(e) => setExpiry(Number(e.target.value))}
-                  className="mt-1 h-10 w-full rounded-xl border border-[var(--border)] bg-transparent px-2 text-sm text-[var(--fg)]"
-                >
-                  {EXPIRY.map((h) => (
-                    <option key={h} value={h}>
-                      {t.share.expiryOptions[h]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="text-xs text-[var(--fg-muted)]">
-                {t.share.maxDownloads}
-                <input
-                  value={maxDl}
-                  onChange={(e) => setMaxDl(e.target.value.replace(/\D/g, ''))}
-                  inputMode="numeric"
-                  className="mt-1 h-10 w-full rounded-xl border border-[var(--border)] bg-transparent px-3 text-sm text-[var(--fg)]"
-                />
-              </label>
-              <label className="text-xs text-[var(--fg-muted)] sm:col-span-2">
-                {t.share.password}
-                <input
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={4}
-                  className="mt-1 h-10 w-full rounded-xl border border-[var(--border)] bg-transparent px-3 text-sm text-[var(--fg)]"
-                />
-              </label>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button variant="secondary" onClick={() => void save()}>
-                {t.share.save}
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={async () => {
-                  const { share: s } = await regenerateShare(share.id);
+            <div className="mt-3">
+              <ShareSettings
+                key={share.id}
+                share={share}
+                onChange={(s) => {
                   setShare(s);
-                  toast(t.share.regenerated);
+                  void qc.invalidateQueries({ queryKey: ['shares'] });
                 }}
-              >
-                {t.share.regenerate}
-              </Button>
-              <Button
-                variant="danger"
-                onClick={async () => {
-                  await revokeShare(share.id);
-                  toast(t.share.revoked);
+                onRevoked={() => {
                   void qc.invalidateQueries({ queryKey: ['shares'] });
                   onClose();
                 }}
-              >
-                {t.share.revoke}
-              </Button>
+              />
             </div>
           </details>
         </div>

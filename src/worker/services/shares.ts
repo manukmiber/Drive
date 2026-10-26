@@ -23,6 +23,8 @@ export interface ShareRow {
   disabled_reason: string | null;
   last_download_at: number | null;
   created_at: number;
+  /** Folder/bundle links open a page listing the files (ADR-054); 0 = straight to the ZIP. */
+  show_listing: number;
 }
 
 export async function shareSignature(secret: string, r64: string): Promise<string> {
@@ -91,6 +93,7 @@ export interface CreateShareInput {
   expiresInHours?: number | null | undefined;
   maxDownloads?: number | null | undefined;
   password?: string | null | undefined;
+  showListing?: boolean | undefined;
 }
 
 export interface ShareDto {
@@ -107,6 +110,7 @@ export interface ShareDto {
   lastDownloadAt: number | null;
   createdAt: number;
   nodeIds: string[];
+  showListing: boolean;
 }
 
 export async function toShareDto(ctx: Ctx, s: ShareRow): Promise<ShareDto> {
@@ -129,6 +133,7 @@ export async function toShareDto(ctx: Ctx, s: ShareRow): Promise<ShareDto> {
     lastDownloadAt: s.last_download_at,
     createdAt: s.created_at,
     nodeIds: results.map((r) => r.node_id),
+    showListing: Boolean(s.show_listing),
   };
 }
 
@@ -177,11 +182,23 @@ export async function createShare(
   const expiresAt = hours ? now + hours * HOUR_MS : null;
   const id = randomBase62(SHARE_ID_LENGTH);
   const passwordHash = input.password ? await hashPassword(input.password) : null;
+  // A single file has nothing to list: its link always downloads it.
+  const listing = kind !== 'file' && input.showListing ? 1 : 0;
   await ctx.env.DB.batch([
     ctx.env.DB.prepare(
-      `INSERT INTO shares (id, created_by, kind, title, expires_at, max_downloads, password_hash, created_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`,
-    ).bind(id, userId, kind, title, expiresAt, input.maxDownloads ?? null, passwordHash, now),
+      `INSERT INTO shares (id, created_by, kind, title, expires_at, max_downloads, password_hash, created_at, show_listing)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+    ).bind(
+      id,
+      userId,
+      kind,
+      title,
+      expiresAt,
+      input.maxDownloads ?? null,
+      passwordHash,
+      now,
+      listing,
+    ),
     ...nodes.map((n) =>
       ctx.env.DB.prepare('INSERT INTO share_items (share_id, node_id) VALUES (?1, ?2)').bind(
         id,
@@ -227,6 +244,7 @@ export async function updateShare(
     maxDownloads?: number | null;
     password?: string | null;
     title?: string;
+    showListing?: boolean;
   },
 ): Promise<ShareDto> {
   const s = await requireOwnShare(ctx, userId, id);
@@ -242,6 +260,8 @@ export async function updateShare(
   if (patch.password !== undefined)
     set('password_hash', patch.password ? await hashPassword(patch.password) : null);
   if (patch.title !== undefined) set('title', patch.title.trim().slice(0, 200) || s.title);
+  if (patch.showListing !== undefined)
+    set('show_listing', s.kind !== 'file' && patch.showListing ? 1 : 0);
   if (sets.length)
     await ctx.env.DB.prepare(`UPDATE shares SET ${sets.join(', ')} WHERE id = ?1`)
       .bind(...binds)
@@ -263,8 +283,8 @@ export async function regenerateShare(ctx: Ctx, userId: string, id: string): Pro
   const now = ctx.now();
   await ctx.env.DB.batch([
     ctx.env.DB.prepare(
-      `INSERT INTO shares (id, created_by, kind, title, expires_at, max_downloads, password_hash, created_at)
-       SELECT ?2, created_by, kind, title, expires_at, max_downloads, password_hash, ?3 FROM shares WHERE id = ?1`,
+      `INSERT INTO shares (id, created_by, kind, title, expires_at, max_downloads, password_hash, created_at, show_listing)
+       SELECT ?2, created_by, kind, title, expires_at, max_downloads, password_hash, ?3, show_listing FROM shares WHERE id = ?1`,
     ).bind(id, newId, now),
     ctx.env.DB.prepare(
       'INSERT INTO share_items (share_id, node_id) SELECT ?2, node_id FROM share_items WHERE share_id = ?1',

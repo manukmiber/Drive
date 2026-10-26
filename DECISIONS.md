@@ -1158,3 +1158,36 @@ banyak file hanya lewat ZIP.
 batas bersamaan dan perubahannya, Range setelah putus, link kedaluwarsa, server tanpa Range, offline, coba ulang,
 jeda/lanjut/batal, serah ke browser), `tests/integration/download.test.ts` (plan, link per file, akses orang lain,
 batas jumlah).
+
+## ADR-054 — Share: daftar file untuk folder, QR lengkap, dan kelola link
+
+**Status:** diterima (pemilik, 2026-10-26, permintaan yang sama dengan ADR-053: "share … lebih robust dan punya
+banyak fitur"). **Konteks:** link folder/beberapa file langsung mengunduh ZIP (SPEC §6.1); penerima yang hanya
+butuh satu file harus mengunduh semuanya. Password tidak bisa dihapus dari app, judul tidak bisa diganti, QR hanya
+gambar (SPEC §6.2 minta unduh PNG/SVG, salin, layar penuh), dan Dibagikan hanya bisa salin/cabut.
+
+**Keputusan:**
+- **"Tampilkan daftar file dulu"** per link (`shares.show_listing`, migrasi `0009`), hanya untuk folder dan
+  bundle; link satu file tetap langsung mengunduh. Default mati, jadi perilaku SPEC §6.1 tidak berubah untuk link
+  lama maupun baru. Kalau nyala, link membuka halaman kecil (Worker, tanpa skrip, dua bahasa) berisi file yang siap
+  (maks 500 baris; sisanya lewat ZIP) dengan path foldernya, tombol "Unduh semua (ZIP)" (`?all=1`, ZIP yang sama
+  seperti dulu, Range tetap jalan), dan link per file `/{r64}/{s32}/f/{nodeId}/{nama}`.
+- Link per file melewati gerbang yang sama dengan link utamanya (`openShare`): tanda tangan dicek sebelum D1, rate
+  limit, status link (dicabut/kedaluwarsa/batas/nonaktif), bot pratinjau dapat Open Graph. File harus ada di isi
+  share **saat itu** (folder = isi live, `collectFiles`), siap, dan tidak dikarantina; node lain milik pemilik yang
+  sama ditolak 404. Password: tanpa cookie password, diarahkan (303) ke halaman password link utamanya; cookie-nya
+  berlingkup `/{r64}/`, jadi berlaku untuk file-file itu juga. Mematikan daftar langsung mematikan link per file.
+- Hitungan unduhan: melihat daftar tidak dihitung; unduhan per file dihitung seperti biasa (tanpa Range atau mulai
+  byte 0, sekali per IP+UA dalam jendela dedupe), jadi `download_count` = jumlah pengunjung yang mengunduh, dan
+  `max_downloads` tetap berlaku.
+- **Pengaturan link** (`ShareSettings`, dipakai dialog Bagikan dan Dibagikan): judul, berlaku, batas unduhan,
+  password baru atau **hapus password**, daftar file, buat ulang link (pengaturannya ikut, termasuk daftar file),
+  cabut.
+- **QR** (`ShareQr`): koreksi galat H, unduh PNG (720 px) dan SVG, salin gambar (Clipboard API), dan layar penuh
+  berlatar putih sebagai `<dialog>` modal sendiri (supaya berada di atas dialog Bagikan). Logo di tengah belum.
+- **Dibagikan**: cari judul, QR, atur link, "terakhir diunduh", tanda password dan daftar file; teks "Tampilkan link
+  lama" sekarang dua bahasa.
+
+**Konsekuensi:** test `tests/integration/shares.test.ts` (daftar, unduh per file + hitungan, node di luar share,
+ZIP `?all=1`, mati → ZIP lagi, password di depan file, satu file tidak pernah didaftar, buat ulang menyimpan
+pengaturan).

@@ -1486,5 +1486,28 @@ export const en: Strings = {
     statusDisabled: 'Disabled',
     shareMessage: (title: string, url: string) =>
       `I’m sharing "${title}" with you on Zeiko Drive: ${url}`,
+    titleLabel: 'Link title',
+    showListing: 'Show the list of files first',
+    showListingHint:
+      'People see what is in the folder and can pick files one by one, or download everything as a ZIP.',
+    passwordProtected: 'Password protected',
+    newPassword: 'New password (optional)',
+    removePassword: 'Remove the password',
+    passwordRemoved: 'Password removed',
+    qrDownloadPng: 'Download PNG',
+    qrDownloadSvg: 'Download SVG',
+    qrCopy: 'Copy image',
+    qrCopied: 'QR image copied',
+    qrFullscreen: 'Full screen',
+    qrHint: 'Scan with a phone camera to download straight away.',
+    showOld: 'Show old links',
+    search: 'Search links',
+    manage: 'Link settings',
+    lastDownload: (d: string) => `last downloaded ${d}`,
+    listingBadge: 'File list',
+    listingSummary: (n: number, size: string) => `${n} ${n === 1 ? 'file' : 'files'} · ${size}`,
+    downloadAllZip: 'Download everything (ZIP)',
+    moreFiles: (n: number) =>
+      `And ${n} more ${n === 1 ? 'file' : 'files'}. Download everything as a ZIP.`,
   },
 };

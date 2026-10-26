@@ -132,6 +132,8 @@ export interface ShareDto {
   lastDownloadAt: number | null;
   createdAt: number;
   nodeIds: string[];
+  /** Folder/bundle links open a list of the files first (ADR-054). */
+  showListing: boolean;
 }
 export const listShares = (nodeId?: string) =>
   api<{ items: ShareDto[] }>(`/api/shares${nodeId ? `?nodeId=${nodeId}` : ''}`);
@@ -140,10 +142,17 @@ export const createShare = (body: {
   expiresInHours?: number | null;
   maxDownloads?: number | null;
   password?: string | null;
+  showListing?: boolean;
 }) => postJson<{ share: ShareDto }>('/api/shares', body);
 export const updateShare = (
   id: string,
-  body: { expiresInHours?: number | null; maxDownloads?: number | null; password?: string | null },
+  body: {
+    expiresInHours?: number | null;
+    maxDownloads?: number | null;
+    password?: string | null;
+    title?: string;
+    showListing?: boolean;
+  },
 ) => sendJson<{ share: ShareDto }>('PATCH', `/api/shares/${id}`, body);
 export const revokeShare = (id: string) => api<void>(`/api/shares/${id}`, { method: 'DELETE' });
 export const regenerateShare = (id: string) =>

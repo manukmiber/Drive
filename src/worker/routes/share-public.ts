@@ -1,5 +1,7 @@
 // Public share links: /{r64}/{s32}/{nama} (SPEC §6.1). One click → download (file → the file,
 // folder/bundle → streamed ZIP). Preview bots get Open Graph HTML and never count as downloads.
+// A folder/bundle link with "show the files" on (ADR-054) opens a page listing them instead: each
+// file downloads on its own at /{r64}/{s32}/f/{nodeId}/{nama}, and ?all=1 gives the whole ZIP.
 import { Hono, type Context } from 'hono';
 import { getCookie, setCookie } from 'hono/cookie';
 import { formatBytes } from '../../shared/format';
@@ -13,7 +15,7 @@ import { shareAdHtml } from './ads';
 import { serveObject } from '../lib/serve';
 import { planZip, withKnownLength, zipStream } from '../lib/zip';
 import { clientIp, enforceRateLimit } from '../middleware/ratelimit';
-import { collectEntries } from '../services/archive';
+import { collectEntries, collectFiles, type TreeFile } from '../services/archive';
 import { escapeHtml } from '../services/email-templates';
 import {
   countDownload,
@@ -98,29 +100,129 @@ async function ogPage(c: Context<AppBindings>, s: ShareRow, url: string): Promis
   return page(s.title, `<h1>${escapeHtml(s.title)}</h1><p>${escapeHtml(desc)}</p>`, { head, lang });
 }
 
-export const sharePublic = new Hono<AppBindings>().on(
-  ['GET', 'HEAD', 'POST'],
-  '/:r64{[0-9A-Za-z]{64}}/:s32{[0-9A-Za-z]{32}}/:name?',
-  async (c) => {
+/** Rows shown on a listing page; past this, the ZIP button covers the rest. */
+const LISTING_MAX_ROWS = 500;
+
+async function shareFiles(c: Context<AppBindings>, share: ShareRow) {
+  const { results: items } = await c.env.DB.prepare(
+    'SELECT node_id FROM share_items WHERE share_id = ?1',
+  )
+    .bind(share.id)
+    .all<{ node_id: string }>();
+  const cfg = await c.get('ctx').config();
+  return collectFiles(
+    c.get('ctx'),
+    items.map((i) => i.node_id),
+    cfg.archive_max_items,
+  );
+}
+
+function listingPage(
+  c: Context<AppBindings>,
+  share: ShareRow,
+  base: string,
+  files: TreeFile[],
+  totalBytes: number,
+  ad: string,
+): Response {
+  const lang = requestLang(c.req.raw);
+  const tr = strings(lang);
+  const rows = files
+    .slice(0, LISTING_MAX_ROWS)
+    .map((f) => {
+      const dir = f.path.includes('/') ? f.path.slice(0, f.path.lastIndexOf('/')) : '';
+      return `<li><a href="${escapeHtml(`${base}/f/${f.nodeId}/${encodeURIComponent(f.name)}`)}">${escapeHtml(f.name)}</a>${dir ? `<span class="muted">${escapeHtml(dir)}</span>` : ''}<span class="size">${escapeHtml(formatBytes(f.size))}</span></li>`;
+    })
+    .join('');
+  const more =
+    files.length > LISTING_MAX_ROWS
+      ? `<p class="muted">${escapeHtml(tr.share.moreFiles(files.length - LISTING_MAX_ROWS))}</p>`
+      : '';
+  const zipUrl = `${base}/${encodeURIComponent(share.title)}?all=1`;
+  return page(
+    share.title,
+    `<h1>${escapeHtml(share.title)}</h1><p>${escapeHtml(tr.share.listingSummary(files.length, formatBytes(totalBytes)))}</p>
+<a class="btn" href="${escapeHtml(zipUrl)}">${escapeHtml(tr.share.downloadAllZip)}</a>
+<ul class="files">${rows}</ul>${more}`,
+    {
+      wide: true,
+      ad,
+      lang,
+      reportLabel: tr.share.report,
+      reportUrl: appPath(c.env, `/lapor?share=${share.id}`),
+    },
+  );
+}
+
+type Gate = { share: ShareRow; fp: string } | { response: Response };
+
+/**
+ * What every request on a link goes through: the signature (before any D1 query), the rate
+ * limit, whether the link still works, and preview bots. The password is the caller's.
+ */
+async function openShare(c: Context<AppBindings>, r64: string, s32: string): Promise<Gate> {
+  const ctx = c.get('ctx');
+  // Forged or guessed links are rejected without touching D1.
+  if (!(await verifyShareSignature(c.env, r64, s32))) return { response: dead(c, 'not_found') };
+  const ip = clientIp(c.req.raw);
+  await enforceRateLimit(c.env, 'RL_DOWNLOAD', `share:${ip}:${r64.slice(0, 16)}`);
+
+  const s = await getShareRow(ctx, r64);
+  const state = await shareState(ctx, s);
+  const ua = c.req.header('user-agent') ?? null;
+  const fp = await hashIp(c.env.IP_HASH_SECRET, `${ip}|${ua ?? ''}`, wibDate(ctx.now()));
+  if (state === 'limit' && s) {
+    // Resuming a download that was already counted is still allowed.
+    if (!(await c.env.CONFIG_KV.get(`sd:${s.id.slice(0, 24)}:${fp}`)))
+      return { response: dead(c, 'limit', r64, await shareAdHtml(c, s.created_by)) };
+  } else if (state)
+    return { response: dead(c, state, r64, await shareAdHtml(c, s?.created_by ?? null)) };
+  const share = s!;
+  if (isPreviewBot(ua)) return { response: await ogPage(c, share, c.req.url) };
+  return { share, fp };
+}
+
+export const sharePublic = new Hono<AppBindings>()
+  // One file of a listed folder/bundle (ADR-054).
+  .on(
+    ['GET', 'HEAD'],
+    '/:r64{[0-9A-Za-z]{64}}/:s32{[0-9A-Za-z]{32}}/f/:nodeId{[0-9A-HJKMNP-TV-Z]{26}}/:name?',
+    async (c) => {
+      const ctx = c.get('ctx');
+      const { r64, s32, nodeId } = c.req.param();
+      const gate = await openShare(c, r64, s32);
+      if ('response' in gate) return gate.response;
+      const { share, fp } = gate;
+      if (share.kind === 'file' || !share.show_listing) return dead(c, 'not_found', r64);
+      // No password yet: the link's own page asks for it.
+      if (share.password_hash && !(await hasPassCookie(c, r64)))
+        return c.redirect(`/${r64}/${s32}/${encodeURIComponent(share.title)}`, 303);
+      const file = (await shareFiles(c, share)).files.find((f) => f.nodeId === nodeId);
+      if (!file) return dead(c, 'not_found', r64);
+      const blob = await c.env.DB.prepare('SELECT sniffed_mime FROM blobs WHERE id = ?1')
+        .bind(file.blobId)
+        .first<{ sniffed_mime: string | null }>();
+      const range = c.req.header('range');
+      const counts = c.req.method === 'GET' && (!range || /^bytes=0-/.test(range.trim()));
+      if (counts && !(await countDownload(ctx, share, fp))) return dead(c, 'limit', r64);
+      const { response, bytes } = await serveObject(c.env.BUCKET, c.req.raw, {
+        key: file.r2Key,
+        size: file.size,
+        etag: `"${file.blobId}"`,
+        filename: file.name,
+        contentType: blob?.sniffed_mime ?? file.mime ?? 'application/octet-stream',
+        disposition: 'attachment',
+      });
+      if (bytes) track(c.env.ANALYTICS, 'share_download', { doubles: [bytes] });
+      return response;
+    },
+  )
+  .on(['GET', 'HEAD', 'POST'], '/:r64{[0-9A-Za-z]{64}}/:s32{[0-9A-Za-z]{32}}/:name?', async (c) => {
     const ctx = c.get('ctx');
     const { r64, s32 } = c.req.param();
-    // Forged or guessed links are rejected without touching D1.
-    if (!(await verifyShareSignature(c.env, r64, s32))) return dead(c, 'not_found');
-    const ip = clientIp(c.req.raw);
-    await enforceRateLimit(c.env, 'RL_DOWNLOAD', `share:${ip}:${r64.slice(0, 16)}`);
-
-    const s = await getShareRow(ctx, r64);
-    const state = await shareState(ctx, s);
-    const ua = c.req.header('user-agent') ?? null;
-    if (state === 'limit' && s) {
-      // Resuming a download that was already counted is still allowed.
-      const fp = await hashIp(c.env.IP_HASH_SECRET, `${ip}|${ua ?? ''}`, wibDate(ctx.now()));
-      if (!(await c.env.CONFIG_KV.get(`sd:${s.id.slice(0, 24)}:${fp}`)))
-        return dead(c, 'limit', r64, await shareAdHtml(c, s.created_by));
-    } else if (state) return dead(c, state, r64, await shareAdHtml(c, s?.created_by ?? null));
-    const share = s!;
-
-    if (isPreviewBot(ua)) return ogPage(c, share, c.req.url);
+    const gate = await openShare(c, r64, s32);
+    if ('response' in gate) return gate.response;
+    const { share, fp } = gate;
 
     if (share.password_hash) {
       if (c.req.method === 'POST') {
@@ -146,7 +248,6 @@ export const sharePublic = new Hono<AppBindings>().on(
       return c.redirect(new URL(c.req.url).pathname, 303);
     }
 
-    const fp = await hashIp(c.env.IP_HASH_SECRET, `${ip}|${ua ?? ''}`, wibDate(ctx.now()));
     const range = c.req.header('range');
     const startsAtZero = !range || /^bytes=0-/.test(range.trim());
     const counts = c.req.method === 'GET' && startsAtZero;
@@ -182,6 +283,21 @@ export const sharePublic = new Hono<AppBindings>().on(
       });
       if (bytes) track(c.env.ANALYTICS, 'share_download', { doubles: [bytes] });
       return response;
+    }
+
+    // "Show the files": a page listing them (never counted), unless the whole ZIP is asked for.
+    if (share.show_listing && c.req.query('all') === undefined) {
+      const tree = await shareFiles(c, share);
+      if (!tree.files.length) return dead(c, 'not_found', r64);
+      const base = `/${r64}/${s32}`;
+      return listingPage(
+        c,
+        share,
+        base,
+        tree.files,
+        tree.totalBytes,
+        await shareAdHtml(c, share.created_by),
+      );
     }
 
     // Folder (live content) or bundle (fixed items) → ZIP store, Range-capable.
@@ -231,5 +347,4 @@ export const sharePublic = new Hono<AppBindings>().on(
       status: 200,
       headers,
     });
-  },
-);
+  });

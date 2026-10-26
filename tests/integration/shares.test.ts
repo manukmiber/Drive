@@ -152,6 +152,99 @@ describe('share links (SPEC §6.1)', () => {
     expect(new Uint8Array(await part.arrayBuffer())).toEqual(bytes.slice(10, 30));
   });
 
+  it("lists a folder's files when asked, each downloadable alone, the ZIP still there (ADR-054)", async () => {
+    const { rt, s, root } = await setup('listing@example.com');
+    const folder = await createFolder(s, root, 'Album <Liburan>');
+    const sub = await createFolder(s, folder.id, 'Hari 2');
+    const a = await uploadText(s, folder.id, 'pantai.txt', 'ombak');
+    await uploadText(s, sub.id, 'gunung.txt', 'kabut');
+    const outside = await uploadText(s, root, 'di-luar.txt', 'jangan');
+    await rt.settle();
+    const sh = (
+      (await (
+        await s.req('POST', '/api/shares', { nodeIds: [folder.id], showListing: true })
+      ).json()) as { share: ShareJson & { showListing: boolean } }
+    ).share;
+    expect(sh.showListing).toBe(true);
+
+    const page = await visit(rt, sh.url);
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-type')).toContain('text/html');
+    const html = await page.text();
+    expect(html).toContain('Album &lt;Liburan&gt;');
+    expect(html).not.toContain('<Liburan>');
+    expect(html).toContain('pantai.txt');
+    expect(html).toContain('Album &lt;Liburan&gt;/Hari 2');
+    const count = () =>
+      (
+        rt.d1.sqlite.prepare('SELECT download_count FROM shares WHERE id = ?').get(sh.id) as {
+          download_count: number;
+        }
+      ).download_count;
+    expect(count()).toBe(0); // looking is not downloading
+
+    const links = [...html.matchAll(/href="([^"]+\/f\/[^"]+)"/g)].map((m) => m[1]!);
+    expect(links).toHaveLength(2);
+    const one = await visit(rt, `${APP}${links.find((l) => l.includes(a.id))!}`);
+    expect(one.status).toBe(200);
+    expect(await one.text()).toBe('ombak');
+    expect(one.headers.get('content-disposition')).toContain('attachment');
+    expect(count()).toBe(1);
+
+    // A file of the owner's that is not in the share, through the same link: no.
+    const base = new URL(sh.url).pathname.split('/').slice(0, 3).join('/');
+    expect((await visit(rt, `${APP}${base}/f/${outside.id}/x.txt`)).status).toBe(404);
+
+    const zip = await visit(rt, `${sh.url}?all=1`);
+    expect(zip.headers.get('content-type')).toBe('application/zip');
+    expect(readZip(new Uint8Array(await zip.arrayBuffer()))).toMatchObject({
+      'Album _Liburan_/pantai.txt': 'ombak',
+      'Album _Liburan_/Hari 2/gunung.txt': 'kabut',
+    });
+
+    // Switched off: straight to the ZIP again, and the per-file links stop.
+    await s.req('PATCH', `/api/shares/${sh.id}`, { showListing: false });
+    expect((await visit(rt, sh.url)).headers.get('content-type')).toBe('application/zip');
+    expect((await visit(rt, `${APP}${links[0]!}`)).status).toBe(404);
+  });
+
+  it('keeps the password in front of listed files, and never lists a single file', async () => {
+    const { rt, s, root } = await setup('listing-pw@example.com');
+    const folder = await createFolder(s, root, 'Kontrak');
+    const f = await uploadText(s, folder.id, 'draf.txt', 'pasal 1');
+    await rt.settle();
+    const sh = await share(s, { nodeIds: [folder.id], showListing: true, password: 'teh-manis' });
+    const base = new URL(sh.url).pathname.split('/').slice(0, 3).join('/');
+    const direct = await visit(rt, `${APP}${base}/f/${f.id}/draf.txt`);
+    expect(direct.status).toBe(303);
+    expect(direct.headers.get('location')).toBe(`${base}/Kontrak`);
+    const ok = await visit(rt, sh.url, {
+      method: 'POST',
+      body: new URLSearchParams({ password: 'teh-manis' }),
+    });
+    const cookie = ok.headers.get('set-cookie')!.split(';')[0]!;
+    expect(await (await visit(rt, sh.url, { headers: { cookie } })).text()).toContain('draf.txt');
+    const dl = await visit(rt, `${APP}${base}/f/${f.id}/draf.txt`, { headers: { cookie } });
+    expect(await dl.text()).toBe('pasal 1');
+
+    const single = (
+      (await (
+        await s.req('POST', '/api/shares', { nodeIds: [f.id], showListing: true })
+      ).json()) as {
+        share: ShareJson & { showListing: boolean };
+      }
+    ).share;
+    expect(single.showListing).toBe(false);
+    expect(await (await visit(rt, single.url)).text()).toBe('pasal 1');
+    // A new link keeps the setting.
+    const again = (
+      (await (await s.req('POST', `/api/shares/${sh.id}/regenerate`)).json()) as {
+        share: ShareJson & { showListing: boolean };
+      }
+    ).share;
+    expect(again.showListing).toBe(true);
+  });
+
   it('only the owner manages a share; others cannot share foreign nodes', async () => {
     const { rt, s, root } = await setup();
     const other = await signIn(rt, 'eve@example.com');

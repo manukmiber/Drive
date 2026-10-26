@@ -1512,6 +1512,28 @@ export const t = {
     statusDisabled: 'Nonaktif',
     shareMessage: (title: string, url: string) =>
       `Aku bagikan "${title}" lewat Zeiko Drive: ${url}`,
+    titleLabel: 'Judul link',
+    showListing: 'Tampilkan daftar file dulu',
+    showListingHint:
+      'Penerima melihat isi folder dan bisa memilih file satu per satu, atau mengunduh semuanya sebagai ZIP.',
+    passwordProtected: 'Dilindungi password',
+    newPassword: 'Password baru (opsional)',
+    removePassword: 'Hapus password',
+    passwordRemoved: 'Password dihapus',
+    qrDownloadPng: 'Unduh PNG',
+    qrDownloadSvg: 'Unduh SVG',
+    qrCopy: 'Salin gambar',
+    qrCopied: 'Gambar QR disalin',
+    qrFullscreen: 'Layar penuh',
+    qrHint: 'Scan dengan kamera HP untuk langsung mengunduh.',
+    showOld: 'Tampilkan link lama',
+    search: 'Cari link',
+    manage: 'Atur link',
+    lastDownload: (d: string) => `terakhir diunduh ${d}`,
+    listingBadge: 'Daftar file',
+    listingSummary: (n: number, size: string) => `${n} file · ${size}`,
+    downloadAllZip: 'Unduh semua (ZIP)',
+    moreFiles: (n: number) => `Dan ${n} file lagi. Unduh semuanya sebagai ZIP.`,
   },
 } as const;
 
