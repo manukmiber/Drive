@@ -53,6 +53,28 @@ const MIGRATIONS: string[][] = [
   ],
   // v2: whether the object's bytes are also in both replica buckets (3 copies, ADR-047).
   [`ALTER TABLE s3_objects ADD COLUMN replicated INTEGER NOT NULL DEFAULT 0`],
+  // v3 (ADR-060): requests and bytes per bucket per WIB day, and access log lines waiting to be
+  // delivered to the bucket's logging target.
+  [
+    `CREATE TABLE IF NOT EXISTS s3_bucket_days (
+       user_id       TEXT NOT NULL,
+       bucket        TEXT NOT NULL,
+       day           INTEGER NOT NULL,
+       requests      INTEGER NOT NULL DEFAULT 0,
+       errors        INTEGER NOT NULL DEFAULT 0,
+       ingress_bytes INTEGER NOT NULL DEFAULT 0,
+       egress_bytes  INTEGER NOT NULL DEFAULT 0,
+       PRIMARY KEY (user_id, bucket, day)
+     ) WITHOUT ROWID`,
+    `CREATE TABLE IF NOT EXISTS s3_log_lines (
+       id      INTEGER PRIMARY KEY,
+       user_id TEXT NOT NULL,
+       bucket  TEXT NOT NULL,
+       at      INTEGER NOT NULL,
+       line    TEXT NOT NULL
+     )`,
+    `CREATE INDEX IF NOT EXISTS s3_log_lines_bucket_idx ON s3_log_lines (user_id, bucket, id)`,
+  ],
 ];
 export const INDEX_SCHEMA_VERSION = MIGRATIONS.length;
 

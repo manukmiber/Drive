@@ -1367,3 +1367,32 @@ tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.t
 
 **Konsekuensi:** paket `qrcode` tetap dipakai untuk matriksnya; `jsqr` hanya devDependency untuk test
 (`tests/unit/qr.test.ts`).
+
+## ADR-060 — Zeiko S3: statistik per bucket dan log akses
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: roadmap S9).
+
+**Keputusan:**
+- **Tabel harian di D1, bukan Analytics Engine.** Membaca Analytics Engine dari Worker butuh API token akun lewat SQL API
+  (secret baru dari pemilik), sedangkan D1 sudah ada. Satu UPSERT per request S3 ke `s3_bucket_days` (user, bucket,
+  hari WIB: request, error, byte masuk, byte keluar), di **index D1 akun itu sendiri** (`MIGRATIONS` v3 di
+  `s3-index.ts`), lewat `waitUntil` setelah respons. Akun yang punya index sendiri tidak memakai jatah tulis D1 utama.
+  Workers Free membatasi 100 ribu baris tulis/hari per akun Cloudflare: kalau S3 ramai, index per akun dan Workers Paid
+  yang jadi jalan keluarnya. Analytics Engine (`s3_request`) tetap ditulis untuk operator.
+- Yang dihitung: request S3 API yang bucket-nya sudah diketahui dan boleh dialamatkan (pemilik, atau anonim ke bucket
+  itu), termasuk yang gagal; link `/s3` (presigned) ikut, aksi halaman `/s3` yang lewat API app tidak. Byte keluar hanya
+  untuk respons < 300. CreateBucket tidak dihitung (bucket belum ada), DeleteBucket yang berhasil tidak menulis baris.
+- Jumlah objek dan byte dihitung dari index saat dialog Statistik dibuka (`COUNT`/`SUM` per bucket), tidak disimpan.
+- **Log akses** (`PutBucketLogging`/`GetBucketLogging`, juga dari `/s3`): `s3_buckets.logging_json` (migrasi `0013`).
+  Target harus bucket milik akun yang sama (`InvalidTargetBucketForLogging`); grant dan partitioned prefix →
+  NotImplemented. Baris berformat server access log Amazon menunggu di `s3_log_lines` (index akun), lalu cron per jam
+  (`deliverS3Logs`, maks `s3_log_buckets_per_run` bucket, `s3_log_lines_per_object` baris per objek) menulisnya sebagai
+  objek `{prefix}YYYY-MM-DD-HH-MM-SS-{16 hex}` lewat `putObject` biasa (kuota, replika, scan). Akun yang tidak bisa menulis
+  menyimpan barisnya sampai `s3_log_pending_days`. Target dihapus/pindah tangan → logging mati, baris dibuang.
+- **IP tidak pernah mentah di log:** Kebijakan Privasi mengizinkan Zeiko mencatat IP, bukan memberikannya ke pemilik
+  bucket. Kolom remote IP = `hashIp` dengan garam per pemilik per hari WIB. Signature presigned URL di request URI diganti
+  `REDACTED`.
+- Retensi: `s3_bucket_days` > `s3_stats_keep_days` dan baris log > `s3_log_pending_days` dibersihkan bersama rekonsiliasi
+  malam per akun. Ekspor data memuat `cors_json`, `logging_json`, dan semua baris harian; hapus akun membersihkan keduanya.
+
+**Konsekuensi:** satu tulis D1 per request S3 (dua kalau bucket mencatat log). Test: `tests/integration/s3-stats.test.ts`,
+`idor.test.ts`.

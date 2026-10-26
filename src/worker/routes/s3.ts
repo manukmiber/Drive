@@ -21,6 +21,7 @@ import { CORS_METHODS, getBucketCors, MAX_CORS_RULES, setBucketCors } from '../s
 import { contentLength } from '../lib/http';
 import { rateLimit } from '../middleware/ratelimit';
 import { checkS3Url, releaseS3Url } from '../services/s3-urls';
+import { bucketStats, MAX_LOG_PREFIX, setBucketLogging } from '../services/s3-stats';
 import type { Ctx } from '../context';
 import type { AppBindings } from '../types';
 
@@ -38,6 +39,7 @@ function asAppError(e: S3Error): AppError {
     case 'NoSuchKey':
       return new AppError('NOT_FOUND', e.message, { reason: e.code });
     case 'MalformedXML':
+    case 'InvalidTargetBucketForLogging':
     case 'InvalidRequest':
     case 'KeyTooLongError':
     case 'InvalidArgument':
@@ -247,6 +249,33 @@ export const s3 = new Hono<AppBindings>()
     const ctx = c.get('ctx');
     await activeAccount(ctx, c.get('user')!.id);
     await s3Call(() => setBucketCors(ctx, c.get('user')!.id, c.req.param('name'), null));
+    return c.body(null, 204);
+  })
+  // Statistics and access logging per bucket (ADR-060).
+  .get('/buckets/:name/stats', async (c) => {
+    const ctx = c.get('ctx');
+    const acc = await activeAccount(ctx, c.get('user')!.id);
+    return c.json(await s3Call(() => bucketStats(ctx, acc, c.req.param('name'))));
+  })
+  .put(
+    '/buckets/:name/logging',
+    validate(
+      'json',
+      z.object({ target: bucketName, prefix: z.string().max(MAX_LOG_PREFIX).default('') }),
+    ),
+    async (c) => {
+      const ctx = c.get('ctx');
+      await activeAccount(ctx, c.get('user')!.id);
+      const logging = await s3Call(() =>
+        setBucketLogging(ctx, c.get('user')!.id, c.req.param('name'), c.req.valid('json')),
+      );
+      return c.json({ logging });
+    },
+  )
+  .delete('/buckets/:name/logging', async (c) => {
+    const ctx = c.get('ctx');
+    await activeAccount(ctx, c.get('user')!.id);
+    await s3Call(() => setBucketLogging(ctx, c.get('user')!.id, c.req.param('name'), null));
     return c.body(null, 204);
   })
   .delete('/buckets/:name', async (c) => {

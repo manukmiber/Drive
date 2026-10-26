@@ -35,6 +35,13 @@ import {
 } from '../lib/s3-xml';
 import { clientIp } from '../middleware/ratelimit';
 import { meterS3Egress } from '../services/s3-billing';
+import {
+  bucketLogging,
+  loggingXml,
+  parseLoggingXml,
+  recordS3Request,
+  setBucketLogging,
+} from '../services/s3-stats';
 import { getFromAnyCopy } from '../services/s3-replicas';
 import { s3UrlOwner } from '../services/s3-urls';
 import {
@@ -113,7 +120,6 @@ const UNSUPPORTED_SUB = [
   'inventory',
   'legal-hold',
   'lifecycle',
-  'logging',
   'metrics',
   'notification',
   'object-lock',
@@ -161,6 +167,11 @@ interface Req {
   /** Whose period an object read's bytes count in (ADR-047): the bucket owner's. */
   egressTo: { userId: string; periodStart: number | null } | null;
   op: string;
+  /** The bucket the request is counted for (ADR-060): set once it is known and may be addressed. */
+  stats: BucketRow | null;
+  /** The object's size, for the access log. */
+  objectSize: number | null;
+  errorCode: string | null;
 }
 
 function locate(
@@ -512,7 +523,7 @@ async function bucketOp(r: Req): Promise<Response> {
   const q = r.query;
   const sub = UNSUPPORTED_SUB.find((s) => q.has(s));
   const auth = needAuth(r);
-  if (r.method === 'PUT' && !q.has('acl') && !q.has('cors')) {
+  if (r.method === 'PUT' && !q.has('acl') && !q.has('cors') && !q.has('logging')) {
     if (sub)
       throw new S3Error('NotImplemented', `The ${sub} configuration is not supported by Zeiko S3.`);
     r.op = 'CreateBucket';
@@ -526,9 +537,11 @@ async function bucketOp(r: Req): Promise<Response> {
     return new Response(null, { status: 200, headers: { Location: `/${name}` } });
   }
   const bucket = await ownBucket(r.ctx, auth.userId, name);
+  r.stats = bucket;
   if (sub)
     throw new S3Error('NotImplemented', `The ${sub} sub-resource is not supported by Zeiko S3.`);
   if (q.has('cors')) return corsOp(r, bucket);
+  if (q.has('logging')) return loggingOp(r, bucket);
   switch (r.method) {
     case 'HEAD':
       r.op = 'HeadBucket';
@@ -602,6 +615,30 @@ async function corsOp(r: Req, bucket: BucketRow): Promise<Response> {
       r.op = 'DeleteBucketCors';
       await setBucketCors(r.ctx, auth.userId, bucket.name, null);
       return new Response(null, { status: 204 });
+    default:
+      throw new S3Error(
+        'MethodNotAllowed',
+        'The specified method is not allowed against this resource.',
+      );
+  }
+}
+
+/** Get/PutBucketLogging (ADR-060): logs go to another bucket of the same owner. */
+async function loggingOp(r: Req, bucket: BucketRow): Promise<Response> {
+  const auth = needAuth(r);
+  switch (r.method) {
+    case 'GET':
+      r.op = 'GetBucketLogging';
+      return xmlResponse(loggingXml(bucketLogging(bucket)));
+    case 'PUT':
+      r.op = 'PutBucketLogging';
+      await setBucketLogging(
+        r.ctx,
+        auth.userId,
+        bucket.name,
+        parseLoggingXml(await readSmallBody(r)),
+      );
+      return new Response(null, { status: 200 });
     default:
       throw new S3Error(
         'MethodNotAllowed',
@@ -758,6 +795,7 @@ async function readObject(
     throw new S3Error('NotImplemented', 'GET by part number is not supported by Zeiko S3.');
   const row = await getObjectRow(r.ctx, account, bucket.name, r.key!);
   if (!row) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: r.key! });
+  r.objectSize = row.size;
   // Strangers only get objects the security scan has passed (SPEC §14.2: pending = owner only).
   if (!r.auth && row.scan_status !== 'clean' && row.scan_status !== 'skipped')
     throw new S3Error('AccessDenied', 'This object is still being checked.');
@@ -919,6 +957,7 @@ async function objectOp(r: Req): Promise<Response> {
     });
 
   if (!r.auth) {
+    r.stats = bucket;
     // Anonymous: read-only, public buckets, nothing else (ToS §4).
     if ((r.method !== 'GET' && r.method !== 'HEAD') || q.has('acl') || q.has('uploadId'))
       throw new S3Error('AccessDenied', 'Access Denied');
@@ -938,6 +977,7 @@ async function objectOp(r: Req): Promise<Response> {
 
   const auth = r.auth;
   if (bucket.user_id !== auth.userId) throw new S3Error('AccessDenied', 'Access Denied');
+  r.stats = bucket;
   const key = r.key!;
   switch (r.method) {
     case 'GET':
@@ -1115,7 +1155,12 @@ export async function handleS3(
     egressTo: null,
     hostOwner,
     op: 'Unknown',
+    stats: null,
+    objectSize: null,
+    errorCode: null,
   };
+  const started = Date.now();
+  const arrived = ctx.now();
   let res: Response;
   try {
     if (!s3Configured(ctx.env))
@@ -1137,6 +1182,7 @@ export async function handleS3(
     }
     // Draining an unread body keeps the connection usable for the client's next request.
     if (raw.body && !raw.bodyUsed) void raw.body.cancel().catch(() => undefined);
+    r.errorCode = err.code;
     res = s3ErrorResponse(err, url.pathname, requestId, raw.method === 'HEAD');
   }
   const out = new Response(res.body, res);
@@ -1161,6 +1207,32 @@ export async function handleS3(
     );
     if (waitUntil) waitUntil(metered);
     else await metered;
+  }
+  // A deleted bucket keeps no counters (they went with it).
+  if (r.stats && !(r.op === 'DeleteBucket' && out.status < 300)) {
+    const counted = recordS3Request(ctx, {
+      bucket: r.stats,
+      account: r.auth?.account ?? null,
+      at: arrived,
+      ms: Date.now() - started,
+      method: raw.method,
+      url,
+      key: r.key,
+      status: out.status,
+      errorCode: r.errorCode,
+      bytesIn: r.bytesIn,
+      bytesOut: r.bytesOut,
+      objectSize: r.objectSize,
+      ip: clientIp(raw),
+      requester: r.auth?.userId ?? null,
+      requestId,
+      referer: raw.headers.get('referer'),
+      userAgent: raw.headers.get('user-agent'),
+      host: url.host,
+      auth: r.auth ? (r.auth.parsed.kind === 'query' ? 'QueryString' : 'AuthHeader') : null,
+    }).catch((e: unknown) => log.error('s3_stats_failed', { requestId, message: errorMessage(e) }));
+    if (waitUntil) waitUntil(counted);
+    else await counted;
   }
   return out;
 }

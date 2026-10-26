@@ -222,6 +222,11 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Statistik bucket dan log akses S3 (S9, ADR-060, 2026-10-26)
+- [x] Per bucket di `/s3`: objek, ukuran, request/error/diunduh 30 hari (grafik per hari WIB + tabel).
+- [x] `PutBucketLogging`/`GetBucketLogging` dan dari `/s3`; log format Amazon dikirim per jam ke bucket sendiri, IP di-hash.
+- [ ] Pemilik: migrasi `0013` di D1 remote, deploy.
+
 ## Dekorasi folder (D5, ADR-058, 2026-10-26)
 - [x] Warna (12), ikon (24 atau satu emoji), gambar sampul dari space yang sama; banyak folder sekaligus; hapus.
 - [x] Tampil di explorer, breadcrumb, Pindahkan, cari, banner folder, share publik (tanpa sampul).

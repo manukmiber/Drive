@@ -18,6 +18,7 @@ import { runAdsDaily } from '../services/ads';
 import { expireS3Uploads, reconcileS3 } from '../services/s3-objects';
 import { remindS3Renewals, renewS3FromCredit, runS3Dunning } from '../services/s3-billing';
 import { sweepReplication } from '../services/s3-replicas';
+import { deliverS3Logs } from '../services/s3-stats';
 import { refreshPendingUrls, releaseLapsedUrls } from '../services/s3-urls';
 import { cleanupVirusTotal } from '../services/virustotal';
 import { registerCronTask } from '.';
@@ -31,6 +32,12 @@ registerCronTask(CRON.hourly, {
 registerCronTask(CRON.hourly, {
   name: 's3_expire_uploads',
   run: async (ctx) => void (await expireS3Uploads(ctx)),
+});
+
+// Bucket access logs (ADR-060): waiting lines become log objects in their target buckets.
+registerCronTask(CRON.hourly, {
+  name: 's3_deliver_logs',
+  run: async (ctx) => void (await deliverS3Logs(ctx)),
 });
 
 registerCronTask(CRON.nightly, {

@@ -94,7 +94,7 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
         userId,
       ),
       buckets: await q(
-        'SELECT name, public, created_at FROM s3_buckets WHERE user_id = ?1',
+        'SELECT name, public, created_at, cors_json, logging_json FROM s3_buckets WHERE user_id = ?1',
         userId,
       ),
       plan:
@@ -115,6 +115,8 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
         'SELECT period_start, egress_bytes, billed_blocks FROM s3_usage WHERE user_id = ?1 ORDER BY period_start',
         userId,
       ),
+      // Requests and bytes per bucket per day (ADR-060), from the account's index.
+      bucketDays: await (await import('./s3-stats')).exportBucketDays(ctx, userId),
     },
   };
 }

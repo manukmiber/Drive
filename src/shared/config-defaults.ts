@@ -175,6 +175,15 @@ export const configSchema = z.object({
     .min(60)
     .max(7 * 24 * 3600)
     .default(7 * 24 * 3600),
+  // Bucket statistics and access logs (ADR-060).
+  /** Days of per-bucket request/egress counts kept. */
+  s3_stats_keep_days: int().min(31).default(90),
+  /** Access log lines not delivered (target full, unpaid, gone) are dropped after this. */
+  s3_log_pending_days: int().min(1).default(7),
+  /** Lines per delivered log object. */
+  s3_log_lines_per_object: int().min(100).max(20_000).default(5_000),
+  /** Buckets whose logs one hourly run delivers. */
+  s3_log_buckets_per_run: int().min(1).max(50).default(10),
   // Paid upfront (ADR-047): a size in whole GB, 1 copy or 3 (in three R2 buckets), for a month.
   s3_price_idr_per_gb_month: nonNeg().default(500),
   s3_price_idr_per_gb_month_3x: nonNeg().default(1_500),

@@ -25,6 +25,7 @@ const STATUS = {
   InvalidPartOrder: 400,
   InvalidRange: 416,
   InvalidRequest: 400,
+  InvalidTargetBucketForLogging: 400,
   InvalidURI: 400,
   KeyTooLongError: 400,
   MalformedXML: 400,

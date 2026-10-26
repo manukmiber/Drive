@@ -37,17 +37,17 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 
 ### Zeiko S3
 
-| ID  | Fitur                                                              | Jenis       | Ukuran | Butuh dulu | Status |
-| --- | ------------------------------------------------------------------ | ----------- | ------ | ---------- | ------ |
-| S1  | Key dengan izin terbatas (bucket, prefix, baca/tulis, kedaluwarsa) | Wajib       | M      | –          | belum  |
-| S2  | Tulis bersyarat `If-None-Match` / `If-Match` (sekarang diabaikan)  | Wajib (bug) | S      | –          | belum  |
-| S3  | Lifecycle: hapus otomatis, batalkan multipart menggantung          | Wajib       | M      | –          | belum  |
-| S4  | Upload multipart dari halaman `/s3`                                | Sisa        | S      | –          | belum  |
-| S5  | Versioning + Object Lock                                           | Niche       | L      | S3         | belum  |
-| S6  | Kelas Infrequent Access                                            | Niche       | M      | S3         | belum  |
-| S7  | Website statis di domain sendiri                                   | Niche       | M      | –          | belum  |
-| S8  | Tagging, GetObject `partNumber`, checksum, PostObject              | Niche       | M      | –          | belum  |
-| S9  | Statistik per bucket dan log akses                                 | Niche       | M      | –          | belum  |
+| ID  | Fitur                                                              | Jenis       | Ukuran | Butuh dulu | Status            |
+| --- | ------------------------------------------------------------------ | ----------- | ------ | ---------- | ----------------- |
+| S1  | Key dengan izin terbatas (bucket, prefix, baca/tulis, kedaluwarsa) | Wajib       | M      | –          | belum             |
+| S2  | Tulis bersyarat `If-None-Match` / `If-Match` (sekarang diabaikan)  | Wajib (bug) | S      | –          | belum             |
+| S3  | Lifecycle: hapus otomatis, batalkan multipart menggantung          | Wajib       | M      | –          | belum             |
+| S4  | Upload multipart dari halaman `/s3`                                | Sisa        | S      | –          | belum             |
+| S5  | Versioning + Object Lock                                           | Niche       | L      | S3         | belum             |
+| S6  | Kelas Infrequent Access                                            | Niche       | M      | S3         | belum             |
+| S7  | Website statis di domain sendiri                                   | Niche       | M      | –          | belum             |
+| S8  | Tagging, GetObject `partNumber`, checksum, PostObject              | Niche       | M      | –          | belum             |
+| S9  | Statistik per bucket dan log akses                                 | Niche       | M      | –          | selesai (ADR-060) |
 
 ### Zeiko Drive
 

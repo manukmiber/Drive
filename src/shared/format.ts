@@ -13,6 +13,11 @@ export function formatBytes(bytes: number): string {
   return `${id1.format(bytes / (1024 * GIB))} TB`;
 }
 
+/** 12.345 (Indonesian grouping in both languages, like money). */
+export function formatCount(n: number): string {
+  return id0.format(n);
+}
+
 /** Rp1.000 style (no space, dot thousands separator). */
 export function formatRupiah(idr: number): string {
   return `Rp${id0.format(idr)}`;

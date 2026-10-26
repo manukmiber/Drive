@@ -25,6 +25,7 @@ import type { ScanCarry } from '../queues/messages';
 import { afterVirusTotal } from './scan';
 import { deleteReplicas, replicateObject } from './s3-replicas';
 import { releaseS3Url } from './s3-urls';
+import { dropBucketStats, pruneBucketStats } from './s3-stats';
 
 export const MAX_KEY_BYTES = 1024;
 /** One PUT or CopyObject (Amazon's limit too; bigger objects are multipart). */
@@ -537,6 +538,13 @@ export async function deleteBucket(ctx: Ctx, account: S3Account, name: string): 
     .run();
   // A PUT that raced the emptiness check must not leave objects without a bucket.
   await purgeBucketRows(ctx, account, db, name);
+  await dropBucketStats(ctx, account, name);
+  // Buckets that logged into this one stop logging (a new owner of the name must not get them).
+  await ctx.env.DB.prepare(
+    `UPDATE s3_buckets SET logging_json = NULL WHERE user_id = ?1 AND json_extract(logging_json, '$.target') = ?2`,
+  )
+    .bind(account.userId, name)
+    .run();
 }
 
 async function purgeBucketRows(ctx: Ctx, account: S3Account, db: D1Database, bucket: string) {
@@ -986,6 +994,7 @@ export async function reconcileS3(ctx: Ctx, limit = 20): Promise<number> {
         .bind(a.user_id)
         .first<{ s: number }>();
       const actual = sum?.s ?? 0;
+      await pruneBucketStats(ctx, db, a.user_id);
       if (actual !== a.used_bytes) {
         fixed++;
         log.warn('s3_usage_mismatch', { userId: a.user_id, stored: a.used_bytes, actual });
@@ -1057,6 +1066,10 @@ export async function purgeS3Account(ctx: Ctx, userId: string, batches = 8): Pro
     .bind(userId)
     .first<{ x: number }>();
   if (left) return false;
+  await db.batch([
+    db.prepare(`DELETE FROM s3_bucket_days WHERE user_id = ?1`).bind(userId),
+    db.prepare(`DELETE FROM s3_log_lines WHERE user_id = ?1`).bind(userId),
+  ]);
   await DB.batch([
     DB.prepare(`DELETE FROM s3_buckets WHERE user_id = ?1`).bind(userId),
     DB.prepare(`DELETE FROM s3_subscriptions WHERE user_id = ?1`).bind(userId),

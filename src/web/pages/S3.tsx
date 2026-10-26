@@ -4,6 +4,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
+  BarChart3,
   Copy,
   Database,
   FolderOpen,
@@ -29,6 +30,7 @@ import { useCatalog } from '../lib/catalog';
 import { useCheckout } from './Billing';
 import { NotFound } from './NotFound';
 import { S3Browser } from './S3Browser';
+import { S3StatsDialog, type LoggingConfig } from './S3Stats';
 
 interface S3Key {
   id: string;
@@ -51,6 +53,7 @@ interface S3Bucket {
   blocked: boolean;
   createdAt: number;
   cors: CorsRule[] | null;
+  logging: LoggingConfig | null;
 }
 
 const CORS_METHODS = ['GET', 'HEAD', 'PUT', 'POST', 'DELETE'];
@@ -774,6 +777,7 @@ function S3Page() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState<string | null>(null);
   const [corsFor, setCorsFor] = useState<string | null>(null);
+  const [statsFor, setStatsFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: QUERY });
 
@@ -1002,6 +1006,11 @@ function S3Page() {
                         {t.s3.corsOn}
                       </span>
                     )}
+                    {b.logging && (
+                      <span className="rounded-full bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] text-[var(--fg-muted)]">
+                        {t.s3.loggingOn}
+                      </span>
+                    )}
                   </p>
                   {b.public && (
                     <p className="mt-0.5 truncate text-xs text-[var(--fg-muted)]">
@@ -1016,6 +1025,16 @@ function S3Page() {
                   onClick={() => setBrowsing(browsing === b.name ? null : b.name)}
                 >
                   <FolderOpen className="h-4 w-4" aria-hidden="true" /> {t.s3.browse}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="h-9 px-3"
+                  disabled={suspended}
+                  onClick={() => setStatsFor(b.name)}
+                  aria-label={`${t.s3.stats} ${b.name}`}
+                  title={t.s3.stats}
+                >
+                  <BarChart3 className="h-4 w-4" aria-hidden="true" /> {t.s3.stats}
                 </Button>
                 <Button
                   variant="ghost"
@@ -1202,6 +1221,14 @@ force_path_style = true`}
       >
         {deleting && <p>{t.s3.deleteBody(deleting)}</p>}
       </Dialog>
+      {statsFor && d.buckets.some((b) => b.name === statsFor) && (
+        <S3StatsDialog
+          bucket={statsFor}
+          buckets={d.buckets.map((b) => b.name)}
+          onClose={() => setStatsFor(null)}
+          onSaved={() => void refresh()}
+        />
+      )}
       {corsFor && d.buckets.some((b) => b.name === corsFor) && (
         <CorsDialog
           bucket={d.buckets.find((b) => b.name === corsFor)!}

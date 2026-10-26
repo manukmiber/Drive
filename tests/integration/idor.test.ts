@@ -112,6 +112,7 @@ describe('IDOR (SPEC §14.1)', () => {
       }
     ).key;
     expect((await a.req('POST', '/api/s3/buckets', { name: 'milik-a' })).status).toBe(201);
+    expect((await b.req('POST', '/api/s3/buckets', { name: 'milik-b' })).status).toBe(201);
     const payment = 'pay_a';
     rt.d1.sqlite
       .prepare(
@@ -143,7 +144,9 @@ describe('IDOR (SPEC §14.1)', () => {
         rt.d1.sqlite.prepare('SELECT node_id FROM node_stars WHERE user_id = ?').all(b.userId),
         rt.d1.sqlite.prepare('SELECT id, revoked_at FROM s3_keys ORDER BY id').all(),
         rt.d1.sqlite
-          .prepare('SELECT name, user_id, public, cors_json FROM s3_buckets ORDER BY name')
+          .prepare(
+            'SELECT name, user_id, public, cors_json, logging_json FROM s3_buckets ORDER BY name',
+          )
           .all(),
       ]);
     // B's own folder, to try A's photo as its cover (ADR-058).
@@ -229,6 +232,10 @@ describe('IDOR (SPEC §14.1)', () => {
         { rules: [{ allowedOrigins: ['*'], allowedMethods: ['GET'] }] },
       ],
       ['DELETE', '/api/s3/buckets/milik-a/cors'],
+      // ADR-060: A's statistics and access logging; B cannot point A's logs at its own bucket.
+      ['GET', '/api/s3/buckets/milik-a/stats'],
+      ['PUT', '/api/s3/buckets/milik-a/logging', { target: 'milik-b', prefix: '' }],
+      ['DELETE', '/api/s3/buckets/milik-a/logging'],
     ];
 
     const leaks: string[] = [];
