@@ -33,7 +33,6 @@ const Search = page(() => import('./pages/Lists'), 'Search');
 const Shared = page(() => import('./pages/Lists'), 'Shared');
 const Starred = page(() => import('./pages/Lists'), 'Starred');
 const Billing = page(() => import('./pages/Billing'), 'Billing');
-const Admin = page(() => import('./pages/Admin'), 'Admin');
 const Report = page(() => import('./pages/Report'), 'Report');
 const Legal = page(() => import('./pages/Legal'), 'Legal');
 const FamilyPage = page(() => import('./pages/Family'), 'FamilyPage');
@@ -138,7 +137,6 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => appRoute, path: '/iklan', component: Advertiser }),
     createRoute({ getParentRoute: () => appRoute, path: '/unduhan', component: Downloads }),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),
-    createRoute({ getParentRoute: () => appRoute, path: '/admin', component: Admin }),
   ]),
 ]);
 

@@ -540,10 +540,10 @@ export async function reviewCreative(
   const today = wibDate(now);
   const DB = ctx.env.DB;
   const res = await DB.prepare(
-    `UPDATE ad_creatives SET status = ?2, reject_reason = ?3, reviewed_by = ?4, reviewed_at = ?5, updated_at = ?5
+    `UPDATE ad_creatives SET status = ?2, reject_reason = ?3, reviewed_at = ?4, updated_at = ?4
      WHERE id = ?1 AND status = 'pending'`,
   )
-    .bind(id, decision === 'approve' ? 'approved' : 'rejected', decision === 'reject' ? reason : null, actorId, now)
+    .bind(id, decision === 'approve' ? 'approved' : 'rejected', decision === 'reject' ? reason : null, now)
     .run();
   if (!res.meta.changes) throw new AppError('CONFLICT', 'CREATIVE_STATE');
   const { results: waiting } = await DB.prepare(
@@ -619,8 +619,8 @@ export async function suspendCreative(
     : 0;
   const stmts: Stmt[] = [
     DB.prepare(
-      `UPDATE ad_creatives SET status = 'suspended', reject_reason = ?2, reviewed_by = ?3, reviewed_at = ?4, updated_at = ?4 WHERE id = ?1`,
-    ).bind(id, reason, actorId, now),
+      `UPDATE ad_creatives SET status = 'suspended', reject_reason = ?2, reviewed_at = ?3, updated_at = ?3 WHERE id = ?1`,
+    ).bind(id, reason, now),
     DB.prepare(
       `UPDATE ad_campaigns SET status = 'suspended', reason = ?2, updated_at = ?3 WHERE creative_id = ?1 AND status IN ('paid', 'live')`,
     ).bind(id, reason, now),

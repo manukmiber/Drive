@@ -1,21 +1,10 @@
-import { createOTP } from '@better-auth/utils/otp';
-import { symmetricEncrypt } from 'better-auth/crypto';
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
-import type { DevRuntime } from '../../dev/env';
 import { getDb, schema } from '../../src/worker/db/client';
 import { SESSION_COOKIE } from '../../src/worker/auth';
 import { MockZeikoAccounts } from '../../src/worker/adapters/zeiko';
 import { APP, jsonReq, makeRuntime } from '../helpers/runtime';
-import {
-  exchange,
-  Jar,
-  proveSecondFactor,
-  signIn,
-  staffSignIn,
-  zeikoAccountFor,
-} from '../helpers/session';
-import { addSoftPasskey } from '../helpers/webauthn';
+import { exchange, Jar, signIn, zeikoAccountFor } from '../helpers/session';
 
 describe('auth (Better Auth on D1)', () => {
   it('signs up with a Zeiko Account and bootstraps the personal space', async () => {
@@ -24,12 +13,13 @@ describe('auth (Better Auth on D1)', () => {
     expect(s.jar.get(SESSION_COOKIE)).toBeTruthy();
 
     const me = (await (await s.req('GET', '/api/me')).json()) as {
-      user: { email: string; role: string };
+      user: { email: string };
       space: { poolId: string; personalRootId: string };
       storage: { limitBytes: number };
       subscription: unknown;
     };
-    expect(me.user).toMatchObject({ email: 'siti@example.com', role: 'user' });
+    expect(me.user).toMatchObject({ email: 'siti@example.com' });
+    expect(me.user).not.toHaveProperty('role'); // no staff in Drive (ADR-057)
     expect(me.storage.limitBytes).toBe(0); // no free plan (SPEC §16 #9)
     expect(me.subscription).toBeNull();
 
@@ -151,12 +141,15 @@ describe('auth (Better Auth on D1)', () => {
     expect(res.status).toBe(503);
   });
 
-  it('offers no OTP, password or passkey sign-in', async () => {
+  it('offers no OTP, password, passkey or TOTP of its own', async () => {
     const rt = await makeRuntime();
     for (const path of [
       '/api/auth/email-otp/send-verification-otp',
       '/api/auth/sign-in/email',
       '/api/auth/passkey/generate-authenticate-options',
+      '/api/auth/passkey/generate-register-options',
+      '/api/auth/two-factor/enable',
+      '/api/auth/second-factor/totp',
     ]) {
       const res = await rt.fetch(jsonReq('POST', path, { email: 'z@example.com' }));
       expect(res.status, path).toBeGreaterThanOrEqual(400);
@@ -193,174 +186,5 @@ describe('auth (Better Auth on D1)', () => {
     expect((await send()).status).toBe(400);
     expect((await send()).status).toBe(400);
     expect((await send()).status).toBe(429);
-  });
-});
-
-describe('staff guard (ADR-056)', () => {
-  /** An admin whose account has TOTP, signed in through Zeiko Accounts only. */
-  async function totpAdmin(rt: DevRuntime, email = 'boss@example.com') {
-    const s = await signIn(rt, email);
-    const secret = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
-    rt.d1.sqlite
-      .prepare("UPDATE users SET role = 'admin', two_factor_enabled = 1 WHERE id = ?")
-      .run(s.userId);
-    rt.d1.sqlite
-      .prepare(
-        'INSERT INTO two_factors (id, secret, backup_codes, user_id, verified) VALUES (?, ?, ?, ?, 1)',
-      )
-      .run(
-        `tf_${s.userId}`,
-        await symmetricEncrypt({ key: rt.env.BETTER_AUTH_SECRET, data: secret }),
-        '[]',
-        s.userId,
-      );
-    return { s, otp: createOTP(secret, { period: 30, digits: 6 }) };
-  }
-
-  const reason = async (res: Response) =>
-    ((await res.json()) as { error?: { data?: { reason?: string } } }).error?.data?.reason;
-
-  it('wants a factor on the account, then proved in this session', async () => {
-    const rt = await makeRuntime();
-    const s = await signIn(rt, 'boss@example.com');
-    const db = getDb(rt.env.DB);
-    expect((await s.req('GET', '/api/admin/whoami')).status).toBe(403); // plain user
-
-    await db.update(schema.users).set({ role: 'admin' }).where(eq(schema.users.id, s.userId));
-    const no2fa = await s.req('GET', '/api/admin/whoami');
-    expect(no2fa.status).toBe(403);
-    expect(await reason(no2fa)).toBe('ADMIN_2FA_REQUIRED');
-
-    const key = await addSoftPasskey(rt, s.userId);
-    // Enrolled is not enough: signing in through Zeiko Accounts alone never opens staff routes.
-    const notProved = await s.req('GET', '/api/admin/whoami');
-    expect(notProved.status).toBe(403);
-    expect(await reason(notProved)).toBe('SECOND_FACTOR_REQUIRED');
-
-    const options = (await (
-      await s.req('POST', '/api/auth/second-factor/passkey/options')
-    ).json()) as {
-      challenge: string;
-      allowCredentials: Array<{ id: string }>;
-    };
-    expect(options.allowCredentials.map((c) => c.id)).toEqual([key.credentialId]);
-    const verified = await s.req('POST', '/api/auth/second-factor/passkey/verify', {
-      response: await key.assert(options.challenge, APP),
-    });
-    expect(verified.status).toBe(200);
-    expect((await s.req('GET', '/api/admin/whoami')).status).toBe(200);
-  });
-
-  it('refuses a passkey assertion for another challenge or another user', async () => {
-    const rt = await makeRuntime();
-    const s = await signIn(rt, 'boss@example.com');
-    rt.d1.sqlite.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(s.userId);
-    const mine = await addSoftPasskey(rt, s.userId);
-    const other = await signIn(rt, 'lain@example.com');
-    const theirs = await addSoftPasskey(rt, other.userId);
-    const opts = async () =>
-      (
-        (await (await s.req('POST', '/api/auth/second-factor/passkey/options')).json()) as {
-          challenge: string;
-        }
-      ).challenge;
-    const stale = await s.req('POST', '/api/auth/second-factor/passkey/verify', {
-      response: await mine.assert('AAAAAAAAAAAAAAAAAAAAAA', APP),
-    });
-    expect(stale.status).toBe(400); // no challenge issued yet
-    const wrongKey = await s.req('POST', '/api/auth/second-factor/passkey/verify', {
-      response: await theirs.assert(await opts(), APP),
-    });
-    expect(wrongKey.status).toBe(401);
-    const wrongChallenge = await s.req('POST', '/api/auth/second-factor/passkey/verify', {
-      response: await mine.assert(`${await opts()}x`, APP),
-    });
-    expect(wrongChallenge.status).toBe(401);
-    expect((await s.req('GET', '/api/admin/whoami')).status).toBe(403);
-  });
-
-  it('accepts the authenticator code, locks after repeated wrong ones, and expires', async () => {
-    const rt = await makeRuntime();
-    const { s, otp } = await totpAdmin(rt);
-    const send = (code: string) => s.req('POST', '/api/auth/second-factor/totp', { code });
-    expect((await send('000000')).status).toBe(400);
-    expect((await send(await otp.totp())).status).toBe(200);
-    expect((await s.req('GET', '/api/admin/whoami')).status).toBe(200);
-
-    // A proof older than staff_second_factor_hours (12) no longer opens the panel.
-    rt.d1.sqlite
-      .prepare('UPDATE sessions SET second_factor_at = ? WHERE user_id = ?')
-      .run(Date.now() - 13 * 3600_000, s.userId);
-    const old = await s.req('GET', '/api/admin/whoami');
-    expect(await reason(old)).toBe('SECOND_FACTOR_REQUIRED');
-
-    for (let i = 0; i < 5; i++) await send('111111');
-    const locked = await send(await otp.totp());
-    expect(locked.status).toBe(429);
-  });
-
-  it('a new sign-in starts without the proof', async () => {
-    const rt = await makeRuntime();
-    const { s, otp } = await totpAdmin(rt);
-    await s.req('POST', '/api/auth/second-factor/totp', { code: await otp.totp() });
-    expect((await s.req('GET', '/api/admin/whoami')).status).toBe(200);
-    const again = await signIn(rt, 'boss@example.com');
-    expect(await reason(await again.req('GET', '/api/admin/whoami'))).toBe(
-      'SECOND_FACTOR_REQUIRED',
-    );
-  });
-
-  it('changing a factor needs the proof once the account has one', async () => {
-    const rt = await makeRuntime();
-    const { s, otp } = await totpAdmin(rt);
-    for (const [path, body] of [
-      ['/api/auth/passkey/generate-register-options', undefined],
-      ['/api/auth/two-factor/disable', {}],
-      ['/api/auth/two-factor/enable', {}],
-    ] as const) {
-      const res = await s.req(path.includes('generate') ? 'GET' : 'POST', path, body);
-      expect(res.status, path).toBe(403);
-      expect(((await res.json()) as { code: string }).code, path).toBe('SECOND_FACTOR_REQUIRED');
-    }
-    await s.req('POST', '/api/auth/second-factor/totp', { code: await otp.totp() });
-    const off = await s.req('POST', '/api/auth/two-factor/disable', {});
-    expect(off.status).toBe(200);
-    // A plain user with no factor yet sets up the first one freely.
-    const u = await signIn(rt, 'baru@example.com');
-    expect((await u.req('POST', '/api/auth/two-factor/enable', {})).status).toBe(200);
-  });
-
-  it('a suspended staff member keeps no staff access after signing in again', async () => {
-    const rt = await makeRuntime();
-    const adm = await staffSignIn(rt, 'kepala@example.com');
-    const mod = await staffSignIn(rt, 'mod@example.com', 'moderator');
-    const sus = await adm.req('POST', `/api/admin/users/${mod.userId}/suspend`, {
-      suspended: true,
-      reason: 'akun dicuri',
-    });
-    expect(sus.status).toBe(204);
-    // Signs in through Zeiko Accounts again and even proves the second factor.
-    const jar = new Jar();
-    expect((await exchange(rt, jar, zeikoAccountFor('mod@example.com'))).status).toBe(200);
-    proveSecondFactor(rt, mod.userId);
-    const res = await rt.fetch(
-      new Request(`${APP}/api/admin/reports?status=open`, { headers: { cookie: jar.header() } }),
-    );
-    expect(res.status).toBe(403);
-    expect(await reason(res)).toBe('suspended');
-  });
-
-  it('only an admin can suspend a staff account', async () => {
-    const rt = await makeRuntime();
-    const adm = await staffSignIn(rt, 'kepala@example.com');
-    const mod = await staffSignIn(rt, 'mod@example.com', 'moderator');
-    const user = await signIn(rt, 'biasa@example.com');
-    const tryIt = (who: typeof adm, id: string) =>
-      who.req('POST', `/api/admin/users/${id}/suspend`, { suspended: true, reason: 'coba saja' });
-    const refused = await tryIt(mod, adm.userId);
-    expect(refused.status).toBe(403);
-    expect(await reason(refused)).toBe('STAFF_TARGET');
-    expect((await adm.req('GET', '/api/admin/whoami')).status).toBe(200);
-    expect((await tryIt(mod, user.userId)).status).toBe(204);
   });
 });

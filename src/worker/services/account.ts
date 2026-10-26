@@ -22,7 +22,7 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
     note: 'Isi file tidak termasuk di sini; unduh lewat "Unduh semua file (ZIP)".',
     account: (
       await q(
-        'SELECT id, email, name, role, status, ad_city_code, ad_city, ad_postal_code, created_at, updated_at FROM users WHERE id = ?1',
+        'SELECT id, email, name, status, ad_city_code, ad_city, ad_postal_code, created_at, updated_at FROM users WHERE id = ?1',
         userId,
       )
     )[0],

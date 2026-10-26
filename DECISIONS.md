@@ -1237,7 +1237,8 @@ link presigned yang jalan tanpa sesi, hapus, tanpa key, batas ukuran; presign di
 `tests/integration/idor.test.ts`.
 
 ## ADR-056 — Perbaikan audit OWASP Top 10:2025: faktor kedua staf, laporan CSAM, guard batch
-**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: "kerjakan semua OWASP"). **Konteks:** audit statis OWASP
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: "kerjakan semua OWASP"); bagian faktor kedua staf,
+status/hierarki staf, dan `sessions.second_factor_at` digantikan ADR-057 (tidak ada staf lagi di Drive). **Konteks:** audit statis OWASP
 Top 10:2025 atas seluruh repo menemukan tujuh hal (ringkasan di `docs/SECURITY.md`). Yang paling berat: laporan
 kategori CSAM dari siapa pun langsung membekukan akun pengunggah, sesuai SPEC §14.3 lama; dan "wajib passkey/TOTP"
 untuk staf hanya memeriksa bahwa faktor itu terpasang, tidak pernah memintanya.
@@ -1280,3 +1281,49 @@ pemakaian ulang kode TOTP yang sama dalam 30 detik; memisahkan `ZEIKO_OPS_TOKEN`
 challenge/kunci salah, TOTP benar/salah/terkunci/kedaluwarsa, login baru, ubah faktor, staf dibekukan, moderator vs
 admin), `admin.test.ts` (laporan CSAM dari user login/anonim, tolak laporan), `family.test.ts` (undangan direbut di
 tengah jalan), `app.test.ts` (redirect), `readiness.test.ts`.
+
+## ADR-057 — Tidak ada panel admin di Drive: semua kerja operator di relay
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: "Bukannya semua yang berhubungan dengan admin termasuk owner
+itu di Relay semua ya? … Pindah semua ke relay"). Menggantikan bagian ADR-056 tentang faktor kedua staf,
+status/hierarki staf, dan `assertMaySuspend`; menggantikan "Admin → Iklan" di ADR-043; SPEC §13.1 diubah.
+
+**Konteks:** akun, uang, katalog, angka bisnis, dan People sudah di relay (ADR-036, ADR-040). Yang tersisa di `/admin`
+Drive hanya laporan/takedown, iklan, pemindai, dan audit log, dijaga role admin/moderator + passkey/TOTP. Itu berarti
+dua pintu operator dengan dua cara login, dan sebuah panel di domain publik yang berjarak satu sesi curian dari setiap
+akun. Pemiliknya satu orang, dan ia bekerja dari relay.
+
+**Keputusan:**
+- **Ops API mendapat sisanya** (`routes/ops.ts`, bearer `ZEIKO_OPS_TOKEN`, aktor `relay-operator`): `GET /reports`,
+  `GET /reports/:id`, `POST /reports/:id/actions {actions, note}`, `POST /reports/:id/preview {nodeId}`,
+  `GET /scanner`, `POST /scanner/:blobId/retry`, `GET /ads?status=`, `GET /ads/areas?q=`, `GET|PUT /ads/advertiser`,
+  `POST /ads/creatives`, `PATCH /ads/creatives/:id`, `PUT /ads/creatives/:id/image`, `GET /ads/:id/image`,
+  `POST /ads/:id/review|suspend`, `GET|POST /ads/campaigns`, `POST /ads/campaigns/:id/send-payment|cancel`. Audit log
+  sudah ada (`GET /audit`). Relay hanya meneruskan JSON, jadi gambar iklan lewat **base64**: masuk
+  `{advertiserId, imageBase64}`, keluar `{dataUrl}`. Batas ukuran tetap `ad_image_max_bytes` (dicek setelah decode).
+- **Layar Zeiko Drive di relay** mendapat tab Reports, Ads, Scanner, dan Audit (repo relay, `zeikodrive.js`), dan
+  forwarder relay perlu batas body ≥ 1 MiB untuk gambar iklan base64. Belum dikerjakan saat ADR ini ditulis: Drive
+  ini tidak di-deploy sebelum tab Reports ada.
+- **Dihapus dari Drive:** `/api/admin`, halaman `/admin` dan `AdminAds`, link Admin di menu, `requireStaff`,
+  `auth-second-factor.ts`, `SecondFactorPrompt`, `TotpSetup`, bagian Keamanan di Pengaturan, plugin Better Auth passkey
+  dan twoFactor beserta paketnya (`@better-auth/passkey`, `@simplewebauthn/*`), `setUserRole`, `assertMaySuspend`,
+  config `staff_second_factor_hours`. Passkey dan TOTP di Drive hanya pernah menjadi faktor kedua staf (ADR-019,
+  ADR-036): tanpa staf, keduanya tidak melindungi apa pun, jadi tidak ditampilkan lagi.
+- **Tabel dan kolom lama tetap ada** (migrasi append-only): `users.role`, `users.two_factor_enabled`, `passkeys`,
+  `two_factors` tidak dibaca lagi; hapus akun tetap membersihkan `passkeys`. `/api/me` tidak lagi mengirim `role`,
+  `twoFactorEnabled`, atau `hasPasskey`.
+- **Kolom pelaku yang menunjuk `users`:** operator bukan user Drive. `abuse_reports.resolved_by` dan
+  `ad_creatives.reviewed_by` dibiarkan `NULL`; siapa yang bertindak ada di audit log. `legal_holds.created_by` kehilangan
+  foreign key-nya dan berisi `relay-operator` atau `auto` (migrasi `0011`, yang belum pernah dijalankan di remote, jadi
+  masih boleh diubah: kolom `sessions.second_factor_at` dari ADR-056 dikeluarkan lagi, `batch_guards` tetap).
+- **Pratinjau konten laporan** (SPEC §13.1: tidak ada tombol "lihat file user"): token `a` sekarang membawa ID
+  **laporan** di tempat ID user (formatnya tetap ULID), dan `/p/` hanya membukanya selama laporan itu ada. Tetap
+  5 menit, tetap tercatat `report.content_view` dengan aktor `relay-operator`.
+- **Akun demo** `admin@zeiko.local` menjadi `max@zeiko.local` (paket Max, tanpa peran).
+
+**Konsekuensi:** satu pintu operator, yaitu relay dengan sandi, passkey, dan gerbangnya sendiri. Selama HP relay mati,
+tidak ada takedown dari mana pun; pelaporan dan aksi otomatis CSAM (link mati, karantina, legal hold dari pelapor yang
+login atau lolos Turnstile) tetap jalan di Drive, dan `admin_alert` tetap dikirim ke email operator. Moderator kedua
+tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.test.ts` (dulu `admin.test.ts`: tidak ada
+`/api/admin` walau akun lama masih ber-role, laporan lewat ops, legal hold atas nama operator, token review palsu),
+`ads.test.ts` dan `idor.test.ts` (operator lewat ops, gambar base64, sesi biasa tidak bisa membuka `/api/ops`),
+`ops.test.ts` (pemindai), `auth.test.ts` (tidak ada rute passkey/TOTP/second-factor).

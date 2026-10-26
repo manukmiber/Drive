@@ -1,8 +1,8 @@
 // Abuse reports & takedown (SPEC §13.1, §14.3). SLA per Permenkominfo 5/2020: urgent 4 h, normal
 // 24 h (config). A CSAM report from someone accountable (signed in, or past Turnstile) acts at once
-// on the content: links off, quarantine + legal hold. Freezing the uploader's account is a
-// moderator's call, never automatic: a report is only a claim (ADR-056). Rejecting a report undoes
-// what it switched off.
+// on the content: links off, quarantine + legal hold. Freezing the uploader's account is the
+// operator's call, never automatic: a report is only a claim (ADR-056). Rejecting a report undoes
+// what it switched off. The operator works from the relay's Zeiko Drive screen (ops API, ADR-057).
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
@@ -182,8 +182,6 @@ export async function applyActions(
     }>();
   if (!report) throw new AppError('NOT_FOUND', 'report not found');
   const target = await resolveTarget(ctx, report.target_type, report.target_id);
-  if (actions.includes('ban_uploader'))
-    for (const u of target.uploaderIds) await assertMaySuspend(ctx, actorId, u);
   const now = ctx.now();
   // Marks carry the report, so rejecting it undoes exactly what it switched off.
   const mark = `abuse:${reportId}`;
@@ -218,7 +216,7 @@ export async function applyActions(
           await DB.prepare(
             `INSERT INTO legal_holds (blob_id, reason, created_by, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT DO NOTHING`,
           )
-            .bind(b, `report:${reportId}`, actorId ?? target.uploaderIds[0] ?? 'system', now)
+            .bind(b, `report:${reportId}`, actorId ?? 'auto', now)
             .run();
         }
         break;
@@ -254,14 +252,9 @@ export async function applyActions(
       case 'resolve':
       case 'reject': {
         const close = DB.prepare(
-          `UPDATE abuse_reports SET status = ?2, resolved_by = ?3, resolved_at = ?4, action = ?5 WHERE id = ?1`,
-        ).bind(
-          reportId,
-          action === 'resolve' ? 'resolved' : 'rejected',
-          actorId,
-          now,
-          note.slice(0, 500),
-        );
+          // resolved_by names a Drive user; the operator is not one, so who acted is the audit row.
+          `UPDATE abuse_reports SET status = ?2, resolved_at = ?3, action = ?4 WHERE id = ?1`,
+        ).bind(reportId, action === 'resolve' ? 'resolved' : 'rejected', now, note.slice(0, 500));
         if (action === 'resolve') await close.run();
         // A rejected report was wrong: put back what it switched off (only its own marks).
         else
@@ -291,27 +284,6 @@ export async function applyActions(
     note,
     nodes: target.nodeIds.length,
     blobs: target.blobIds.length,
-  });
-}
-
-/**
- * Moderators act on ordinary accounts only; freezing a staff account is an admin's call (ADR-056).
- * `actorId` null = automatic; an actor that is no user here is the relay's operator (ops API).
- */
-export async function assertMaySuspend(
-  ctx: Ctx,
-  actorId: string | null,
-  userId: string,
-): Promise<void> {
-  if (actorId === null) return;
-  const { results } = await ctx.env.DB.prepare('SELECT id, role FROM users WHERE id IN (?1, ?2)')
-    .bind(actorId, userId)
-    .all<{ id: string; role: string }>();
-  const actor = results.find((r) => r.id === actorId);
-  const target = results.find((r) => r.id === userId);
-  if (!actor || !target || target.role === 'user' || actor.role === 'admin') return;
-  throw new AppError('FORBIDDEN', 'only an admin can suspend a staff account', {
-    reason: 'STAFF_TARGET',
   });
 }
 
@@ -386,9 +358,11 @@ export async function reviewPreview(
     .first<{ id: string; name: string; blob_id: string }>();
   const { createDownloadToken } = await import('./download');
   const exp = ctx.now() + 5 * 60_000;
+  // The reviewer is the relay's operator, not a Drive user (ADR-057): a review token carries the
+  // report where other tokens carry the user, and opens only while that report exists.
   const token = await createDownloadToken(
     ctx.env.PREVIEW_SECRET,
-    { blobId: node!.blob_id, nodeId, userId: actorId, exp },
+    { blobId: node!.blob_id, nodeId, userId: reportId, exp },
     'a',
   );
   await audit(ctx, actorId, 'report.content_view', 'node', nodeId, { reportId });

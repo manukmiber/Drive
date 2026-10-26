@@ -53,10 +53,14 @@ export function toHex(bytes: Uint8Array): string {
   return s;
 }
 
-export function base64UrlEncode(bytes: Uint8Array): string {
+export function base64Encode(bytes: Uint8Array): string {
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return btoa(bin);
+}
+
+export function base64UrlEncode(bytes: Uint8Array): string {
+  return base64Encode(bytes).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 export function base64UrlDecode(s: string): Uint8Array {

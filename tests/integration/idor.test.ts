@@ -2,7 +2,8 @@
 // against the first account's objects. Each call must fail (4xx) and nothing may change.
 import { describe, expect, it } from 'vitest';
 import { APP, makeRuntime } from '../helpers/runtime';
-import { signIn, staffSignIn } from '../helpers/session';
+import { signIn } from '../helpers/session';
+import { imageBody, operator } from '../helpers/ops';
 import { createFolder, grantPlan, rootOf, uploadText } from '../helpers/files';
 
 const WEBP = (() => {
@@ -22,7 +23,7 @@ describe('IDOR (SPEC §14.1)', () => {
     // Two ordinary people; the operator enters A's ad (ADR-043) and B tries to reach it.
     const a = await signIn(rt, 'korban@example.com');
     const b = await signIn(rt, 'penyerang@example.com');
-    const op = await staffSignIn(rt, 'ops@example.com');
+    const op = operator(rt);
     await grantPlan(rt, a.userId);
     await grantPlan(rt, b.userId);
     const aRoot = await rootOf(a);
@@ -60,14 +61,14 @@ describe('IDOR (SPEC §14.1)', () => {
         mime: 'image/jpeg',
       })
     ).json()) as { jobId: string };
-    await op.req('PUT', '/api/admin/ads/advertiser', {
+    await op('PUT', '/ads/advertiser', {
       email: 'korban@example.com',
       businessName: 'Toko A',
       kind: 'umkm',
       phone: '081234567890',
     });
     const creative = (await (
-      await op.req('POST', '/api/admin/ads/creatives', {
+      await op('POST', '/ads/creatives', {
         advertiserId: a.userId,
         title: 'Toko A',
         body: 'Promo',
@@ -76,25 +77,17 @@ describe('IDOR (SPEC §14.1)', () => {
         category: 'lainnya',
       })
     ).json()) as { id: string };
-    await op.req(
-      'PUT',
-      `/api/admin/ads/creatives/${creative.id}/image?advertiser=${a.userId}`,
-      undefined,
-      {
-        body: WEBP,
-        headers: { 'content-type': 'image/webp', 'content-length': String(WEBP.length) },
-      },
-    );
+    await op('PUT', `/ads/creatives/${creative.id}/image`, imageBody(a.userId, WEBP));
     const today = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
     const campaign = (await (
-      await op.req('POST', '/api/admin/ads/campaigns', {
+      await op('POST', '/ads/campaigns', {
         creativeId: creative.id,
         scope: 'national',
         startDate: today,
         days: 1,
       })
     ).json()) as { id: string };
-    await op.req('POST', `/api/admin/ads/${creative.id}/review`, {
+    await op('POST', `/ads/${creative.id}/review`, {
       decision: 'approve',
       reason: '',
     });
@@ -210,9 +203,11 @@ describe('IDOR (SPEC §14.1)', () => {
       ['POST', '/api/files/download-plan', { nodeIds: [folder.id] }],
       ['POST', '/api/files/download-plan', { nodeIds: [file.id] }],
       ['GET', `/api/advertiser/creatives/${creative.id}/image`],
-      ['POST', `/api/admin/ads/campaigns/${campaign.id}/send-payment`, {}],
-      ['GET', `/api/admin/ads/advertiser?email=korban@example.com`],
-      ['POST', `/api/admin/ads/${creative.id}/suspend`, { severe: true, reason: 'iseng saja' }],
+      // The operator's side is the relay's ops key, never a session (ADR-057).
+      ['POST', `/api/ops/ads/campaigns/${campaign.id}/send-payment`, {}],
+      ['GET', `/api/ops/ads/advertiser?email=korban@example.com`],
+      ['POST', `/api/ops/ads/${creative.id}/suspend`, { severe: true, reason: 'iseng saja' }],
+      ['GET', `/api/ops/ads/${creative.id}/image`],
       ['DELETE', `/api/family/members/${a.userId}`],
       ['DELETE', `/api/s3/keys/${s3Key.id}`],
       ['PATCH', '/api/s3/buckets/milik-a', { public: true }],

@@ -1,13 +1,11 @@
 // Better Auth on D1 via the Drizzle adapter. People sign in with Zeiko Accounts (ADR-036): the
 // browser hands over a one-time ticket from the door, `/api/auth/zeiko/exchange` redeems it server
-// to server and opens a session here. No passwords, OTP or Google of our own; passkeys and TOTP
-// stay as the staff's second factor (SPEC §13.1). One instance per request, created lazily.
-import { passkey } from '@better-auth/passkey';
+// to server and opens a session here. No passwords, OTP, Google, passkeys or TOTP of our own: Drive
+// has no staff to give a second factor to (ADR-057). One instance per request, created lazily.
 import { betterAuth, type BetterAuthPlugin } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError, createAuthEndpoint, getSessionFromCtx } from 'better-auth/api';
 import { setSessionCookie } from 'better-auth/cookies';
-import { twoFactor } from 'better-auth/plugins';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Ctx } from './context';
@@ -17,7 +15,6 @@ import { isAppError } from './lib/errors';
 import { log } from './lib/log';
 import { ensurePersonalSpace } from './services/accounts';
 import { areaForCity } from './services/ads';
-import { secondFactor } from './auth-second-factor';
 
 export const AUTH_BASE_PATH = '/api/auth';
 /** `__Host-` cookies: Secure, Path=/, no Domain → never sent to USERCONTENT_ORIGIN (SPEC §14.4). */
@@ -26,15 +23,7 @@ export const SESSION_COOKIE = `${COOKIE_PREFIX}.session_token`;
 /** `accounts.provider_id` of a Zeiko Account link; `account_id` is the Zeiko id. */
 export const ZEIKO_PROVIDER = 'zeiko';
 
-/** Sign-in paths that would bypass Zeiko Accounts: a passkey is a second factor only. */
-const DISABLED_PATHS = ['/passkey/generate-authenticate-options', '/passkey/verify-authentication'];
-
-const STATUS = {
-  400: 'BAD_REQUEST',
-  403: 'FORBIDDEN',
-  429: 'TOO_MANY_REQUESTS',
-  503: 'SERVICE_UNAVAILABLE',
-} as const;
+const STATUS = { 400: 'BAD_REQUEST', 403: 'FORBIDDEN', 503: 'SERVICE_UNAVAILABLE' } as const;
 
 /** An AppError in Better Auth's own error shape, keeping our code for the client. */
 function asApiError(e: unknown): unknown {
@@ -166,7 +155,6 @@ function build(ctx: Ctx) {
     basePath: AUTH_BASE_PATH,
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins: [env.APP_ORIGIN],
-    disabledPaths: DISABLED_PATHS,
     database: drizzleAdapter(ctx.db, {
       provider: 'sqlite',
       schema: {
@@ -174,14 +162,11 @@ function build(ctx: Ctx) {
         sessions: schema.sessions,
         accounts: schema.accounts,
         verifications: schema.verifications,
-        passkeys: schema.passkeys,
-        twoFactors: schema.twoFactors,
       },
     }),
     user: {
       modelName: 'users',
       additionalFields: {
-        role: { type: 'string', input: false, defaultValue: 'user' },
         status: { type: 'string', input: false, defaultValue: 'active' },
         adCityCode: { type: 'string', required: false, input: false },
         locale: { type: 'string', required: false, input: false, defaultValue: 'id' },
@@ -191,8 +176,6 @@ function build(ctx: Ctx) {
       modelName: 'sessions',
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24,
-      // Set only by auth-second-factor.ts when this session proves TOTP or a passkey (ADR-056).
-      additionalFields: { secondFactorAt: { type: 'date', required: false, input: false } },
     },
     account: { modelName: 'accounts', accountLinking: { enabled: false } },
     verification: { modelName: 'verifications' },
@@ -217,23 +200,7 @@ function build(ctx: Ctx) {
         },
       },
     },
-    plugins: [
-      zeikoSignIn(ctx),
-      secondFactor(ctx),
-      passkey({
-        rpID: new URL(env.APP_ORIGIN).hostname,
-        rpName: 'Zeiko Drive',
-        origin: env.APP_ORIGIN,
-        schema: { passkey: { modelName: 'passkeys' } },
-      }),
-      twoFactor({
-        issuer: 'Zeiko Drive',
-        // Accounts have no password here (Zeiko Accounts holds it), so TOTP is managed with the
-        // session alone.
-        allowPasswordless: true,
-        schema: { twoFactor: { modelName: 'twoFactors' } },
-      }),
-    ],
+    plugins: [zeikoSignIn(ctx)],
   });
 }
 

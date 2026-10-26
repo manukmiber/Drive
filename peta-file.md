@@ -13,7 +13,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | Top-up Saldo / bayar | `src/worker/services/billing.ts`, `src/worker/routes/billing.ts`, `src/worker/routes/payments.ts`, `src/worker/adapters/zeiko.ts` | `src/server/drive.rs` (`/apps/v1/payments`, `tell`), `src/accounts/mod.rs` (`new_drive_payment`) | `public/js/account/{app,views}.js` (halaman QRIS, `driveBack`) |
 | Callback pembayaran | `src/worker/routes/payments.ts` (`/api/payments/webhook/zeiko`) | `src/server/drive.rs` (`signature`, `tell`), `src/server/accounts.rs` (`notify_payment`) | — |
 | Rekonsiliasi pembayaran | `src/worker/services/billing.ts` (`reconcilePayments`), `src/worker/cron/tasks.ts` | `GET /apps/v1/payments/{id}` di `drive.rs` | — |
-| Layar Zeiko Drive di dashboard relay | `src/worker/routes/ops.ts`, `src/worker/services/admin.ts` | `src/server/drive.rs` (`dashboard_routes`), `public/js/views/zeikodrive.js`, `public/js/api.js` | — |
+| Layar Zeiko Drive di dashboard relay (semua kerja operator, ADR-057) | `src/worker/routes/ops.ts`, `src/worker/services/{admin,reports,ads}.ts` | `src/server/drive.rs` (`dashboard_routes`), `public/js/views/zeikodrive.js`, `public/js/api.js` | — |
 | App di `drive.zeiko.biz.id` (ADR-038; dulu `/dashboard`) | `vite.config.ts`, `src/web/router.tsx`, `src/worker/app.ts`, `src/worker/lib/paths.ts`, `scripts/gen-wrangler.mjs`, `src/web/public/{sw.js,manifest.webmanifest}`, `src/web/lib/zeiko.ts` (`SITE_WAY_BACK`) | `drive.url`, `drive.returnPath` di `src/config.rs` | `src/worker.js`, `src/drive.js` (`isDrivePath`), `wrangler.jsonc` |
 | Produk lain di sidebar | `src/web/components/AppShell.tsx`, `src/web/pages/AiDecision.tsx` | `/v1/account`, `/v1/key` di `src/server/auth.rs` + `site.rs` | — |
 | EN/ID | `src/shared/strings.{id,en}.ts`, `src/web/lib/i18n.ts`, `src/worker/lib/lang.ts`, `src/worker/routes/me.ts` (`locale`), `migrations/0004_*` | — | `public/js/main.js` (cookie `zk_lang`), `public/id/drive.html` |
@@ -72,8 +72,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 |---|---|
 | `entry.ts`, `index.ts` | Entry wrangler: handler fetch/queue/scheduled + kelas Container. |
 | `app.ts` ★ | Router Hono. Mount `/api/ops` sebelum `/api`, fallback SPA di root, `/dashboard/…` → `/…` (301). |
-| `auth.ts` ★ | Better Auth + plugin `zeikoSignIn` (`/api/auth/zeiko/exchange`); passkey/TOTP untuk faktor kedua staf. |
-| `auth-second-factor.ts` | Bukti faktor kedua per sesi (ADR-056): `/api/auth/second-factor/{totp,passkey/options,passkey/verify}`, hook "ubah faktor butuh faktor", `secondFactorFresh`. |
+| `auth.ts` ★ | Better Auth + plugin `zeikoSignIn` (`/api/auth/zeiko/exchange`). Tanpa passkey/TOTP (ADR-057). |
 | `env.ts` ★ | Tipe binding, var, dan secret (`ZEIKO_*`, `APP_BASE_PATH`). |
 | `context.ts`, `types.ts`, `containers.ts` | Konteks per request, tipe Hono, Container DO. |
 | `db/schema.ts` ★, `db/client.ts` | Mirror Drizzle dari SQL (+`locale`). |
@@ -89,19 +88,19 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 ### `src/worker/routes/` (route tipis, logika di services)
 | File | Isi |
 |---|---|
-| `ops.ts` ★ | Ops API untuk relay (bearer `ZEIKO_OPS_TOKEN`, minimal 32 karakter, selain itu 404): overview, catalog, config, users (saldo/bonus/suspend/plan), payments, audit. |
+| `ops.ts` ★ | Ops API untuk relay (bearer `ZEIKO_OPS_TOKEN`, minimal 32 karakter, selain itu 404): overview, catalog, config, users (saldo/bonus/suspend/plan), payments, laporan + pratinjau, pemindai, iklan (gambar base64), audit. Satu-satunya pintu operator (ADR-057). |
 | `public-auth.ts` ★ | `{doorUrl, siteUrl, basePath, chatUrl, turnstileSiteKey, dev}` untuk browser. |
 | `dev.ts` ★ | Hanya dev: pintu tiruan `/__dev/door/*`, mailbox, cron, pembayaran mock. |
 | `me.ts` ★ | Profil (`name`, `adCityCode`, `locale`), ekspor data, hapus akun. |
 | `payments.ts` ★ | Webhook gateway (termasuk `zeiko`) + halaman checkout mock. |
 | `share-public.ts` ★ | Link share publik `/{r64}/{s32}/{nama}` (halaman password/mati, dua bahasa). |
-| `billing.ts`, `catalog.ts`, `nodes.ts`, `uploads.ts`, `download.ts`, `archive-download.ts`, `archives.ts`, `preview.ts`, `shares.ts`, `family.ts`, `compress.ts`, `ads.ts` ★, `admin.ts`, `reports.ts`, `notifications.ts`, `integrations.ts`, `health.ts` | Paket & Saldo, katalog publik, pohon file, upload, `/d/`, `/z/`, arsip async, `/p/`, share, keluarga, kompres, iklan, admin, laporan, notifikasi, webhook Telegram/unsubscribe, health. |
+| `billing.ts`, `catalog.ts`, `nodes.ts`, `uploads.ts`, `download.ts`, `archive-download.ts`, `archives.ts`, `preview.ts`, `shares.ts`, `family.ts`, `compress.ts`, `ads.ts` ★, `reports.ts`, `notifications.ts`, `integrations.ts`, `health.ts` | Paket & Saldo, katalog publik, pohon file, upload, `/d/`, `/z/`, arsip async, `/p/`, share, keluarga, kompres, iklan, laporan, notifikasi, webhook Telegram/unsubscribe, health. |
 
 ### `src/worker/services/` (logika bisnis, bisa dites tanpa HTTP)
 | File | Isi |
 |---|---|
 | `billing.ts` ★ | Ledger Saldo, top-up lewat adapter, `applyPaymentEvent`, `reconcilePayments`, langganan, dunning. |
-| `admin.ts` ★ | Data panel admin dan ops (`grantPlan`, `dashboard()` + `costs.fixedIdr` + `assumptions`). |
+| `admin.ts` ★ | Data untuk ops API (`grantPlan`, `dashboard()` + `costs.fixedIdr` + `assumptions`, pemindai, audit). |
 | `notify.ts` ★, `share-send.ts` ★, `family.ts` ★, `ads.ts` ★ | Notifikasi, kirim link share, keluarga, iklan. URL lewat `appUrl`. |
 | `email-templates.ts` | Isi email. **Masih Bahasa Indonesia saja** (tugas tersisa: ikuti `users.locale`). |
 | `access.ts`, `accounts.ts`, `account.ts`, `nodes.ts`, `uploads.ts`, `download.ts`, `shares.ts`, `archive.ts`, `archives.ts`, `browse.ts`, `quota.ts`, `storage.ts`, `scan.ts`, `compress.ts`, `credits.ts`, `reports.ts`, `config.ts` | Izin node, bootstrap pool, hak UU PDP, pohon file, upload multipart, URL unduh, share, ZIP/TAR, pencarian, kuota atomik, info pool, scan, kompres, kredit, laporan, config bisnis. |
@@ -132,11 +131,10 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `lib/{api,session,types ★,catalog,files,ads,compress,explorer-store,cn}.ts` | Fetch API, `useMe`, tipe respons, katalog, unduh, iklan, kompres, state explorer. |
 | `pages/SignIn.tsx` ★ | Login senyap lewat pintu; kalau belum masuk, tautan ke signin/signup situs. |
 | `pages/AiDecision.tsx` ★ | Paket, sisa request, balance, dan key Pranata V1 dari pintu; kartu Zeiko Chat. |
-| `pages/Settings.tsx` ★ | Akun Zeiko, pilihan bahasa, profil, keamanan staf, notifikasi, lokasi iklan, data akun. |
-| `pages/{Drive,Lists,Trash,Billing,Family,Compress,Downloads,Advertiser,Admin,Report,Legal,NotFound}.tsx` | Halaman lain (sudah dua bahasa). `Landing.tsx` **dihapus** (pindah ke website). |
+| `pages/Settings.tsx` ★ | Akun Zeiko, pilihan bahasa, profil, notifikasi, lokasi iklan, data akun. |
+| `pages/{Drive,Lists,Trash,Billing,Family,Compress,Downloads,Advertiser,Report,Legal,NotFound}.tsx` | Halaman lain (sudah dua bahasa). `Landing.tsx` **dihapus** (pindah ke website). |
 | `components/AppShell.tsx` ★ | Sidebar (navigasi + "Produk Zeiko"), tombol bahasa, keluar (Better Auth + pintu). |
 | `components/explorer/*`, `components/ui/*`, `components/*.tsx` | Explorer file, dialog, menu, toast, panel upload, meter, TOTP, Turnstile, iklan. |
-| `components/SecondFactorPrompt.tsx` | Konfirmasi passkey/kode autentikator untuk panel admin dan ubah faktor (ADR-056). |
 | `upload/*` | Antrean upload multipart + resume (IndexedDB), folder, thumbnail, share target. |
 | `editors/{files,ui,EditorHost}.ts(x)` | Editor (ADR-050): ambil bytes lewat URL pratinjau, simpan lewat antrean upload (baru / ganti asli → Sampah) atau unduh; bingkai layar penuh, dialog simpan; editor dimuat saat dibuka. |
 | `editors/photo/*` | `adjust.ts` (atur gambar, white balance, kurva, looks), `effects.ts` (struktur, ketajaman, glow, blur lensa, vinyet, butiran, perbaiki), `geometry.ts` (potong/putar/balik/luruskan, matriks foto↔layar), `render.ts` (kanvas, teks, bingkai), `CurveEditor.tsx`, `overlays.tsx`, `panels.tsx`, `PhotoEditor.tsx` (ADR-052). |
@@ -161,6 +159,7 @@ di Cloudflare.
 | File | Isi |
 |---|---|
 | `helpers/session.ts` ★ | Cookie jar, `zeikoAccountFor`, `exchange`, `signIn` lewat tiket. |
+| `helpers/ops.ts` | `OPS_KEY`, `opsCall`, `operator(rt)` (relay di test), `imageBody` (gambar iklan base64). |
 | `helpers/{runtime,files,zip}.ts` | Runtime in-memory per test, beri paket, verifikasi ZIP. |
 | `integration/auth.test.ts` ★, `billing.test.ts` ★, `ops.test.ts` ★ | Login tiket, pembayaran zeiko + rekonsiliasi, ops API. |
 | `integration/*.test.ts` (lainnya) | Semua fitur, termasuk suite IDOR. |

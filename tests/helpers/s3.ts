@@ -2,11 +2,13 @@
 import { Readable } from 'node:stream';
 import { S3Client } from '@aws-sdk/client-s3';
 import type { DevRuntime } from '../../dev/env';
-import { APP, makeRuntime } from './runtime';
+import { makeRuntime } from './runtime';
+import { OPS_KEY, opsCall } from './ops';
 import { signIn, type Session } from './session';
 
+export { OPS_KEY, opsCall };
+
 export const S3_ORIGIN = 'https://s3.zeiko.test';
-export const OPS_KEY = 'ops-key-for-tests-0123456789abcdef';
 
 interface SdkRequest {
   method: string;
@@ -88,16 +90,6 @@ export function s3Client(
   });
 }
 
-export function opsCall(rt: DevRuntime) {
-  return (method: string, path: string, body?: unknown) =>
-    rt.fetch(
-      new Request(`${APP}/api/ops${path}`, {
-        method,
-        headers: { authorization: `Bearer ${OPS_KEY}`, 'content-type': 'application/json' },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      }),
-    );
-}
 
 export interface S3Setup {
   rt: DevRuntime;

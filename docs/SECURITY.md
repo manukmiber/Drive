@@ -28,9 +28,9 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 
 | Item                                                                                     | Status | Bukti                                                                                 |
 | ---------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------- |
-| Laporan CSAM → link mati, karantina + legal hold, prioritas mendesak; pembekuan akun oleh moderator | ✅     | `services/reports.ts`, `tests/integration/admin.test.ts`. Otomatis hanya dari pelapor yang login atau lolos Turnstile; menolak laporan memulihkan yang dimatikannya (ADR-056) |
+| Laporan CSAM → link mati, karantina + legal hold, prioritas mendesak; pembekuan akun oleh operator | ✅     | `services/reports.ts`, `tests/integration/takedown.test.ts`. Otomatis hanya dari pelapor yang login atau lolos Turnstile; menolak laporan memulihkan yang dimatikannya (ADR-056) |
 | Hash takedown masuk blocklist                                                            | ✅     | aksi `blocklist`                                                                      |
-| Timer SLA 4 jam / 24 jam di admin                                                        | ✅     | Admin → Laporan                                                                       |
+| Timer SLA 4 jam / 24 jam                                                                 | ✅     | relay → Zeiko Drive → Reports (ops API, ADR-057)                                      |
 | Adapter `CsamDetector`                                                                   | 🟡     | mock; butuh perjanjian vendor (LAUNCH-CHECKLIST)                                      |
 | Cloudflare CSAM Scanning Tool                                                            | 🟡     | aktifkan di zona saat staging; verifikasi cakupan respons Worker (catat di DECISIONS) |
 | Prosedur                                                                                 | ✅     | `docs/runbook/takedown.md`                                                            |
@@ -68,14 +68,12 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 
 Audit statis seluruh repo. Yang ditemukan dan diperbaiki:
 
-- **Faktor kedua staf** hanya dicek "sudah dipasang", tidak pernah diminta. Sekarang rute admin/moderator meminta
-  TOTP atau passkey yang dibuktikan di sesi itu dalam `staff_second_factor_hours` (default 12 jam), dan menambah
-  atau menghapus faktor meminta faktor yang sudah ada. Perubahan faktor akun staf mengirim alert ke operator.
-- **Akun staf yang dibekukan** masih bisa membuka rute admin setelah login ulang. `requireStaff` sekarang
-  memeriksa status akun.
-- **Moderator** bisa membekukan admin. Sekarang hanya admin yang boleh membekukan akun staf.
+- **Faktor kedua staf** hanya dicek "sudah dipasang", tidak pernah diminta; **akun staf yang dibekukan** masih bisa
+  membuka rute admin; **moderator** bisa membekukan admin. Ketiganya selesai dengan menghapus panel admin Drive sama
+  sekali (ADR-057): kerja operator pindah ke relay lewat ops API (bearer 32+ karakter, 404 tanpa itu), dan Drive tidak
+  punya role staf, passkey, atau TOTP lagi.
 - **Laporan CSAM** langsung membekukan akun pengunggah, dari siapa pun. Sekarang laporan hanya mematikan link
-  dan mengarantina isi (dan hanya dari pelapor yang login atau lolos Turnstile); akun dibekukan oleh moderator.
+  dan mengarantina isi (dan hanya dari pelapor yang login atau lolos Turnstile); akun dibekukan oleh operator.
 - **Redirect `/dashboard`** bisa diarahkan ke situs lain. Sekarang hanya ke halaman app sendiri.
 - **Undangan keluarga** yang diterima bersamaan bisa melewati batas anggota. Sekarang dicek ulang di dalam batch
   (`lib/batch-guard.ts`).

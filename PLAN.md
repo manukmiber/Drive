@@ -38,7 +38,7 @@ Lokal: `dev/` berisi shim binding (ADR-001). `npm run dev` menjalankan API Node 
 ### Fase 1 — Auth & akun
 - Better Auth (D1 via Drizzle adapter): email OTP/magic link, Google OAuth, passkey, TOTP.
   Fallback: sesi sendiri + `arctic` (catat ADR kalau dipakai).
-- Cookie `__Host-`, CSRF + cek Origin, role user/moderator/admin, admin wajib passkey/TOTP.
+- Cookie `__Host-`, CSRF + cek Origin, role user/moderator/admin, admin wajib passkey/TOTP (diganti ADR-057: tidak ada admin di Drive).
 - Storage pool pribadi dibuat saat user pertama login (limit 0 sampai beli paket, §16 #9).
 - Halaman Masuk, Profil, Pengaturan dasar.
 - **Risiko:** Better Auth + passkey di Workers (WebAuthn butuh `crypto.subtle`; cek kompatibilitas).

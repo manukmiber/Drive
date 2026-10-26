@@ -8,7 +8,7 @@ import type { AppBindings } from '../types';
 
 /** The stand-in door's session: just the email it signed in as (dev only). */
 const DOOR_COOKIE = 'zkdev_door';
-const DEMO = ['demo@zeiko.local', 'admin@zeiko.local', 'baru@zeiko.local'];
+const DEMO = ['demo@zeiko.local', 'max@zeiko.local', 'baru@zeiko.local'];
 
 /** The Zeiko Account a dev email stands for: a stable id per address. */
 export function devAccount(email: string): ZeikoAccount {

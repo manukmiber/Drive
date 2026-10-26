@@ -62,8 +62,6 @@ export interface Me {
     id: string;
     email: string;
     name: string;
-    role: 'user' | 'moderator' | 'admin';
-    twoFactorEnabled: boolean;
     image: string | null;
     adCityCode: string | null;
     /** From the Zeiko Account (ADR-041). */
@@ -73,7 +71,6 @@ export interface Me {
     /** The Zeiko Account this user signs in as (null for one made before Zeiko Accounts). */
     zeikoId: string | null;
   };
-  hasPasskey: boolean;
   deleteRequestedAt: number | string | null;
   space: {
     poolId: string;

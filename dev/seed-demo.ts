@@ -13,21 +13,18 @@ export const DEMO_USERS = [
     id: '01JD0000000000000000DEM0A1',
     email: 'demo@zeiko.local',
     name: 'Demo Zeiko',
-    role: 'user',
     plan: 'plus',
   },
   {
-    id: '01JD0000000000000000ADM1N1',
-    email: 'admin@zeiko.local',
-    name: 'Admin Zeiko',
-    role: 'admin',
+    id: '01JD0000000000000000MAX001',
+    email: 'max@zeiko.local',
+    name: 'Demo Max',
     plan: 'max',
   },
   {
     id: '01JD0000000000000000BAR001',
     email: 'baru@zeiko.local',
     name: 'Pengguna Baru',
-    role: 'user',
     plan: null,
   },
 ] as const;
@@ -49,7 +46,6 @@ export async function seedDemo(env: Env): Promise<void> {
       email: u.email,
       emailVerified: true,
       name: u.name,
-      role: u.role,
       createdAt: new Date(now),
       updatedAt: new Date(now),
     });

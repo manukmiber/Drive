@@ -1,23 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { APP, jsonReq, makeRuntime } from '../helpers/runtime';
-import { proveSecondFactor, signIn, type Session } from '../helpers/session';
+import { signIn } from '../helpers/session';
 import { grantPlan, rootOf, uploadText } from '../helpers/files';
+import { operator } from '../helpers/ops';
+import { createDownloadToken } from '../../src/worker/services/download';
 import type { DevRuntime } from '../../dev/env';
-
-async function staff(
-  rt: DevRuntime,
-  email: string,
-  role: 'admin' | 'moderator',
-  secondFactor = true,
-): Promise<Session> {
-  const s = await signIn(rt, email);
-  rt.d1.sqlite
-    .prepare('UPDATE users SET role = ?, two_factor_enabled = ? WHERE id = ?')
-    .run(role, secondFactor ? 1 : 0, s.userId);
-  const fresh = await signIn(rt, email); // fresh session carries the new role
-  if (secondFactor) proveSecondFactor(rt, fresh.userId);
-  return fresh;
-}
 
 async function sharedFile(
   rt: DevRuntime,
@@ -40,130 +27,35 @@ async function sharedFile(
 const report = (rt: DevRuntime, body: Record<string, unknown>) =>
   rt.fetch(jsonReq('POST', '/api/public/reports', body));
 
-describe('admin access (SPEC §13.1)', () => {
-  it('requires a staff role and a second factor', async () => {
+describe('no admin panel in Drive (ADR-057)', () => {
+  it('has no /api/admin, whatever role an old account still carries', async () => {
     const rt = await makeRuntime();
-    const user = await signIn(rt, 'biasa@example.com');
-    expect((await user.req('GET', '/api/admin/whoami')).status).toBe(403);
-    const no2fa = await staff(rt, 'adm1@example.com', 'admin', false);
-    const r = await no2fa.req('GET', '/api/admin/whoami');
-    expect(r.status).toBe(403);
-    expect(((await r.json()) as { error: { data: { reason: string } } }).error.data.reason).toBe(
-      'ADMIN_2FA_REQUIRED',
-    );
-    const adm = await staff(rt, 'adm2@example.com', 'admin');
-    expect((await adm.req('GET', '/api/admin/whoami')).status).toBe(200);
-    expect((await adm.req('GET', '/api/admin/dashboard')).status).toBe(200);
-    // There is no endpoint to browse a user's files
-    expect((await adm.req('GET', `/api/admin/users/${user.userId}/files`)).status).toBe(404);
+    const old = await signIn(rt, 'staf-lama@example.com');
+    rt.d1.sqlite.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(old.userId);
+    for (const path of ['/api/admin/whoami', '/api/admin/reports', '/api/admin/dashboard'])
+      expect((await old.req('GET', path)).status, path).toBe(404);
+    // And the ops API is the relay's alone.
+    expect((await old.req('GET', '/api/ops/reports')).status).toBe(404);
   });
 
-  it('moderators cannot touch money, roles or config', async () => {
+  it('the operator suspends a person: signed out, links off', async () => {
     const rt = await makeRuntime();
-    const mod = await staff(rt, 'mod@example.com', 'moderator');
-    const u = await signIn(rt, 'u@example.com');
-    expect(
-      (
-        await mod.req('POST', `/api/admin/users/${u.userId}/balance`, {
-          deltaIdr: 1000,
-          reason: 'kompensasi',
-        })
-      ).status,
-    ).toBe(403);
-    expect((await mod.req('GET', '/api/admin/config')).status).toBe(403);
-    expect((await mod.req('GET', '/api/admin/reports')).status).toBe(200);
-  });
-});
-
-describe('user management', () => {
-  it('adjusts balance and bonus quota with a mandatory reason, all audited', async () => {
-    const rt = await makeRuntime();
-    const adm = await staff(rt, 'adm@example.com', 'admin');
-    const u = await signIn(rt, 'pelanggan@example.com');
-    await rootOf(u);
-    expect(
-      (
-        await adm.req('POST', `/api/admin/users/${u.userId}/balance`, {
-          deltaIdr: 5000,
-          reason: '',
-        })
-      ).status,
-    ).toBe(400);
-    const b = await adm.req('POST', `/api/admin/users/${u.userId}/balance`, {
-      deltaIdr: 5000,
-      reason: 'kompensasi gangguan',
-    });
-    expect(await b.json()).toEqual({ balanceIdr: 5000 });
-    expect(
-      (
-        await adm.req('POST', `/api/admin/users/${u.userId}/balance`, {
-          deltaIdr: -9000,
-          reason: 'koreksi salah',
-        })
-      ).status,
-    ).toBe(402);
-    await adm.req('POST', `/api/admin/users/${u.userId}/bonus`, {
-      bonusBytes: 2 ** 30,
-      reason: 'bonus peluncuran',
-    });
-    const me = (await (await u.req('GET', '/api/me')).json()) as {
-      storage: { limitBytes: number };
-    };
-    expect(me.storage.limitBytes).toBe(2 ** 30);
-    const audit = (await (await adm.req('GET', '/api/admin/audit')).json()) as {
-      items: Array<{ action: string }>;
-    };
-    expect(audit.items.map((a) => a.action)).toEqual(
-      expect.arrayContaining(['wallet.adjust', 'quota.bonus']),
-    );
-    const found = (await (await adm.req('GET', '/api/admin/users?q=pelanggan')).json()) as {
-      items: Array<{ id: string; balanceIdr: number }>;
-    };
-    expect(found.items).toMatchObject([{ id: u.userId, balanceIdr: 5000 }]);
-  });
-
-  it('suspending a user signs them out and disables their links', async () => {
-    const rt = await makeRuntime();
-    const adm = await staff(rt, 'adm@example.com', 'admin');
+    const ops = operator(rt);
     const { owner, share } = await sharedFile(rt);
-    await adm.req('POST', `/api/admin/users/${owner.userId}/suspend`, {
+    const res = await ops('POST', `/users/${owner.userId}/suspend`, {
       suspended: true,
       reason: 'spam berulang',
     });
+    expect(res.status).toBe(204);
     expect((await owner.req('GET', '/api/me')).status).toBe(401);
     expect((await rt.fetch(new Request(share.url))).status).toBe(410);
-  });
-
-  it('edits config and catalog prices', async () => {
-    const rt = await makeRuntime();
-    const adm = await staff(rt, 'adm@example.com', 'admin');
-    expect(
-      (await adm.req('PUT', '/api/admin/config/min_topup_idr', { value: 'murah' })).status,
-    ).toBe(400);
-    expect((await adm.req('PUT', '/api/admin/config/min_topup_idr', { value: 20000 })).status).toBe(
-      200,
-    );
-    const cat = (await (await rt.fetch(jsonReq('GET', '/api/public/catalog'))).json()) as {
-      config: { min_topup_idr: number };
-    };
-    expect(cat.config.min_topup_idr).toBe(20000);
-    expect(
-      (await adm.req('PATCH', '/api/admin/catalog/plans/mini', { price_idr: 1500 })).status,
-    ).toBe(204);
-    expect((await adm.req('PATCH', '/api/admin/catalog/plans/mini', { code: 'hack' })).status).toBe(
-      400,
-    );
-    const plans = (await (await rt.fetch(jsonReq('GET', '/api/public/catalog'))).json()) as {
-      plans: Array<{ code: string; priceIdr: number }>;
-    };
-    expect(plans.plans.find((p) => p.code === 'mini')?.priceIdr).toBe(1500);
   });
 });
 
 describe('reports & takedown (SPEC §14.3)', () => {
   it('anonymous report → review (audited) → quarantine, disable link, blocklist → resolve', async () => {
     const rt = await makeRuntime();
-    const mod = await staff(rt, 'mod@example.com', 'moderator');
+    const ops = operator(rt);
     const { owner, root, f, share } = await sharedFile(rt);
     const r = await report(rt, {
       targetType: 'share',
@@ -173,34 +65,34 @@ describe('reports & takedown (SPEC §14.3)', () => {
     });
     expect(r.status).toBe(201);
     const { id } = (await r.json()) as { id: string };
-    const list = (await (await mod.req('GET', '/api/admin/reports')).json()) as {
+    const list = (await (await ops('GET', '/reports')).json()) as {
       items: Array<{ id: string; priority: string; slaDueAt: number; createdAt: number }>;
     };
     expect(list.items[0]).toMatchObject({ id, priority: 'normal' });
     expect(list.items[0]!.slaDueAt - list.items[0]!.createdAt).toBe(24 * 3600_000);
 
-    const detail = (await (await mod.req('GET', `/api/admin/reports/${id}`)).json()) as {
+    const detail = (await (await ops('GET', `/reports/${id}`)).json()) as {
       files: Array<{ id: string }>;
     };
     expect(detail.files.map((x) => x.id)).toEqual([f.id]);
     const { url } = (await (
-      await mod.req('POST', `/api/admin/reports/${id}/preview`, { nodeId: f.id })
+      await ops('POST', `/reports/${id}/preview`, { nodeId: f.id })
     ).json()) as { url: string };
     expect(await (await rt.fetch(new Request(url))).text()).toBe('konten bermasalah');
     const viewed = rt.d1.sqlite
       .prepare("SELECT actor_id FROM audit_logs WHERE action = 'report.content_view'")
       .all();
-    expect(viewed).toEqual([{ actor_id: mod.userId }]);
+    expect(viewed).toEqual([{ actor_id: 'relay-operator' }]);
 
-    await mod.req('POST', `/api/admin/reports/${id}/actions`, {
+    await ops('POST', `/reports/${id}/actions`, {
       actions: ['quarantine', 'disable_links', 'blocklist'],
       note: 'melanggar hak cipta',
     });
     expect((await rt.fetch(new Request(share.url))).status).toBe(410);
     expect((await owner.req('GET', `/api/files/${f.id}/download`)).status).toBe(403);
-    // Quarantined content is still reviewable by staff
+    // Quarantined content is still reviewable by the operator
     const again = (await (
-      await mod.req('POST', `/api/admin/reports/${id}/preview`, { nodeId: f.id })
+      await ops('POST', `/reports/${id}/preview`, { nodeId: f.id })
     ).json()) as { url: string };
     expect((await rt.fetch(new Request(again.url))).status).toBe(200);
     // Same bytes can't come back
@@ -210,11 +102,11 @@ describe('reports & takedown (SPEC §14.3)', () => {
       status: 'rejected',
     });
 
-    await mod.req('POST', `/api/admin/reports/${id}/actions`, {
+    await ops('POST', `/reports/${id}/actions`, {
       actions: ['resolve'],
       note: 'selesai ditindak',
     });
-    const done = (await (await mod.req('GET', '/api/admin/reports?status=resolved')).json()) as {
+    const done = (await (await ops('GET', '/reports?status=resolved')).json()) as {
       items: Array<{ id: string }>;
     };
     expect(done.items.map((x) => x.id)).toEqual([id]);
@@ -222,7 +114,7 @@ describe('reports & takedown (SPEC §14.3)', () => {
 
   it('a CSAM report from a signed-in person takes the content down, not the account', async () => {
     const rt = await makeRuntime();
-    const adm = await staff(rt, 'adm@example.com', 'admin');
+    const ops = operator(rt);
     const { owner, f, share } = await sharedFile(rt, 'pelaku@example.com', 'x');
     const reporter = await signIn(rt, 'pelapor@example.com');
     const r = await reporter.req('POST', '/api/public/reports', {
@@ -233,7 +125,7 @@ describe('reports & takedown (SPEC §14.3)', () => {
     const { id, priority } = (await r.json()) as { id: string; priority: string };
     expect(priority).toBe('urgent');
     expect((await rt.fetch(new Request(share.url))).status).toBe(410);
-    // A report is only a claim: the account waits for a moderator (ADR-056).
+    // A report is only a claim: the account waits for the operator (ADR-056).
     expect((await owner.req('GET', '/api/me')).status).toBe(200);
     const blobId = (
       rt.d1.sqlite.prepare('SELECT blob_id FROM nodes WHERE id = ?').get(f.id) as {
@@ -246,13 +138,16 @@ describe('reports & takedown (SPEC §14.3)', () => {
     expect(
       rt.d1.sqlite.prepare('SELECT COUNT(*) AS n FROM legal_holds WHERE blob_id = ?').get(blobId),
     ).toEqual({ n: 1 });
-    const del = await adm.req('POST', `/api/admin/reports/${id}/actions`, {
+    expect(
+      rt.d1.sqlite.prepare('SELECT created_by FROM legal_holds WHERE blob_id = ?').get(blobId),
+    ).toEqual({ created_by: 'auto' });
+    const del = await ops('POST', `/reports/${id}/actions`, {
       actions: ['delete'],
       note: 'hapus',
     });
     expect(del.status).toBe(409);
-    // The moderator freezes the account after looking.
-    const ban = await adm.req('POST', `/api/admin/reports/${id}/actions`, {
+    // The operator freezes the account after looking.
+    const ban = await ops('POST', `/reports/${id}/actions`, {
       actions: ['ban_uploader'],
       note: 'terbukti',
     });
@@ -271,7 +166,7 @@ describe('reports & takedown (SPEC §14.3)', () => {
     ).toBe(404);
   });
 
-  it('an anonymous CSAM report without Turnstile waits for a moderator', async () => {
+  it('an anonymous CSAM report without Turnstile waits for the operator', async () => {
     const rt = await makeRuntime();
     const { owner, f, share } = await sharedFile(rt, 'korban@example.com', 'x');
     const r = await report(rt, { targetType: 'share', targetId: share.id, category: 'csam' });
@@ -292,7 +187,7 @@ describe('reports & takedown (SPEC §14.3)', () => {
 
   it('rejecting a report puts back what it switched off', async () => {
     const rt = await makeRuntime();
-    const mod = await staff(rt, 'mod@example.com', 'moderator');
+    const ops = operator(rt);
     const { f, share } = await sharedFile(rt, 'dituduh@example.com', 'x');
     const reporter = await signIn(rt, 'iseng@example.com');
     const r = await reporter.req('POST', '/api/public/reports', {
@@ -302,7 +197,7 @@ describe('reports & takedown (SPEC §14.3)', () => {
     });
     const { id } = (await r.json()) as { id: string };
     expect((await rt.fetch(new Request(share.url))).status).toBe(410);
-    const rej = await mod.req('POST', `/api/admin/reports/${id}/actions`, {
+    const rej = await ops('POST', `/reports/${id}/actions`, {
       actions: ['reject'],
       note: 'laporan palsu',
     });
@@ -317,6 +212,34 @@ describe('reports & takedown (SPEC §14.3)', () => {
     expect(
       rt.d1.sqlite.prepare('SELECT COUNT(*) AS n FROM legal_holds WHERE blob_id = ?').get(blob.id),
     ).toEqual({ n: 0 });
+  });
+
+  it('a hold the operator places names the operator; a review link is theirs alone', async () => {
+    const rt = await makeRuntime();
+    const ops = operator(rt);
+    const { f, share } = await sharedFile(rt, 'diperiksa@example.com', 'bukti');
+    const { id } = (await (
+      await report(rt, { targetType: 'share', targetId: share.id, category: 'malware' })
+    ).json()) as { id: string };
+    const held = await ops('POST', `/reports/${id}/actions`, {
+      actions: ['legal_hold'],
+      note: 'diminta penyidik',
+    });
+    expect(held.status).toBe(204);
+    const blob = rt.d1.sqlite.prepare('SELECT blob_id FROM nodes WHERE id = ?').get(f.id) as {
+      blob_id: string;
+    };
+    expect(
+      rt.d1.sqlite.prepare('SELECT created_by FROM legal_holds WHERE blob_id = ?').get(blob.blob_id),
+    ).toEqual({ created_by: 'relay-operator' });
+    // A review token names its report; one that names anything else opens nothing.
+    const forged = await createDownloadToken(
+      rt.env.PREVIEW_SECRET,
+      { blobId: blob.blob_id, nodeId: f.id, userId: f.id, exp: Date.now() + 60_000 },
+      'a',
+    );
+    const res = await rt.fetch(new Request(`${new URL(rt.env.USERCONTENT_ORIGIN).origin}/p/${forged}/x.txt`));
+    expect(res.status).toBe(403);
   });
 });
 

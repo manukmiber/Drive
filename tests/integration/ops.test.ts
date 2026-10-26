@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GIB } from '../../src/shared/constants';
 import { APP, makeRuntime } from '../helpers/runtime';
 import { signIn } from '../helpers/session';
+import { grantPlan, rootOf, uploadText } from '../helpers/files';
 
 // The relay's Zeiko Drive screen calls these (ADR-036).
 const KEY = 'ops-key-for-tests-0123456789abcdef';
@@ -104,6 +105,29 @@ describe('ops API for the relay', () => {
     expect(items.zk_ani_example_com).toMatchObject({ id: a.userId, planCode: 'plus', planName: 'Plus', balanceIdr: 0 });
     expect(items.zk_budi_example_com?.planCode).toBeNull();
     expect((await ops('POST', '/people', { zeikoIds: ['x'] }, 'wrong-wrong-wrong-wrong-wrong-wrong')).status).toBe(404);
+  });
+
+  it('shows the scanner and retries a failed scan as the operator (ADR-057)', async () => {
+    const { rt, ops } = await setup();
+    const s = await signIn(rt, 'pengunggah@example.com');
+    await grantPlan(rt, s.userId);
+    const f = await uploadText(s, await rootOf(s), 'a.txt', 'isi');
+    await rt.settle();
+    const { blob_id: blobId } = rt.d1.sqlite
+      .prepare('SELECT blob_id FROM nodes WHERE id = ?')
+      .get(f.id) as { blob_id: string };
+    rt.d1.sqlite.prepare("UPDATE blobs SET scan_status = 'error', scan_attempts = 3 WHERE id = ?").run(blobId);
+    const stats = (await (await ops('GET', '/scanner')).json()) as {
+      scanner: string;
+      recent: Array<{ id: string; status: string }>;
+    };
+    expect(stats.scanner).toBe('mock');
+    expect(stats.recent).toContainEqual(expect.objectContaining({ id: blobId, status: 'error' }));
+    expect((await ops('POST', `/scanner/${blobId}/retry`)).status).toBe(204);
+    const audit = (await (await ops('GET', '/audit?action=scan.retry')).json()) as {
+      items: Array<{ actorId: string }>;
+    };
+    expect(audit.items).toEqual([expect.objectContaining({ actorId: 'relay-operator' })]);
   });
 
   it('sends a test email through the live adapter, says which one, and audits it', async () => {

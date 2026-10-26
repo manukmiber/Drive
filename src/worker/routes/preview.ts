@@ -36,16 +36,12 @@ export const preview = new Hono<AppBindings>()
     const node = await loadNode(ctx, claims.nodeId);
     if (!node || node.blob_id !== claims.blobId) return c.text('Not found', 404);
     if (review) {
-      // Abuse review: the token was minted for a staff member and the view is in the audit log.
-      const staff = await ctx.env.DB.prepare(`SELECT role, status FROM users WHERE id = ?1`)
+      // Abuse review: only the ops API mints these, for the relay's operator, and the view is in
+      // the audit log. The token names a report, not a user (ADR-057), and dies with it.
+      const report = await ctx.env.DB.prepare('SELECT 1 AS ok FROM abuse_reports WHERE id = ?1')
         .bind(claims.userId)
-        .first<{ role: string; status: string }>();
-      if (
-        !staff ||
-        staff.status !== 'active' ||
-        (staff.role !== 'admin' && staff.role !== 'moderator')
-      )
-        return c.text('Forbidden', 403);
+        .first();
+      if (!report) return c.text('Forbidden', 403);
     } else {
       if (!(await nodeAccess(ctx, claims.userId, node)).view) return c.text('Not found', 404);
       if (await poolLocked(ctx, node.pool_id)) return c.text('Forbidden', 403);

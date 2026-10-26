@@ -57,8 +57,10 @@ export const users = sqliteTable('users', {
   /** From the Zeiko Account at sign-in (ADR-041); `adCityCode` is the matched area. */
   adCity: text('ad_city'),
   adPostalCode: text('ad_postal_code'),
+  /** Read by nothing since ADR-057: Drive has no staff; the operator works from the relay. */
   role: text('role', { enum: USER_ROLES }).notNull().default('user'),
   status: text('status', { enum: USER_STATUSES }).notNull().default('active'),
+  /** Left from the staff second factor (ADR-019), read by nothing since ADR-057. */
   twoFactorEnabled: bool('two_factor_enabled').notNull().default(false),
   deleteRequestedAt: ms('delete_requested_at'),
   /** UI and email language (ADR-036). */
@@ -78,8 +80,6 @@ export const sessions = sqliteTable('sessions', {
   userAgent: text('user_agent'),
   createdAt: date('created_at').notNull(),
   updatedAt: date('updated_at').notNull(),
-  /** Last TOTP/passkey proof in this session (ADR-056); staff routes want it fresh. */
-  secondFactorAt: date('second_factor_at'),
 });
 
 export const accounts = sqliteTable('accounts', {
@@ -673,6 +673,7 @@ export const blockedHashes = sqliteTable('blocked_hashes', {
 export const legalHolds = sqliteTable('legal_holds', {
   blobId: text('blob_id').primaryKey(),
   reason: text('reason').notNull(),
+  /** `relay-operator` or `auto` (ADR-057). */
   createdBy: text('created_by').notNull(),
   createdAt: ms('created_at').notNull(),
 });

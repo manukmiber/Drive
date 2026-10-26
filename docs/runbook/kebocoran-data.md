@@ -8,7 +8,8 @@ Tulis jam saat pertama kali tahu (WIB). Hitungan 72 jam mulai dari sini.
 
 ## 1. Bendung (≤ 1 jam)
 - Putuskan sumbernya: cabut token/API key yang bocor, matikan endpoint yang bermasalah (deploy
-  revert atau `features.*` di Admin → Config), blokir akun penyerang (Admin → Pengguna → Bekukan).
+  revert atau `features.*` di relay → Zeiko Drive → Business numbers), blokir akun penyerang (relay → Accounts → People →
+  Zeiko Drive → Suspend).
 - Logout semua sesi kalau sesi ikut terdampak:
   `npx wrangler d1 execute zeiko-production --remote --command "DELETE FROM sessions"`.
 - Rotasi secret yang terdampak sesuai `rotasi-secret.md`.

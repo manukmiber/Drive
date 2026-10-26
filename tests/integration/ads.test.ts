@@ -10,7 +10,8 @@ import { CONFIG_DEFAULTS } from '../../src/shared/config-defaults';
 import { areaForCity, ctaUrl, resolveAreaChain } from '../../src/worker/services/ads';
 import { invalidateConfigMemo } from '../../src/worker/services/config';
 import { APP, makeRuntime } from '../helpers/runtime';
-import { proveSecondFactor, signIn, staffSignIn, type Session } from '../helpers/session';
+import { signIn, type Session } from '../helpers/session';
+import { imageBody, operator } from '../helpers/ops';
 import { grantPlan, rootOf, uploadText } from '../helpers/files';
 import type { DevRuntime } from '../../dev/env';
 
@@ -75,9 +76,11 @@ interface Placed {
  * What the operator does with an advertiser's email (ADR-043): the advertiser (who has signed in to
  * Drive once), their creative with its picture, and a campaign.
  */
+type Ops = ReturnType<typeof operator>;
+
 async function placeAd(
   rt: DevRuntime,
-  op: Session,
+  op: Ops,
   p: {
     email?: string;
     kind?: 'umkm' | 'mahasiswa' | 'lainnya';
@@ -90,14 +93,14 @@ async function placeAd(
 ): Promise<Placed> {
   const email = p.email ?? 'umkm@example.com';
   const advertiser = await signIn(rt, email);
-  const saved = await op.req('PUT', '/api/admin/ads/advertiser', {
+  const saved = await op('PUT', '/ads/advertiser', {
     email,
     businessName: 'Warung Kumis',
     kind: p.kind ?? 'umkm',
     phone: '0812 3456 7890',
   });
   expect(saved.status).toBe(200);
-  const cr = await op.req('POST', '/api/admin/ads/creatives', {
+  const cr = await op('POST', '/ads/creatives', {
     advertiserId: advertiser.userId,
     title: p.title ?? 'Bakso Pak Kumis',
     body: 'Bakso urat porsi jumbo, buka sampai malam.',
@@ -107,15 +110,9 @@ async function placeAd(
   });
   expect(cr.status).toBe(201);
   const creativeId = ((await cr.json()) as { id: string }).id;
-  const img = webp();
-  const up = await op.req(
-    'PUT',
-    `/api/admin/ads/creatives/${creativeId}/image?advertiser=${advertiser.userId}`,
-    undefined,
-    { body: img, headers: { 'content-type': 'image/webp', 'content-length': String(img.length) } },
-  );
+  const up = await op('PUT', `/ads/creatives/${creativeId}/image`, imageBody(advertiser.userId, webp()));
   expect(up.status).toBe(200);
-  const k = await op.req('POST', '/api/admin/ads/campaigns', {
+  const k = await op('POST', '/ads/campaigns', {
     creativeId,
     scope: p.scope ?? 'cities',
     areaCodes: p.areaCodes ?? ['35.73'],
@@ -128,8 +125,7 @@ async function placeAd(
 }
 
 async function review(rt: DevRuntime, creativeId: string, decision: 'approve' | 'reject', reason = '') {
-  const mod = await staffSignIn(rt, 'mod@example.com', 'moderator');
-  const res = await mod.req('POST', `/api/admin/ads/${creativeId}/review`, { decision, reason });
+  const res = await operator(rt)('POST', `/ads/${creativeId}/review`, { decision, reason });
   expect(res.status).toBe(204);
 }
 
@@ -250,11 +246,11 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
   it('is the operator’s to enter; a word filter only flags; approving opens payment', async () => {
     const { rt } = await setup();
     const user = await signIn(rt, 'warung@example.com');
-    expect((await user.req('GET', '/api/admin/ads/advertiser?email=warung@example.com')).status).toBe(403);
+    expect((await user.req('GET', '/api/ops/ads/advertiser?email=warung@example.com')).status).toBe(404);
     expect((await user.req('GET', '/api/advertiser')).status).toBe(200); // their own page, empty
 
-    const op = await staffSignIn(rt, 'ops@example.com');
-    const unknown = await op.req('GET', '/api/admin/ads/advertiser?email=nobody@example.com');
+    const op = operator(rt);
+    const unknown = await op('GET', '/ads/advertiser?email=nobody@example.com');
     expect(unknown.status).toBe(404);
     expect(((await unknown.json()) as { error: { message: string } }).error.message).toBe('NO_DRIVE_USER');
 
@@ -262,13 +258,22 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
     const bad = await placeAd(rt, op, { email: 'lain@example.com', kind: 'lainnya', title: 'Slot gacor maxwin' });
     const good = await placeAd(rt, op, { days: 3, areaCodes: ['35.73', '32.73'] });
     expect([bad.campaignStatus, good.campaignStatus]).toEqual(['pending', 'pending']);
-    const queue = (await (await op.req('GET', '/api/admin/ads?status=pending')).json()) as {
+    const queue = (await (await op('GET', '/ads?status=pending')).json()) as {
       items: Array<{ id: string; flag: string | null; advertiserKind: string; waitingCampaigns: number }>;
     };
     // UMKM, small businesses and students first, though this one came later.
     expect(queue.items.map((x) => x.id)).toEqual([good.creativeId, bad.creativeId]);
     expect(queue.items[1]).toMatchObject({ flag: 'judi/slot/togel', waitingCampaigns: 1 });
     expect(queue.items[0]!.flag).toBeNull();
+    // The relay forwards JSON only: the picture under review comes back as a data URL.
+    const pic = (await (await op('GET', `/ads/${good.creativeId}/image`)).json()) as { dataUrl: string };
+    expect(pic.dataUrl.startsWith('data:image/webp;base64,')).toBe(true);
+    expect(Buffer.from(pic.dataUrl.split(',')[1]!, 'base64')).toEqual(Buffer.from(webp()));
+    const notB64 = await op('PUT', `/ads/creatives/${good.creativeId}/image`, {
+      advertiserId: good.advertiser.userId,
+      imageBase64: '%%%',
+    });
+    expect(notB64.status).toBe(400);
 
     // Nothing is bought on the website, and no QRIS goes out before the check.
     expect(
@@ -309,7 +314,7 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
 
     // An approved creative's next campaign waits for payment straight away; one never paid by its
     // first day expires that night.
-    const again = await op.req('POST', '/api/admin/ads/campaigns', {
+    const again = await op('POST', '/ads/campaigns', {
       creativeId: good.creativeId,
       scope: 'national',
       startDate: TODAY,
@@ -319,13 +324,13 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
     expect(k2).toMatchObject({ status: 'awaiting_payment', total_idr: 10_000 });
     expect(k2.payment_id).not.toBeNull();
     expect(
-      (await op.req('POST', '/api/admin/ads/campaigns', { creativeId: good.creativeId, scope: 'cities', areaCodes: ['35'], startDate: TODAY, days: 1 })).status,
+      (await op('POST', '/ads/campaigns', { creativeId: good.creativeId, scope: 'cities', areaCodes: ['35'], startDate: TODAY, days: 1 })).status,
     ).toBe(400); // a province is not a city
   });
 
   it('rotates every live ad for the viewer’s city and every national one, and counts per city', async () => {
     const { rt, clock } = await setup();
-    const op = await staffSignIn(rt, 'ops@example.com');
+    const op = operator(rt);
     const city = await placeAd(rt, op, { days: 1 });
     const nation = await placeAd(rt, op, {
       email: 'besar@example.com',
@@ -389,7 +394,7 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
 
   it('pays by QRIS, expires what was never paid, and refunds the days a takedown leaves', async () => {
     const { rt, clock } = await setup();
-    const op = await staffSignIn(rt, 'ops@example.com');
+    const op = operator(rt);
     const placed = await placeAd(rt, op, { days: 3 });
     const late = await placeAd(rt, op, { email: 'telat@example.com', startDate: addDaysWib(TODAY, 1), days: 1 });
     await review(rt, placed.creativeId, 'approve');
@@ -418,13 +423,11 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
     clock.set(Date.UTC(2026, 9, 11, 17, 6));
     await rt.runCron(CRON.dailyAds);
     expect(status(rt, late.campaignId)).toBe('expired');
-    proveSecondFactor(rt, op.userId); // a day later: the staff proof is renewed (ADR-056)
-    const tooLate = await op.req('POST', `/api/admin/ads/campaigns/${late.campaignId}/send-payment`, {});
+    const tooLate = await op('POST', `/ads/campaigns/${late.campaignId}/send-payment`, {});
     expect(tooLate.status).toBe(409);
 
     // Day 3 of 3 (12 Okt): a takedown gives back nothing shown yet, which is no days at all.
-    const mod = await staffSignIn(rt, 'mod2@example.com', 'moderator');
-    const res = await mod.req('POST', `/api/admin/ads/${placed.creativeId}/suspend`, {
+    const res = await op('POST', `/ads/${placed.creativeId}/suspend`, {
       severe: false,
       reason: 'Klaim menyesatkan',
     });
@@ -438,13 +441,12 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
 
   it('a takedown before the last day refunds the days not shown as credit', async () => {
     const { rt } = await setup();
-    const op = await staffSignIn(rt, 'ops@example.com');
+    const op = operator(rt);
     const placed = await placeAd(rt, op, { days: 3 });
     fund(rt, placed.advertiser.userId, 3_000);
     await review(rt, placed.creativeId, 'approve');
     expect(status(rt, placed.campaignId)).toBe('live');
-    const mod = await staffSignIn(rt, 'mod2@example.com', 'moderator');
-    const res = await mod.req('POST', `/api/admin/ads/${placed.creativeId}/suspend`, {
+    const res = await op('POST', `/ads/${placed.creativeId}/suspend`, {
       severe: false,
       reason: 'Klaim menyesatkan',
     });
@@ -458,7 +460,7 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
 describe('where ads never appear (SPEC §10.1)', () => {
   it('keeps download paths ad-free, respects plans.show_ads and the feature flag', async () => {
     const { rt } = await setup();
-    const op = await staffSignIn(rt, 'ops@example.com');
+    const op = operator(rt);
     const placed = await placeAd(rt, op, { scope: 'national', days: 1 });
     fund(rt, placed.advertiser.userId, 100_000);
     await review(rt, placed.creativeId, 'approve');

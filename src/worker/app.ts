@@ -13,7 +13,6 @@ import {
   userContentGuard,
 } from './middleware/base';
 import { errorBody, onError } from './middleware/errors';
-import { admin } from './routes/admin';
 import { catalog } from './routes/catalog';
 import { dev } from './routes/dev';
 import { download } from './routes/download';
@@ -69,7 +68,7 @@ export function createApp() {
   const api = new Hono<AppBindings>();
   api.use('*', apiHeaders, originCheck);
 
-  // Better Auth owns /api/auth/* (sessions, OTP, OAuth, passkeys, TOTP).
+  // Better Auth owns /api/auth/* (the Zeiko Accounts exchange and sessions).
   api.on(['GET', 'POST'], '/auth/*', async (c) => {
     if (c.req.method === 'POST') {
       await enforceRateLimit(c.env, 'RL_AUTH', `auth:${clientIp(c.req.raw)}`);
@@ -94,7 +93,6 @@ export function createApp() {
   api.route('/public', publicAuth);
   api.route('/public', reports);
   api.route('/me', me);
-  api.route('/admin', admin);
   api.route('/uploads', uploads);
   api.route('/shares', shares);
   api.route('/archives', archives);

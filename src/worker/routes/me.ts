@@ -1,4 +1,4 @@
-import { and, count, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { schema } from '../db/client';
@@ -23,7 +23,7 @@ export const me = new Hono<AppBindings>()
     const ctx = c.get('ctx');
     const user = c.get('user')!;
     const csrfToken = ensureCsrfCookie(c);
-    const [profile, space, passkeys, zeiko] = await Promise.all([
+    const [profile, space, zeiko] = await Promise.all([
       ctx.db
         .select({
           image: schema.users.image,
@@ -37,11 +37,6 @@ export const me = new Hono<AppBindings>()
         .where(eq(schema.users.id, user.id))
         .get(),
       ensurePersonalSpace(ctx, user.id),
-      ctx.db
-        .select({ n: count() })
-        .from(schema.passkeys)
-        .where(eq(schema.passkeys.userId, user.id))
-        .get(),
       // The Zeiko Account this user signs in as: the page checks it against the door's session
       // (ADR-039), so Drive follows whoever is signed in there.
       ctx.db
@@ -68,7 +63,6 @@ export const me = new Hono<AppBindings>()
         zeikoId: zeiko?.id ?? null,
       },
       deleteRequestedAt: profile?.deleteRequestedAt ?? null,
-      hasPasskey: (passkeys?.n ?? 0) > 0,
       space,
       storage,
       subscription,

@@ -656,8 +656,8 @@ bisa dipakai APK, skrip, atau WebDAV.
 - Tabel api_tokens (migrasi baru): pemilik, nama, awalan yang terlihat, hash SHA-256 dari rahasia (rahasia
   hanya ditampilkan sekali), scope, dibuat, terakhir dipakai, kedaluwarsa, dicabut. Rahasia berawalan jelas
   (mis. zkd_…) supaya mudah dikenali kalau bocor.
-- Scope awal: drive.read, drive.write, share, webdav, s3.manage. Token akun staf tidak pernah bisa membuka
-  /admin atau ops.
+- Scope awal: drive.read, drive.write, share, webdav, s3.manage. Token tidak pernah bisa membuka ops (kerja
+  operator hanya dari relay, ADR-057).
 - Middleware Bearer hanya untuk /api/v1/* (A2) dan host WebDAV (D9). Route /api/* yang sekarang tetap
   cookie saja, supaya CSRF tidak tercampur. Rate limit per token. Akun dibekukan/dihapus → token ditolak;
   hapus akun mencabut semua token.

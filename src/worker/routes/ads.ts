@@ -1,8 +1,8 @@
-// Ads (SPEC §10, ADR-043): GET /api/ads (the rotation), /api/ads/areas, /api/advertiser (an
+// Ads (SPEC §10, ADR-043): GET /api/ads (the rotation), /api/advertiser (an
 // advertiser's own dashboard: their campaigns and numbers; ordering and paying are by email), and
 // the cookie-less public endpoints /ad/i (impression beacon), /ad/c/:id (click), /ad/img/:id
 // (image), /ad/qr/:id.png (the QRIS in a payment email). The operator's side (entering an ad, the
-// manual check, takedowns) is under /api/admin/ads.
+// manual check, takedowns) is the ops API, /api/ops/ads, from the relay (ADR-057).
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { AD_PLACEMENTS, type AdPlacement } from '../../shared/ad-policy';
@@ -20,7 +20,6 @@ import {
   recordClick,
   recordImpression,
   resolveAreaChain,
-  searchAreas,
   serveAd,
   serveRotation,
   type AdDto,
@@ -84,9 +83,6 @@ export const adsApi = new Hono<AppBindings>()
       const placed: AdPlacement = q.placement;
       return c.json(await serveRotation(ctx, placed, await viewerChain(c), exclude));
     },
-  )
-  .get('/areas', validate('query', z.object({ q: z.string().max(60).default('') })), async (c) =>
-    c.json({ areas: await searchAreas(c.get('ctx'), c.req.valid('query').q) }),
   );
 
 /** The advertiser's own page (rule 6, ADR-043): their campaigns and their numbers. */

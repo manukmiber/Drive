@@ -205,13 +205,21 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [ ] Belum: logo di tengah QR, upload multipart dari halaman `/s3`.
 
 ## Audit OWASP Top 10:2025 (ADR-056, 2026-10-26)
-- [x] Faktor kedua staf dibuktikan per sesi (TOTP atau passkey, 12 jam); mengubah faktor butuh faktor; alert saat
-  faktor staf berubah.
-- [x] Staf yang dibekukan tidak bisa membuka admin; moderator tidak bisa membekukan staf.
-- [x] Laporan CSAM: isi dimatikan otomatis hanya dari pelapor login/Turnstile, akun dibekukan moderator; tolak
+- [x] Faktor kedua staf, staf yang dibekukan, moderator vs admin: selesai dengan menghapus panel admin (ADR-057).
+- [x] Laporan CSAM: isi dimatikan otomatis hanya dari pelapor login/Turnstile, akun dibekukan operator; tolak
   laporan memulihkan.
 - [x] Redirect `/dashboard//…` hanya ke app sendiri; undangan keluarga tidak bisa direbut/melewati batas (guard batch).
 - [x] Label "Dicek dasar" tanpa ClamAV; kesiapan `antivirus` dan `captcha` di tab Features relay.
 - [ ] Pemilik: Turnstile (site key di `deploy/production.json` → `turnstileSiteKey`, secret `TURNSTILE_SECRET_KEY`),
-  migrasi `0011` di D1 remote, deploy. Staf memasang TOTP/passkey kalau belum.
+  migrasi `0011` di D1 remote, deploy.
+
+## Admin pindah ke relay (ADR-057, 2026-10-26)
+- [x] Ops API: laporan (daftar, detail, aksi, pratinjau 5 menit), pemindai (statistik, ulang), iklan (antrean cek,
+  pengiklan, materi + gambar base64, kampanye, kirim ulang QRIS, batal, takedown), wilayah iklan.
+- [x] Dihapus: `/api/admin`, halaman `/admin`, role staf, passkey/TOTP (plugin, paket, UI), `staff_second_factor_hours`.
+- [x] `legal_holds.created_by` tanpa FK (`relay-operator`/`auto`); token review membawa ID laporan.
+- [ ] Relay: tab Reports, Ads, Scanner, Audit di layar Zeiko Drive (repo `Relay`) dan batas body forwarder ≥ 1 MiB
+  untuk gambar iklan. **Jangan deploy Drive ini sebelum tab Reports ada di relay**: tanpa itu takedown hanya bisa lewat
+  `curl` ke ops API.
+- [ ] Pemilik: migrasi `0011` + deploy Drive, lalu update relay (`bash install.sh` atau tombol update).
 

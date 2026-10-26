@@ -140,7 +140,7 @@ Pemetaan node → implementasi:
 Boleh disempurnakan. Perubahan besar dicatat di `DECISIONS.md`.
 
 ```
-users               id, email, name, avatar_url, ad_city_code (nullable), role(user|moderator|admin),
+users               id, email, name, avatar_url, ad_city_code (nullable), role (tidak dipakai sejak ADR-057),
                     status(active|suspended|deleted), created_at
 (tabel auth)        ikuti skema Better Auth: session, account, verification, passkey, twoFactor
 app_config          key, value_json, updated_by, updated_at                     ← seed Lampiran B
@@ -570,12 +570,15 @@ Default (semua angka config):
 
 ## 13. Admin, notifikasi, observability, cron
 
-### 13.1 Panel admin `/admin` (role admin/moderator, wajib passkey/TOTP)
+### 13.1 Kerja operator: layar Zeiko Drive di dashboard relay (ADR-057)
+Drive tidak punya panel admin, role staf, atau faktor kedua sendiri. Semua di bawah ini ada di relay dan sampai ke Drive
+lewat ops API (`/api/ops/*`, bearer `ZEIKO_OPS_TOKEN`); setiap perubahan wajib alasan dan tercatat di audit log dengan
+aktor `relay-operator`.
 - **Dashboard**: user aktif, pendapatan per produk, storage per paket, kredit kompres terpakai vs 5.000 gratis/bulan, dan estimasi **biaya vs pendapatan** memakai parameter Lampiran B (kurs, harga R2, harga kompres). Ini cerminan spreadsheet, tapi dengan pemakaian nyata: margin per paket dan titik impas aktual. Hitung juga komponen yang belum ada di spreadsheet: operasi R2 Class A/B, request dan CPU Workers, runtime Containers, Email, WhatsApp API (kalau aktif), dan biaya payment gateway. Tarifnya disimpan di `app_config` dan diisi dari docs terbaru.
 - **Pengguna**: cari, lihat paket dan pemakaian, suspend, sesuaikan kuota/saldo (wajib isi alasan → audit log). **Tidak ada tombol "lihat file user"**; akses konten hanya lewat laporan abuse dan tercatat di audit log.
 - **Laporan dan takedown**: antrean dengan timer SLA, aksi (nonaktifkan link, karantina, hapus, legal hold, ban), tambah hash ke blocklist.
 - **Pemindai**: hasil scan dan error rate.
-- **Iklan**: antrean moderasi, inventori dan harga per area, booking, refund.
+- **Iklan**: memasukkan iklan dari email pengiklan, antrean cek manual, kampanye, kirim ulang QRIS, takedown + refund.
 - **Config editor** (harga, kurs, limit, feature flag) dan **audit log viewer**.
 
 ### 13.2 Notifikasi
@@ -625,7 +628,7 @@ Selama `pending`, file hanya bisa diakses pemiliknya dan tidak bisa di-share.
 ### 14.3 Anti-CSAM dan konten ilegal
 - Nyalakan **Cloudflare CSAM Scanning Tool** di zona. Tool ini mencocokkan konten yang dilayani **lewat cache Cloudflare**, jadi verifikasi apakah respons Worker/Cache API kita tercakup. Kalau tidak, buat rute thumbnail/pratinjau gambar yang cacheable (dengan kunci yang tidak membocorkan akses). Catat keputusannya di `DECISIONS.md`.
 - Adapter `CsamDetector` (perceptual hash matching) dengan provider opsional: Hive, Thorn Safer, atau PhotoDNA. Semuanya butuh perjanjian vendor, jadi pakai mock dulu. Dijalankan di pipeline scan untuk gambar dan keyframe video.
-- Laporan kategori CSAM dari pelapor yang login atau lolos Turnstile → link share langsung nonaktif otomatis, file dikarantina + legal hold (jangan dihapus sebelum prosedur hukum jelas), masuk antrean prioritas mendesak. Akun pengunggah dibekukan oleh moderator setelah memeriksa, tidak otomatis: laporan hanyalah klaim (ADR-056). Laporan yang ditolak memulihkan yang dimatikannya.
+- Laporan kategori CSAM dari pelapor yang login atau lolos Turnstile → link share langsung nonaktif otomatis, file dikarantina + legal hold (jangan dihapus sebelum prosedur hukum jelas), masuk antrean prioritas mendesak. Akun pengunggah dibekukan oleh operator setelah memeriksa, tidak otomatis: laporan hanyalah klaim (ADR-056). Laporan yang ditolak memulihkan yang dimatikannya.
 - Hash konten yang sudah di-takedown masuk blocklist untuk mencegah upload ulang.
 - SLA takedown sesuai Permenkominfo 5/2020: 1×24 jam sejak permintaan, dan 4 jam untuk konten mendesak (terorisme, CSAM, konten yang meresahkan). Timer SLA tampil di admin.
 

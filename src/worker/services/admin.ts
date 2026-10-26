@@ -10,7 +10,7 @@ import { addBillingMonth } from '../../shared/time';
 import { ensurePersonalSpace } from './accounts';
 import { poolLimitStmt, wibAnchorDay } from './billing';
 import { getConfig, setConfig } from './config';
-import { assertMaySuspend, setUserStatus } from './reports';
+import { setUserStatus } from './reports';
 import { noticeEmail } from './email-templates';
 
 async function audit(
@@ -219,8 +219,6 @@ export async function setUserSuspended(
   reason: string | undefined,
 ): Promise<void> {
   const r = requireReason(reason);
-  if (userId === actorId) throw new AppError('BAD_REQUEST', 'cannot suspend yourself');
-  await assertMaySuspend(ctx, actorId, userId);
   await setUserStatus(ctx, userId, suspended ? 'suspended' : 'active');
   await audit(ctx, actorId, suspended ? 'user.suspend' : 'user.unsuspend', 'user', userId, {
     reason: r,
@@ -291,21 +289,6 @@ export async function setBonusQuota(
     to: bonusBytes,
     reason: r,
   });
-}
-
-export async function setUserRole(
-  ctx: Ctx,
-  actorId: string,
-  userId: string,
-  role: 'user' | 'moderator' | 'admin',
-  reason: string | undefined,
-): Promise<void> {
-  const r = requireReason(reason);
-  if (userId === actorId) throw new AppError('BAD_REQUEST', 'cannot change your own role');
-  await ctx.env.DB.prepare('UPDATE users SET role = ?2, updated_at = ?3 WHERE id = ?1')
-    .bind(userId, role, ctx.now())
-    .run();
-  await audit(ctx, actorId, 'user.role', 'user', userId, { role, reason: r });
 }
 
 // ── Scanner ──

@@ -319,8 +319,6 @@ export const configSchema = z.object({
     normal: 24,
   }),
   log_retention_days: int().min(1).default(90),
-  /** How long a session's TOTP/passkey proof opens the staff routes (ADR-056). */
-  staff_second_factor_hours: int().min(1).max(720).default(12),
   account_delete_wait_days: int().min(0).default(7),
 
   // ── Feature flags ──
