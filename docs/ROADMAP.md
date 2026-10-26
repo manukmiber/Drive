@@ -58,17 +58,17 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 
 ### Fase R — Drive tanpa D1 (ADR-064)
 
-| ID  | Langkah                                                                                      | Ukuran | Butuh dulu | Status                 |
-| --- | -------------------------------------------------------------------------------------------- | ------ | ---------- | ---------------------- |
-| R0  | Pemilik menjawab pertanyaan terbuka (lihat bagian R di bawah)                                | –      | –          | dijawab, kecuali no. 3 |
-| R1  | Format index + pustaka baca/tulis (gzip, ETag, tulis bersyarat etag + ulang), benchmark      | M      | R0         | belum                  |
-| R2  | Baca dari index: explorer, detail, breadcrumb, cari, bintang, Sampah; klien tarik index dulu | L      | R1         | belum                  |
-| R3  | Tulis ke index: upload + kuota, hasil pindai, ganti nama/pindah/salin/Sampah/hapus, dekorasi | L      | R2         | belum                  |
-| R4  | Index keluarga `f/{familyId}/index.txt` (kepemilikan, anggota, izin)                         | M      | R3         | belum                  |
-| R5  | Link share dan unduhan publik ke D1 khusus akses                                             | M      | R3         | belum                  |
-| R6  | Sesi, token API, OAuth, idempotency ke D1 khusus akses                                       | M      | R0         | belum                  |
-| R7  | Akun, paket, pembayaran, katalog, data operator ke relay (repo Relay + ops API dibalik)      | L      | R0         | belum                  |
-| R8  | Pindahkan data production, hapus tabel Drive dari D1 (D1 utama tinggal untuk S3)             | M      | R2–R7      | belum                  |
+| ID  | Langkah                                                                                                                                | Ukuran | Butuh dulu | Status                 |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------- | ------ | ---------- | ---------------------- |
+| R0  | Pemilik menjawab pertanyaan terbuka (lihat bagian R di bawah)                                                                          | –      | –          | dijawab, kecuali no. 3 |
+| R1  | Format index + pustaka baca/tulis (tulis bersyarat etag + ulang), benchmark                                                            | M      | R0         | selesai (ADR-064)      |
+| R2  | Baca dari index: explorer, detail, breadcrumb, cari, bintang, Sampah; klien tarik index dulu                                           | L      | R1         | belum                  |
+| R3  | Tulis ke index: upload + kuota, hasil pindai, ganti nama/pindah/salin/Sampah/hapus, dekorasi; gabung tulis (R2: 1 tulis/detik per key) | L      | R2         | belum                  |
+| R4  | Index keluarga `f/{familyId}/index.txt` (kepemilikan, anggota, izin)                                                                   | M      | R3         | belum                  |
+| R5  | Link share dan unduhan publik ke D1 khusus akses                                                                                       | M      | R3         | belum                  |
+| R6  | Sesi, token API, OAuth, idempotency ke D1 khusus akses                                                                                 | M      | R0         | belum                  |
+| R7  | Akun, paket, pembayaran, katalog, data operator ke relay (repo Relay + ops API dibalik)                                                | L      | R0         | belum                  |
+| R8  | Pindahkan data production, hapus tabel Drive dari D1 (D1 utama tinggal untuk S3)                                                       | M      | R2–R7      | belum                  |
 
 ### Zeiko Drive
 

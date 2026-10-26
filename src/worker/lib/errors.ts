@@ -25,6 +25,7 @@ export type ErrorCode =
   | 'SIGN_IN_EXPIRED'
   | 'EMAIL_UNVERIFIED'
   | 'ACCOUNTS_UNAVAILABLE'
+  | 'INDEX_BUSY'
   | 'INTERNAL';
 
 const STATUS: Record<ErrorCode, number> = {
@@ -53,6 +54,7 @@ const STATUS: Record<ErrorCode, number> = {
   SIGN_IN_EXPIRED: 400,
   EMAIL_UNVERIFIED: 403,
   ACCOUNTS_UNAVAILABLE: 503,
+  INDEX_BUSY: 503,
   INTERNAL: 500,
 };
 

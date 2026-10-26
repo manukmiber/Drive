@@ -6,8 +6,10 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
 - **Satu user = satu folder R2** (`u/{userId}/`) dengan **satu index** (`u/{userId}/index.txt`): nama file dan struktur
   folder. Paket keluarga: satu folder, satu index (`f/{familyId}/index.txt`) dengan nama file, struktur folder, dan
   kepemilikan. Index = sumber kebenaran pohon file dan hal pertama yang ditarik web, aplikasi, dan software, jadi
-  formatnya harus seringan mungkin (usul: JSON tabel ringkas ter-gzip + ETag). Ditulis dengan syarat etag R2: bentrok →
-  baca ulang, ulangi.
+  formatnya harus seringan mungkin. Format v1 (R1, ADR-064): header JSON + satu baris JSON per entri, disimpan polos
+  (Cloudflare mengompres saat dikirim), diedit per baris lewat `IndexDoc` (`services/drive-index.ts`). Ditulis dengan
+  syarat etag R2 lewat `changeIndex`: bentrok → baca ulang, ulangi. R2 hanya menerima **1 tulis/detik per key**: gabung
+  perubahan massal jadi satu tulis.
 - **Drive tidak memakai D1.** Akun, paket, pembayaran, dan data operator di relay. D1 hanya untuk Zeiko S3 (tidak
   berubah: 1 user, 1 D1 pengganti index.txt, ADR-044), plus satu **D1 khusus akses** terpisah untuk sesi login, token
   API/OAuth, dan link share (jawaban R0, ADR-064). Pohon file dan nama file tidak pernah masuk D1.

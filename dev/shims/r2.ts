@@ -1,6 +1,8 @@
 // R2Bucket shim on the local filesystem (ADR-001). Implements the subset Zeiko uses: head/get
 // (with range + onlyIf), put, delete, list, and multipart uploads with R2's part rules
 // (uniform part size, ≥ 5 MiB except the last part, ≤ 10,000 parts, auto-abort after 7 days).
+// Puts to one key are serialized, so a conditional put is atomic like R2's. `limitWritesPerKey`
+// turns on R2's one-write-per-second-per-key limit (429, code 10058) for tests that need it.
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
@@ -155,6 +157,10 @@ function conditionsPass(meta: StoredMeta, onlyIf: OnlyIf | Headers | undefined):
   return true;
 }
 
+function requiresObject(onlyIf: OnlyIf | Headers): boolean {
+  return onlyIf instanceof Headers ? onlyIf.has('if-match') : Boolean(onlyIf.etagMatches);
+}
+
 export class R2ShimError extends Error {
   constructor(
     readonly code: number,
@@ -168,6 +174,10 @@ export class ShimR2Bucket {
   private objDir: string;
   private mpuDir: string;
   private tmpDir: string;
+  private putLocks = new Map<string, Promise<unknown>>();
+  private lastWrite = new Map<string, number>();
+  /** Answer a second write to the same key within a second with R2's 429 (10058). */
+  limitWritesPerKey = false;
 
   constructor(
     root: string,
@@ -238,9 +248,36 @@ export class ShimR2Bucket {
       onlyIf?: OnlyIf | Headers;
     },
   ): Promise<ShimR2Object | null> {
+    const prev = this.putLocks.get(key) ?? Promise.resolve();
+    const run = prev.then(() => this.putNow(key, value, options));
+    const settled = run.catch(() => undefined);
+    this.putLocks.set(key, settled);
+    void settled.then(() => {
+      if (this.putLocks.get(key) === settled) this.putLocks.delete(key);
+    });
+    return run;
+  }
+
+  private async putNow(
+    key: string,
+    value: PutValue,
+    options?: {
+      httpMetadata?: HttpMetadata | Headers;
+      customMetadata?: Record<string, string>;
+      onlyIf?: OnlyIf | Headers;
+    },
+  ): Promise<ShimR2Object | null> {
     if (options?.onlyIf) {
       const existing = await this.readMeta(key);
-      if (existing && !conditionsPass(existing, options.onlyIf)) return null;
+      // Like R2: If-Match needs an object to match; If-None-Match: * needs there to be none.
+      if (existing ? !conditionsPass(existing, options.onlyIf) : requiresObject(options.onlyIf))
+        return null;
+    }
+    if (this.limitWritesPerKey) {
+      const last = this.lastWrite.get(key);
+      if (last !== undefined && this.now() - last < 1000)
+        throw new R2ShimError(10058, 'put: TooManyRequests');
+      this.lastWrite.set(key, this.now());
     }
     const tmp = join(this.tmpDir, `${crypto.randomUUID()}.part`);
     const md5 = createHash('md5');

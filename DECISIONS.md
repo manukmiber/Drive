@@ -1531,13 +1531,60 @@ pengganti index.txt". Sejak ADR-002 Drive justru menyimpan pohon file di D1 bers
 5. Index: `index.txt` berisi JSON tabel ringkas ter-gzip. **Ya.** Rincian format di bawah (R1).
 6. Fitur Drive baru dibekukan sampai R3 selesai. **Ya** (fitur S3 tetap boleh jalan).
 
-**Format index (usul, diuji di fase R1):** objek `u/{userId}/index.txt` (dan `f/{familyId}/index.txt`), isinya JSON
-ringkas berbentuk tabel (array of arrays, bukan objek per file: nama kolom sekali di header), disimpan ter-gzip dengan
-`Content-Encoding: gzip`, sehingga browser/app mengurai dengan `JSON.parse` bawaan (lebih cepat daripada decoder
-MessagePack/CBOR/protobuf di JavaScript). Kira-kira 60–80 byte per entri sebelum gzip: 10.000 file ≈ 0,7 MB → ±150–250 KB
-terkirim, diurai beberapa milidetik di HP. Klien menyimpan salinan (IndexedDB/berkas) dan meminta ulang dengan
-`If-None-Match`, jadi biasanya hanya 304. Header index memuat versi format, total byte terpakai, dan (keluarga) daftar
-anggota. Akun yang sangat besar (ratusan ribu file) dipecah belakangan (index + jurnal perubahan); dicatat, belum dibuat.
+**Format index v1 (dibangun di R1, 2026-10-26; `src/shared/drive-index.ts`):** objek `u/{userId}/index.txt` (keluarga
+`f/{familyId}/index.txt`), teks UTF-8. Baris 1 = header JSON `{"v":1,"rev":…,"next":…,"cols":[…]}` (keluarga juga
+`members`). Setiap baris berikutnya = **satu entri**, sebuah array JSON dengan kolom sesuai `cols`; nilai bawaan di ekor
+tidak ditulis. Contoh:
+
+```text
+{"v":1,"rev":7,"next":4,"cols":["id","p","k","n","s","m","b","st","c","u","cm","th","f","t","tr","d","o","e","tb"]}
+[1,0,1,"Foto",0,"",0,0,1761447600]
+[2,1,0,"IMG_20261026_101112.jpg",2481123,"image/jpeg",2,0,1761447610,0,1761440000,1]
+```
+
+- **Nomor entri kecil** (bukan ULID), tidak pernah dipakai ulang (`next`). Isi file disimpan di `u/{userId}/{b}`, dengan
+  `b` = nomor entri upload aslinya (key lama tetap berupa teks). Salinan menunjuk `b` yang sama; isi dihapus saat tidak
+  ada entri lain yang menunjuknya (tidak perlu kolom refcount). Waktu disimpan dalam detik.
+- Index tidak memuat sha256, rincian pindai, atau data akun. Thumbnail cukup ditandai `th` (key tetap `…/t/{b}.webp`).
+  Hash dan rincian pindai menempel di objek isi; diputuskan di R3.
+- **Disimpan tanpa gzip** (berbeda dari usul awal). Production berjalan di Workers Free (ADR-035): CPU dibatasi 10 ms per
+  request, sedangkan gzip di Worker memakan ±34 ms untuk 10.000 entri. Cloudflare mengompres respons Worker sendiri
+  (brotli/gzip) sesuai kemampuan klien, jadi ukuran yang terkirim tetap kecil.
+- **Satu baris per entri** (berbeda dari "satu array JSON"). Worker hanya mengganti baris yang berubah, tanpa mengurai
+  dan menulis ulang semuanya. Klien tetap membaca semuanya dengan satu `JSON.parse`.
+- **Tulis bersyarat:** `etagMatches` (index baru: `If-None-Match: *`). Kalau kalah balapan, index dibaca ulang dan
+  perubahannya diulang, sampai 12 kali; setelah itu `INDEX_BUSY` (503). Index yang tidak terbaca **tidak pernah
+  ditimpa**.
+- **Batas R2: satu tulis per detik per key** (lebih dari itu 429, kode 10058). Pustaka menunggu ≥1 detik lalu mengulang.
+  Akibatnya satu user (dan satu keluarga) kira-kira mendapat satu perubahan index per detik. Operasi massal harus
+  menjadi satu tulis: pindah/hapus banyak file dalam satu request (sudah begitu), dan di R3 upload banyak file serta
+  hasil pindai/thumbnail digabung per batch. Hal ini disampaikan ke pemilik 2026-10-26.
+
+Ukuran dan CPU (`npm run bench:index`, diukur di HP pengembang dengan Node 22; server Cloudflare lebih cepat):
+
+| Entri | Di R2 | Terkirim (gzip / brotli) | Klien: baca semua | Worker: ganti nama satu | Worker: bentuk pohon / pindah 100 |
+|---|---|---|---|---|---|
+| 1.000 | 91 KB | 26 / 27 KB | 2,6 ms | 0,1 ms | 0,5 / 0,6 ms |
+| 10.000 | 952 KB | 268 / 282 KB | 21 ms | 0,9 ms | 2,7 / 2,7 ms |
+| 50.000 | 4,9 MB | 1,4 / 1,4 MB | 143 ms | 4,6 ms | 18 / 19 ms |
+| 100.000 | 9,8 MB | 2,8 / 2,8 MB | 305 ms | 8,7 ms | 31 / 38 ms |
+
+Pembanding untuk 10.000 entri: format JSON satu array butuh 11,5 ms untuk mengurai dan menulis ulang demi satu ganti
+nama, ditambah 34 ms kalau di-gzip di Worker. Batas praktis di Workers Free: operasi satu entri aman sampai sekitar
+100.000 entri, sedangkan operasi yang butuh bentuk pohon (pindah/hapus folder) sekitar 20.000–25.000 entri. Di atas itu
+perlu Workers Paid, atau index dipecah (index + jurnal perubahan). Pemecahan dicatat, belum dibuat.
+
+**Pustaka (R1):** `src/worker/services/drive-index.ts`:
+- `IndexDoc` mengedit per baris (`get`, `set`, `delete`, `allocate`, `parents`, `entries`, `toText`).
+- `readIndex` membaca index; `changeIndex` membaca, mengubah, lalu menulis bersyarat sambil menunggu dan mengulang.
+  Fungsi perubahan bisa berjalan lebih dari sekali, jadi tidak boleh punya efek samping di luar index.
+
+Shim R2 dev ikut diperbaiki:
+- `put` ke key yang sama berjalan berurutan, jadi tulis bersyarat atomik seperti R2.
+- `If-Match` pada key yang belum ada gagal.
+- Ada opsi `limitWritesPerKey` untuk test batas 1/detik.
+
+Test: `tests/unit/drive-index.test.ts`, termasuk 10 penulis bersamaan tanpa kehilangan perubahan.
 
 **Konsekuensi untuk pencarian:** cari nama/struktur di index milik user sendiri (di klien, atau di Worker untuk API).
 D6 dan D8 dibangun di atas index ini, bukan di atas FTS5.

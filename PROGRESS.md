@@ -12,7 +12,10 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] Keputusan dan peta pindah ditulis: ADR-064, SPEC §2–§4, `CLAUDE.md`, ROADMAP (fase R), `PLAN.md`, `peta-file.md`.
 - [x] R0: pemilik menjawab (2026-10-26): share/token/sesi ke D1 khusus akses; data operator ke relay; salinan kuota
   dari relay; `index.txt` JSON ringkas ter-gzip; fitur Drive baru dibekukan sampai R3. **Belum:** no. 3 (notifikasi).
-- [ ] R1 format + pustaka index · R2 baca dari index · R3 tulis ke index · R4 index keluarga · R5 share tanpa D1 ·
+- [x] R1 format + pustaka index (2026-10-26): `shared/drive-index.ts` (format v1: header + satu baris JSON per entri,
+  polos di R2), `services/drive-index.ts` (`IndexDoc`, `readIndex`, `changeIndex` bersyarat etag + ulang + tunggu 429),
+  shim R2 (put atomik per key, `limitWritesPerKey`), `npm run bench:index`, 17 test. Angka di ADR-064.
+- [ ] R2 baca dari index · R3 tulis ke index · R4 index keluarga · R5 share tanpa D1 ·
   R6 sesi/token/OAuth tanpa D1 · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 
