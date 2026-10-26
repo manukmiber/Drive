@@ -177,3 +177,10 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   (folder di dalamnya ikut). File bersandi ditandai, CRC dicek, `..`/path absolut dibersihkan, `__MACOSX` dibuang.
   Dari menu ⋮ ("Lihat isi ZIP"), pratinjau, dan kartu di `/alat`. Dites di build production dengan CSP app (inflate
   di worker fflate), HP/desktop, terang/gelap.
+
+## Editor foto ala Snapseed (ADR-052, 2026-10-26)
+- [x] Tab Looks (15 gaya + kekuatan) dan Alat (13 alat, ✕/✓ per alat, urungkan/ulangi per langkah, tahan mata untuk
+  lihat asli): atur gambar + otomatis, detail, kurva per kanal dengan histogram, white balance + otomatis, potong,
+  putar + luruskan, perbaiki noda, blur lensa, vinyet, efek (glow, butiran, pudar), teks, bingkai, ukuran piksel pas.
+- [x] Dites di Chrome (dev), HP 360/390 px, terang/gelap, Indonesia/Inggris: semua alat, batal/terapkan, Looks,
+  simpan resolusi penuh.

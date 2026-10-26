@@ -1070,3 +1070,32 @@ spreadsheet, docs, dll? ambil dari github boleh kok gausah bikin dari awal".
 - `npm audit` saat ditambahkan: `uuid` 8 di FortuneSheet/exceljs (moderat; celahnya di v3/v5/v6 dengan `buf`, yang
   tidak dipakai, keduanya hanya `v4`). Temuan `undici` (tinggi) ada di `wrangler`/`miniflare`, alat dev, sudah ada
   sebelumnya.
+
+## ADR-052 — Editor foto ala Snapseed
+
+**Status:** diterima (pemilik, 2026-10-26). **Konteks:** pemilik: "aku mau kita punya editor yang ga kaleng²… tambahin
+banyak fitur tapi jangan bikin bingung user dengan tombolnya", lalu "tambahkan fitur editing aja, kek snapseed minimal".
+Hapus/ganti latar belakang dibatalkan pemilik (butuh model AI), jadi tidak ada model atau layanan baru.
+
+**Keputusan:**
+- Aturan ADR-050 tetap: semuanya jalan di browser, isi foto tidak dikirim ke mana pun, hasil lewat antrean upload.
+  Tidak ada library baru; efeknya ditulis sendiri pada piksel (`editors/photo/effects.ts`), tanpa canvas `filter`
+  (Safari tidak punya), jadi pratinjau dan hasil simpan sama.
+- **Tata letak seperti Snapseed**, supaya tombolnya tidak membingungkan: dua tab, **Looks** (15 gaya siap pakai dengan
+  slider kekuatan) dan **Alat** (grid 13 alat). Alat dibuka di bawah foto dengan ✕ (batal) dan ✓ (terapkan); satu ✓
+  = satu langkah urungkan/ulangi. Tombol mata di atas: tahan untuk melihat foto asli dalam bingkai yang sama.
+- **Alat:** Atur gambar (kecerahan, kontras, saturasi, suasana, sorotan, bayangan, kehangatan, + Otomatis), Detail
+  (struktur, ketajaman), Kurva (semua/merah/hijau/biru, titik digeser, preset, histogram), White balance (suhu, rona,
+  + Otomatis gray-world), Potong (8 rasio), Putar (90°, balik, luruskan ±45° yang membesar sendiri tanpa sudut kosong),
+  Perbaiki (ketuk noda; ditambal dari area sekitar yang paling mirip), Blur lensa (bulat/garis, titik tengah digeser),
+  Vinyet, Efek (glow, butiran film, pudar), Teks (4 gaya, warna, ukuran, digeser), Bingkai (tipis, tebal, polaroid,
+  sudut bulat), Ukuran (skala atau piksel pas, JPEG/PNG/WebP, kualitas).
+- Ukuran efek (radius blur, butiran, teks, titik perbaikan) dihitung sebagai bagian dari foto, bukan piksel layar,
+  supaya salinan kecil di layar terlihat sama dengan foto penuh yang disimpan. Teks dan titik perbaikan disimpan di
+  koordinat foto, jadi ikut berpindah saat foto diputar, dibalik, atau dipotong.
+- Struktur menekan beda yang besar (tepi tajam) supaya tekstur naik tanpa halo; blur besar dihitung di salinan kecil
+  lalu diperbesar (cepat di HP).
+
+**Konsekuensi:**
+- Menyimpan foto 2 MP dengan semua efek ±1,5 detik di HP uji; foto 12 MP bisa beberapa detik (ada tanda memproses).
+- Belum ada: kuas lokal (selective/brush), perspektif, hapus latar.

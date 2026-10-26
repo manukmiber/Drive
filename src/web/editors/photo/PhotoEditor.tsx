@@ -1,80 +1,130 @@
-// Photo editor (ADR-050): crop, turn, flip, light and colour, filters, size and format. Works on a
-// smaller copy on screen and redraws the full photo only when saving.
+// Photo editor (ADR-050, ADR-052), laid out like Snapseed: Looks (ready-made styles with a strength)
+// and Tools. A tool opens over the bottom of the screen and changes a draft; ✓ keeps it as one step
+// (undo/redo go step by step), ✕ drops it. Works on a smaller copy on screen and draws the full
+// photo only when saving.
 import {
+  Aperture,
+  Bandage,
+  Check,
   Crop,
-  FlipHorizontal2,
-  FlipVertical2,
+  Eye,
+  Focus,
+  Frame,
   Redo2,
-  RotateCcw,
   RotateCw,
   Scaling,
   SlidersHorizontal,
   Sparkles,
+  Spline,
+  Thermometer,
+  Triangle,
+  Type,
   Undo2,
+  X,
+  type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/Button';
 import { cn } from '../../lib/cn';
 import { t } from '../../lib/i18n';
 import { resultName, type EditRequest } from '../files';
 import { Busy, EditorFrame, Failed, SaveDialog, ToolButton, useSources, type Result } from '../ui';
-import { FILTERS, NO_ADJUST, type Adjust, type FilterId } from './adjust';
+import { LOOKS, autoTune, autoWhiteBalance, type LookId } from './adjust';
 import {
   FULL,
-  clampRect,
-  dragCorner,
+  apply,
   fitRatio,
   flipRect,
-  outputSize,
+  invert,
+  matScale,
+  photoMatrix,
   turnOrientation,
   turnRect,
   turnedSize,
-  type Corner,
-  type Rect,
 } from './geometry';
 import {
-  START,
+  CropBox,
+  HealLayer,
+  LensGuide,
+  StraightenGrid,
+  TextLayer,
+  VignetteGuide,
+} from './overlays';
+import {
+  CropPanel,
+  CurvesPanel,
+  DetailPanel,
+  EffectsPanel,
+  FramePanel,
+  HealPanel,
+  LensPanel,
+  RATIOS,
+  RotatePanel,
+  SizePanel,
+  Slider,
+  TextPanel,
+  TunePanel,
+  VignettePanel,
+  WbPanel,
+} from './panels';
+import {
   defaultType,
   drawPhoto,
   exportPhoto,
   extFor,
   scaled,
+  textLayout,
   type OutType,
-  type PhotoState,
 } from './render';
+import { START, type PhotoState } from './state';
 
-type Panel = 'crop' | 'adjust' | 'filter' | 'size';
-const RATIOS: Array<{ id: string; value: number | 'original' | null }> = [
-  { id: 'free', value: null },
-  { id: 'original', value: 'original' },
-  { id: '1:1', value: 1 },
-  { id: '4:3', value: 4 / 3 },
-  { id: '3:4', value: 3 / 4 },
-  { id: '16:9', value: 16 / 9 },
-  { id: '9:16', value: 9 / 16 },
+type ToolId =
+  | 'tune'
+  | 'detail'
+  | 'curves'
+  | 'wb'
+  | 'crop'
+  | 'rotate'
+  | 'heal'
+  | 'lens'
+  | 'vignette'
+  | 'effects'
+  | 'text'
+  | 'frame'
+  | 'size';
+
+const TOOLS: Array<[ToolId, LucideIcon]> = [
+  ['tune', SlidersHorizontal],
+  ['detail', Triangle],
+  ['curves', Spline],
+  ['wb', Thermometer],
+  ['crop', Crop],
+  ['rotate', RotateCw],
+  ['heal', Bandage],
+  ['lens', Focus],
+  ['vignette', Aperture],
+  ['effects', Sparkles],
+  ['text', Type],
+  ['frame', Frame],
+  ['size', Scaling],
 ];
-const SCALES = [1, 0.75, 0.5, 0.25];
+
 const PREVIEW_MAX = 1600;
 
-/** Undo/redo over whole states (they are small). */
+let seq = 0;
+const newId = () => `t${++seq}`;
+
+/** Undo/redo over whole states (they are small: pictures are never in them). */
 function useHistory(start: PhotoState) {
   const [h, setH] = useState({ list: [start], at: 0 });
-  const state = h.list[h.at]!;
   const push = useCallback(
     (next: PhotoState) =>
       setH((x) => ({ list: [...x.list.slice(0, x.at + 1), next], at: x.at + 1 })),
     [],
   );
-  /** Replaces the current state (while dragging a slider or the crop). */
-  const replace = useCallback(
-    (next: PhotoState) =>
-      setH((x) => ({ list: x.list.map((s, i) => (i === x.at ? next : s)), at: x.at })),
-    [],
-  );
   return {
-    state,
+    state: h.list[h.at]!,
     push,
-    replace,
     undo: () => setH((x) => ({ ...x, at: Math.max(0, x.at - 1) })),
     redo: () => setH((x) => ({ ...x, at: Math.min(x.list.length - 1, x.at + 1) })),
     at: h.at,
@@ -125,6 +175,17 @@ export function PhotoEditor({ request, onClose }: { request: EditRequest; onClos
   return <Workspace source={source} full={full} small={small} onClose={onClose} />;
 }
 
+/** The photo with its turn and straightening only, small: what "auto" looks at. */
+function plainPixels(img: ImageBitmap, st: PhotoState): Uint8ClampedArray {
+  const c = document.createElement('canvas');
+  const t0 = turnedSize(img.width, img.height, st.o.turn);
+  const s = Math.min(1, 320 / Math.max(t0.w * st.crop.w, t0.h * st.crop.h));
+  c.width = Math.max(1, Math.round(t0.w * st.crop.w * s));
+  c.height = Math.max(1, Math.round(t0.h * st.crop.h * s));
+  drawPhoto(c, img, { ...START, o: st.o, angle: st.angle }, st.crop);
+  return c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+}
+
 function Workspace({
   source,
   full,
@@ -137,9 +198,15 @@ function Workspace({
   onClose: () => void;
 }) {
   const hist = useHistory(START);
-  const st = hist.state;
-  const [panel, setPanel] = useState<Panel>('crop');
-  const [ratio, setRatio] = useState<string>('free');
+  const [tool, setTool] = useState<ToolId | null>(null);
+  // The open tool's changes (or a look's strength being dragged), not yet a step.
+  const [draft, setDraft] = useState<PhotoState | null>(null);
+  const [tab, setTab] = useState<'looks' | 'tools'>('tools');
+  const [comparing, setComparing] = useState(false);
+  const [ratio, setRatio] = useState('free');
+  const [brush, setBrush] = useState(6);
+  const [chosenText, setChosenText] = useState<string | null>(null);
+  const [histogram, setHistogram] = useState<Uint32Array | null>(null);
   const [type, setType] = useState<OutType>(() => defaultType(source.blob.type, source.name));
   const [quality, setQuality] = useState(0.9);
   const [busy, setBusy] = useState(false);
@@ -149,10 +216,16 @@ function Workspace({
   const stage = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 0, h: 0 });
 
-  const cropping = panel === 'crop';
+  const st = draft ?? hist.state;
+  const cropping = tool === 'crop';
   const turned = turnedSize(small.width, small.height, st.o.turn);
   const shown = cropping ? FULL : st.crop;
   const aspect = (turned.w * shown.w) / (turned.h * shown.h);
+  // Comparing shows the photo as it came, in the same frame.
+  const drawn = useMemo(
+    () => (comparing ? { ...START, o: st.o, angle: st.angle, crop: st.crop } : st),
+    [comparing, st],
+  );
 
   useEffect(() => {
     const el = stage.current;
@@ -180,19 +253,62 @@ function Workspace({
     const h = Math.round(fit.h * dpr);
     // Never more pixels than the copy has: drawing is per pixel.
     const s = Math.min(1, (turned.w * shown.w) / w);
-    c.width = Math.max(1, Math.round(w * s));
-    c.height = Math.max(1, Math.round(h * s));
-    const id = requestAnimationFrame(() => drawPhoto(c, small, st, shown));
+    const id = requestAnimationFrame(() => {
+      c.width = Math.max(1, Math.round(w * s));
+      c.height = Math.max(1, Math.round(h * s));
+      drawPhoto(c, small, drawn, shown);
+    });
     return () => cancelAnimationFrame(id);
-  }, [fit, small, st, shown, turned.w]);
+  }, [fit, small, drawn, shown, turned.w]);
 
-  const update = (p: Partial<PhotoState>) => hist.push({ ...st, ...p });
+  // Photo (small copy) pixels → CSS pixels of the shown photo, and back.
+  const m = useMemo(
+    () => photoMatrix(small.width, small.height, st.o, st.angle, shown, fit.w || 1, fit.h || 1),
+    [small, st.o, st.angle, shown, fit],
+  );
+  const toPhoto = (x: number, y: number) => {
+    const [px, py] = apply(invert(m), x, y);
+    return [px / small.width, py / small.height] as const;
+  };
+
+  const edit = (p: Partial<PhotoState>) => setDraft((d) => ({ ...(d ?? hist.state), ...p }));
+  /** Keeps whatever is pending (a look's strength mid-drag included) as a step. */
+  function settle(): PhotoState {
+    if (draft && draft !== hist.state) hist.push(draft);
+    return draft ?? hist.state;
+  }
+  function openTool(id: ToolId) {
+    setDraft(settle());
+    setTool(id);
+    setChosenText(null);
+    if (id === 'curves') {
+      const c = canvas.current;
+      const data = c?.getContext('2d')?.getImageData(0, 0, c.width, c.height).data;
+      if (data) {
+        const h = new Uint32Array(256);
+        for (let i = 0; i < data.length; i += 8)
+          h[Math.round(0.2126 * data[i]! + 0.7152 * data[i + 1]! + 0.0722 * data[i + 2]!)]!++;
+        setHistogram(h);
+      }
+    }
+  }
+  /** Keeps (✓) or drops (✕) what the tool changed. Returns what the photo is now. */
+  function closeTool(keep: boolean): PhotoState {
+    const next = keep ? settle() : hist.state;
+    setDraft(null);
+    setTool(null);
+    setChosenText(null);
+    return next;
+  }
+
   const turn = (dir: 1 | -1) =>
-    update({ o: turnOrientation(st.o, dir), crop: turnRect(st.crop, dir) });
+    edit({ o: turnOrientation(st.o, dir), crop: turnRect(st.crop, dir) });
+  // A mirror turns the straightening the other way, so it stays a mirror of what was there.
   const flip = (axis: 'h' | 'v') =>
-    update({
+    edit({
       o: axis === 'h' ? { ...st.o, flipH: !st.o.flipH } : { ...st.o, flipV: !st.o.flipV },
       crop: flipRect(st.crop, axis),
+      angle: -st.angle,
     });
   const ratioValue = (id: string): number | null => {
     const r = RATIOS.find((x) => x.id === id)?.value ?? null;
@@ -201,26 +317,43 @@ function Workspace({
   const chooseRatio = (id: string) => {
     setRatio(id);
     const r = ratioValue(id);
-    if (r) update({ crop: fitRatio(FULL, r, turned.w, turned.h) });
+    if (r) edit({ crop: fitRatio(FULL, r, turned.w, turned.h) });
   };
+
+  function addText() {
+    const [x, y] = toPhoto(fit.w / 2, fit.h / 2);
+    const mark = {
+      id: newId(),
+      text: t.editor.textDefault,
+      x,
+      y,
+      // 8% of what is shown, in short sides of the photo.
+      size: (0.08 * Math.min(fit.w, fit.h)) / (Math.min(small.width, small.height) * matScale(m)),
+      color: '#ffffff',
+      style: 'bold' as const,
+    };
+    edit({ texts: [...st.texts, mark] });
+    setChosenText(mark.id);
+  }
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input, textarea, dialog')) return;
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) hist.redo();
-        else hist.undo();
-      }
+      if (tool || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+      e.preventDefault();
+      if (e.shiftKey) hist.redo();
+      else hist.undo();
     };
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
-  }, [hist]);
+  }, [hist, tool]);
 
   async function save() {
+    // Saving keeps what the open tool shows.
+    const final = closeTool(true);
     setBusy(true);
     try {
-      const blob = await exportPhoto(full, st, type, quality);
+      const blob = await exportPhoto(full, final, type, quality);
       const ext = extFor(blob.type);
       setResults([{ blob, name: resultName(source.name, ext, t.editor.editSuffix) }]);
     } catch {
@@ -230,19 +363,146 @@ function Workspace({
     }
   }
 
-  const out = outputSize(full.width, full.height, st.o.turn, st.crop, st.scale);
+  const shortCss = Math.min(small.width, small.height) * matScale(m);
+  const overlay = (() => {
+    if (!fit.w || comparing) return null;
+    switch (tool) {
+      case 'crop':
+        return (
+          <CropBox
+            rect={st.crop}
+            ratio={ratioValue(ratio)}
+            pw={turned.w}
+            ph={turned.h}
+            onChange={(crop) => edit({ crop })}
+          />
+        );
+      case 'rotate':
+        return <StraightenGrid />;
+      case 'vignette':
+        return (
+          <VignetteGuide
+            v={st.vignette}
+            w={fit.w}
+            h={fit.h}
+            onMove={(x, y) => edit({ vignette: { ...st.vignette, x, y } })}
+          />
+        );
+      case 'lens':
+        return st.lens.shape === 'off' ? null : (
+          <LensGuide
+            lens={st.lens}
+            w={fit.w}
+            h={fit.h}
+            onMove={(x, y) => edit({ lens: { ...st.lens, x, y } })}
+          />
+        );
+      case 'heal':
+        return (
+          <HealLayer
+            spots={st.heal.map((s) => {
+              const [x, y] = apply(m, s.x * small.width, s.y * small.height);
+              return { x, y, r: s.r * shortCss };
+            })}
+            onTap={(cx, cy) => {
+              const [x, y] = toPhoto(cx, cy);
+              const r = ((brush / 100) * Math.min(fit.w, fit.h)) / shortCss;
+              edit({ heal: [...st.heal, { x, y, r }] });
+            }}
+          />
+        );
+      case 'text':
+        return (
+          <TextLayer
+            boxes={st.texts.map((tx) => {
+              const l = textLayout(tx, m, small.width, small.height);
+              return { id: tx.id, x: l.x, y: l.y, w: l.w, h: l.h };
+            })}
+            chosen={chosenText}
+            onChoose={setChosenText}
+            onDrag={(id, cx, cy) => {
+              const [x, y] = toPhoto(cx, cy);
+              edit({
+                texts: st.texts.map((tx) =>
+                  tx.id === id
+                    ? { ...tx, x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
+                    : tx,
+                ),
+              });
+            }}
+          />
+        );
+      default:
+        return null;
+    }
+  })();
+
+  const panel = (() => {
+    const p = { st, edit };
+    switch (tool) {
+      case 'tune':
+        return <TunePanel {...p} onAuto={() => edit({ tune: autoTune(plainPixels(small, st)) })} />;
+      case 'detail':
+        return <DetailPanel {...p} />;
+      case 'curves':
+        return <CurvesPanel {...p} histogram={histogram} />;
+      case 'wb':
+        return (
+          <WbPanel {...p} onAuto={() => edit({ wb: autoWhiteBalance(plainPixels(small, st)) })} />
+        );
+      case 'crop':
+        return <CropPanel ratio={ratio} onRatio={chooseRatio} />;
+      case 'rotate':
+        return <RotatePanel {...p} turn={turn} flip={flip} />;
+      case 'vignette':
+        return <VignettePanel {...p} />;
+      case 'lens':
+        return <LensPanel {...p} />;
+      case 'effects':
+        return <EffectsPanel {...p} />;
+      case 'heal':
+        return (
+          <HealPanel
+            brush={brush}
+            onBrush={setBrush}
+            count={st.heal.length}
+            onClear={() => edit({ heal: [] })}
+          />
+        );
+      case 'text':
+        return <TextPanel {...p} chosen={chosenText} onAdd={addText} onChoose={setChosenText} />;
+      case 'frame':
+        return <FramePanel {...p} />;
+      case 'size':
+        return (
+          <SizePanel
+            {...p}
+            full={full}
+            type={type}
+            onType={setType}
+            quality={quality}
+            onQuality={setQuality}
+          />
+        );
+      default:
+        return null;
+    }
+  })();
+
+  const iconButton =
+    'rounded-full p-2 hover:bg-[var(--bg-subtle)] disabled:opacity-40 disabled:hover:bg-transparent';
   return (
     <EditorFrame
       title={source.name}
       onClose={onClose}
-      dirty={hist.at !== savedAt}
+      dirty={hist.at !== savedAt || Boolean(draft && draft !== hist.state)}
       actions={
         <>
           <button
             type="button"
             onClick={hist.undo}
-            disabled={!hist.canUndo}
-            className="rounded-full p-2 hover:bg-[var(--bg-subtle)] disabled:opacity-40"
+            disabled={!hist.canUndo || Boolean(tool)}
+            className={iconButton}
             aria-label={t.editor.undo}
             title={t.editor.undo}
           >
@@ -251,14 +511,31 @@ function Workspace({
           <button
             type="button"
             onClick={hist.redo}
-            disabled={!hist.canRedo}
-            className="rounded-full p-2 hover:bg-[var(--bg-subtle)] disabled:opacity-40"
+            disabled={!hist.canRedo || Boolean(tool)}
+            className={iconButton}
             aria-label={t.editor.redo}
             title={t.editor.redo}
           >
             <Redo2 className="h-5 w-5" />
           </button>
-          <Button onClick={() => void save()} disabled={busy} className="h-9 px-4">
+          <button
+            type="button"
+            onPointerDown={() => setComparing(true)}
+            onPointerUp={() => setComparing(false)}
+            onPointerLeave={() => setComparing(false)}
+            onPointerCancel={() => setComparing(false)}
+            onContextMenu={(e) => e.preventDefault()}
+            className={cn(
+              iconButton,
+              'touch-none select-none',
+              comparing && 'bg-[var(--accent-soft)]',
+            )}
+            aria-label={t.editor.compare}
+            title={t.editor.compare}
+          >
+            <Eye className="h-5 w-5" />
+          </button>
+          <Button onClick={() => void save()} disabled={busy} className="ml-1 h-9 px-4">
             {t.common.save}
           </Button>
         </>
@@ -274,162 +551,93 @@ function Workspace({
             className="block h-full w-full shadow-[var(--shadow-lg)]"
             aria-label={source.name}
           />
-          {cropping && fit.w > 0 && (
-            <CropBox
-              rect={st.crop}
-              ratio={ratioValue(ratio)}
-              pw={turned.w}
-              ph={turned.h}
-              onChange={(crop) => hist.replace({ ...st, crop })}
-              onCommit={(crop) => hist.push({ ...st, crop })}
-            />
-          )}
+          {overlay}
         </div>
       </div>
 
       <div className="border-t border-[var(--border)] bg-[var(--card)]">
-        <div className="mx-auto max-w-2xl px-3 py-3">
-          {panel === 'crop' && (
-            <div className="space-y-3">
-              <div className="flex gap-1 overflow-x-auto pb-1">
-                {RATIOS.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => chooseRatio(r.id)}
-                    aria-pressed={ratio === r.id}
-                    className={cn(
-                      'shrink-0 rounded-full border border-[var(--border)] px-3 py-1 text-xs',
-                      ratio === r.id &&
-                        'border-brand-500 bg-[var(--accent-soft)] text-[var(--accent)]',
-                    )}
-                  >
-                    {r.id === 'free'
-                      ? t.editor.ratioFree
-                      : r.id === 'original'
-                        ? t.editor.ratioOriginal
-                        : r.id}
-                  </button>
-                ))}
-              </div>
-              <div className="flex justify-center gap-1">
-                <ToolButton icon={RotateCcw} label={t.editor.rotateLeft} onClick={() => turn(-1)} />
-                <ToolButton icon={RotateCw} label={t.editor.rotateRight} onClick={() => turn(1)} />
-                <ToolButton
-                  // Lucide draws the mirror line: a vertical line flips left-right.
-                  icon={FlipVertical2}
-                  label={t.editor.flipH}
-                  onClick={() => flip('h')}
-                />
-                <ToolButton
-                  icon={FlipHorizontal2}
-                  label={t.editor.flipV}
-                  onClick={() => flip('v')}
-                />
-              </div>
+        {tool ? (
+          <>
+            <div className="mx-auto max-h-[40vh] max-w-2xl overflow-y-auto px-3 py-3">{panel}</div>
+            <div className="flex items-center justify-between border-t border-[var(--border)] px-2 py-1">
+              <button
+                type="button"
+                onClick={() => closeTool(false)}
+                className="rounded-full p-2.5 hover:bg-[var(--bg-subtle)]"
+                aria-label={t.common.cancel}
+                title={t.common.cancel}
+              >
+                <X className="h-5 w-5" />
+              </button>
+              <span className="text-sm font-medium">{t.editor.toolNames[tool]}</span>
+              <button
+                type="button"
+                onClick={() => closeTool(true)}
+                className="rounded-full p-2.5 text-[var(--accent)] hover:bg-[var(--bg-subtle)]"
+                aria-label={t.editor.apply}
+                title={t.editor.apply}
+              >
+                <Check className="h-5 w-5" />
+              </button>
             </div>
-          )}
-          {panel === 'adjust' && (
-            <Sliders
-              value={st.adjust}
-              onChange={(adjust) => hist.replace({ ...st, adjust })}
-              onCommit={(adjust) => hist.push({ ...st, adjust })}
-            />
-          )}
-          {panel === 'filter' && (
-            <Filters
-              img={small}
-              st={st}
-              value={st.filter}
-              onChange={(filter) => update({ filter })}
-            />
-          )}
-          {panel === 'size' && (
-            <div className="space-y-3 text-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="w-20 text-xs text-[var(--fg-muted)]">{t.editor.scale}</span>
-                {SCALES.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => update({ scale: s })}
-                    aria-pressed={st.scale === s}
-                    className={cn(
-                      'rounded-full border border-[var(--border)] px-3 py-1 text-xs',
-                      st.scale === s &&
-                        'border-brand-500 bg-[var(--accent-soft)] text-[var(--accent)]',
-                    )}
-                  >
-                    {Math.round(s * 100)}%
-                  </button>
-                ))}
-                <span className="text-xs text-[var(--fg-muted)]">
-                  {t.editor.pixels(out.w, out.h)}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <label htmlFor="photo-format" className="w-20 text-xs text-[var(--fg-muted)]">
-                  {t.editor.format}
-                </label>
-                <select
-                  id="photo-format"
-                  value={type}
-                  onChange={(e) => setType(e.target.value as OutType)}
-                  className="h-9 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-2"
-                >
-                  <option value="image/jpeg">JPEG</option>
-                  <option value="image/png">PNG</option>
-                  <option value="image/webp">WebP</option>
-                </select>
-                {type !== 'image/png' && (
-                  <label className="flex flex-1 items-center gap-2 text-xs text-[var(--fg-muted)]">
-                    {t.editor.quality}
-                    <input
-                      type="range"
-                      min={0.4}
-                      max={1}
-                      step={0.05}
-                      value={quality}
-                      onChange={(e) => setQuality(Number(e.target.value))}
-                      className="flex-1 accent-brand-600"
+          </>
+        ) : (
+          <>
+            <div className="mx-auto max-w-2xl px-2 py-2">
+              {tab === 'looks' ? (
+                <Looks
+                  img={small}
+                  st={st}
+                  onPick={(id) => {
+                    hist.push({ ...hist.state, look: { id, amount: 100 } });
+                    setDraft(null);
+                  }}
+                  onAmount={(amount) => edit({ look: { ...st.look, amount } })}
+                  onAmountDone={() => {
+                    settle();
+                    setDraft(null);
+                  }}
+                />
+              ) : (
+                <div className="grid grid-cols-5 gap-y-1 sm:grid-cols-7">
+                  {TOOLS.map(([id, icon]) => (
+                    <ToolButton
+                      key={id}
+                      icon={icon}
+                      label={t.editor.toolNames[id]!}
+                      onClick={() => openTool(id)}
                     />
-                    <span className="w-9 text-right tabular-nums">{Math.round(quality * 100)}</span>
-                  </label>
-                )}
-              </div>
-              <p className="text-xs text-[var(--fg-muted)]">{t.editor.exifNote}</p>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-        <nav
-          className="flex justify-center gap-1 border-t border-[var(--border)] px-2 py-1.5"
-          aria-label={t.editor.photo}
-        >
-          <ToolButton
-            icon={Crop}
-            label={t.editor.crop}
-            active={panel === 'crop'}
-            onClick={() => setPanel('crop')}
-          />
-          <ToolButton
-            icon={SlidersHorizontal}
-            label={t.editor.adjust}
-            active={panel === 'adjust'}
-            onClick={() => setPanel('adjust')}
-          />
-          <ToolButton
-            icon={Sparkles}
-            label={t.editor.filters}
-            active={panel === 'filter'}
-            onClick={() => setPanel('filter')}
-          />
-          <ToolButton
-            icon={Scaling}
-            label={t.editor.resize}
-            active={panel === 'size'}
-            onClick={() => setPanel('size')}
-          />
-        </nav>
+            <nav
+              className="flex justify-center gap-6 border-t border-[var(--border)] text-sm"
+              aria-label={t.editor.photo}
+            >
+              {(['looks', 'tools'] as const).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    settle();
+                    setDraft(null);
+                    setTab(id);
+                  }}
+                  aria-current={tab === id ? 'page' : undefined}
+                  className={cn(
+                    'border-t-2 px-4 py-2.5',
+                    tab === id
+                      ? 'border-brand-600 font-semibold text-[var(--fg)]'
+                      : 'border-transparent text-[var(--fg-muted)]',
+                  )}
+                >
+                  {id === 'looks' ? t.editor.looks : t.editor.toolsTab}
+                </button>
+              ))}
+            </nav>
+          </>
+        )}
       </div>
       {busy && <Busy label={t.editor.working} />}
       <SaveDialog
@@ -442,197 +650,83 @@ function Workspace({
   );
 }
 
-const SLIDERS: Array<keyof Adjust> = ['brightness', 'contrast', 'saturation', 'warmth'];
+const LOOK_IDS = Object.keys(LOOKS) as LookId[];
 
-function Sliders({
-  value,
-  onChange,
-  onCommit,
-}: {
-  value: Adjust;
-  onChange: (a: Adjust) => void;
-  onCommit: (a: Adjust) => void;
-}) {
-  const base = useRef(value);
-  return (
-    <div className="space-y-2">
-      {SLIDERS.map((k) => (
-        <label key={k} className="flex items-center gap-3 text-xs">
-          <span className="w-24 shrink-0 text-[var(--fg-muted)]">{t.editor.adjustments[k]}</span>
-          <input
-            type="range"
-            min={-100}
-            max={100}
-            value={value[k]}
-            onPointerDown={() => (base.current = value)}
-            onChange={(e) => onChange({ ...value, [k]: Number(e.target.value) })}
-            onPointerUp={(e) => onCommit({ ...base.current, [k]: Number(e.currentTarget.value) })}
-            onKeyUp={(e) => onCommit({ ...value, [k]: Number(e.currentTarget.value) })}
-            onDoubleClick={() => onCommit({ ...value, [k]: 0 })}
-            className="flex-1 accent-brand-600"
-          />
-          <span className="w-9 text-right tabular-nums">{value[k]}</span>
-        </label>
-      ))}
-      <div className="text-right">
-        <button
-          type="button"
-          className="text-xs text-[var(--accent)] hover:underline"
-          onClick={() => onCommit(NO_ADJUST)}
-        >
-          {t.editor.reset}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function Filters({
+function Looks({
   img,
   st,
-  value,
-  onChange,
+  onPick,
+  onAmount,
+  onAmountDone,
 }: {
   img: ImageBitmap;
   st: PhotoState;
-  value: FilterId;
-  onChange: (f: FilterId) => void;
+  onPick: (id: LookId) => void;
+  onAmount: (v: number) => void;
+  onAmountDone: () => void;
 }) {
-  const [thumbs, setThumbs] = useState<Partial<Record<FilterId, string>>>({});
-  const { o, crop } = st;
+  const [thumbs, setThumbs] = useState<Partial<Record<LookId, string>>>({});
+  // The thumbnails show the photo as edited, each with its look; redrawn when the edits change.
+  const base = useMemo(() => ({ ...st, look: { id: 'none' as LookId, amount: 100 } }), [st]);
+  const key = JSON.stringify({ ...base, texts: base.texts.length });
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const tiny = await scaled(img, 160);
-      const c = document.createElement('canvas');
-      const tw = turnedSize(tiny.width, tiny.height, o.turn);
-      const s = 72 / Math.max(tw.w * crop.w, tw.h * crop.h);
-      c.width = Math.max(1, Math.round(tw.w * crop.w * s));
-      c.height = Math.max(1, Math.round(tw.h * crop.h * s));
-      const out: Partial<Record<FilterId, string>> = {};
-      for (const f of Object.keys(FILTERS) as FilterId[]) {
-        drawPhoto(c, tiny, { o, adjust: NO_ADJUST, filter: f }, crop);
-        out[f] = c.toDataURL('image/jpeg', 0.8);
-      }
-      if (alive) setThumbs(out);
-    })().catch(() => undefined);
+    const id = setTimeout(() => {
+      (async () => {
+        const tiny = await scaled(img, 200);
+        const c = document.createElement('canvas');
+        const tw = turnedSize(tiny.width, tiny.height, base.o.turn);
+        const s = 72 / Math.max(tw.w * base.crop.w, tw.h * base.crop.h);
+        c.width = Math.max(1, Math.round(tw.w * base.crop.w * s));
+        c.height = Math.max(1, Math.round(tw.h * base.crop.h * s));
+        const out: Partial<Record<LookId, string>> = {};
+        for (const f of LOOK_IDS) {
+          drawPhoto(c, tiny, { ...base, look: { id: f, amount: 100 } }, base.crop);
+          out[f] = c.toDataURL('image/jpeg', 0.8);
+        }
+        if (alive) setThumbs(out);
+      })().catch(() => undefined);
+    }, 150);
     return () => {
       alive = false;
+      clearTimeout(id);
     };
-  }, [img, o, crop]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- redrawn when the edits (key) change
+  }, [img, key]);
   return (
-    <div className="flex gap-2 overflow-x-auto pb-1">
-      {(Object.keys(FILTERS) as FilterId[]).map((f) => (
-        <button
-          key={f}
-          type="button"
-          onClick={() => onChange(f)}
-          aria-pressed={value === f}
-          className="flex shrink-0 flex-col items-center gap-1 text-[11px]"
-        >
-          <span
-            className={cn(
-              'flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-xl border-2 border-transparent bg-[var(--bg-subtle)]',
-              value === f && 'border-brand-500',
-            )}
+    <div className="space-y-2">
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {LOOK_IDS.map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => onPick(f)}
+            aria-pressed={st.look.id === f}
+            className="flex shrink-0 flex-col items-center gap-1 text-[11px]"
           >
-            {thumbs[f] && <img src={thumbs[f]} alt="" className="max-h-full max-w-full" />}
-          </span>
-          {t.editor.filterNames[f]}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-/** The crop rectangle over the photo: drag inside to move it, drag a corner to resize it. */
-function CropBox({
-  rect,
-  ratio,
-  pw,
-  ph,
-  onChange,
-  onCommit,
-}: {
-  rect: Rect;
-  ratio: number | null;
-  pw: number;
-  ph: number;
-  onChange: (r: Rect) => void;
-  onCommit: (r: Rect) => void;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef<{
-    mode: 'move' | Corner;
-    x: number;
-    y: number;
-    start: Rect;
-    last: Rect;
-  } | null>(null);
-
-  function grab(e: PointerEvent, mode: 'move' | Corner) {
-    e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { mode, x: e.clientX, y: e.clientY, start: rect, last: rect };
-  }
-  const move = (e: PointerEvent) => {
-    const d = drag.current;
-    const box = ref.current?.getBoundingClientRect();
-    if (!d || !box) return;
-    const dx = (e.clientX - d.x) / box.width;
-    const dy = (e.clientY - d.y) / box.height;
-    const next =
-      d.mode === 'move'
-        ? clampRect({ ...d.start, x: d.start.x + dx, y: d.start.y + dy })
-        : dragCorner(d.start, d.mode, dx, dy, ratio, pw, ph);
-    d.last = next;
-    onChange(next);
-  };
-  const up = () => {
-    const d = drag.current;
-    drag.current = null;
-    if (d && d.last !== d.start) onCommit(d.last);
-  };
-  const corners: Corner[] = ['nw', 'ne', 'sw', 'se'];
-  return (
-    <div
-      ref={ref}
-      className="absolute inset-0 touch-none overflow-hidden"
-      onPointerMove={move}
-      onPointerUp={up}
-    >
-      <div
-        className="absolute cursor-move border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
-        style={{
-          left: `${rect.x * 100}%`,
-          top: `${rect.y * 100}%`,
-          width: `${rect.w * 100}%`,
-          height: `${rect.h * 100}%`,
-        }}
-        onPointerDown={(e) => grab(e, 'move')}
-      >
-        {/* Rule of thirds. */}
-        <div className="pointer-events-none absolute inset-0 grid grid-cols-3 grid-rows-3">
-          {Array.from({ length: 9 }, (_, i) => (
-            <div key={i} className="border border-white/25" />
-          ))}
-        </div>
-        {corners.map((c) => (
-          <span
-            key={c}
-            role="presentation"
-            onPointerDown={(e) => grab(e, c)}
-            className={cn(
-              // Inside the corners: the stage clips anything outside the photo.
-              'absolute h-6 w-6 touch-none rounded-full border-2 border-white bg-brand-600 shadow',
-              c === 'nw' && 'top-0.5 left-0.5 cursor-nwse-resize',
-              c === 'ne' && 'top-0.5 right-0.5 cursor-nesw-resize',
-              c === 'sw' && 'bottom-0.5 left-0.5 cursor-nesw-resize',
-              c === 'se' && 'right-0.5 bottom-0.5 cursor-nwse-resize',
-            )}
-          />
+            <span
+              className={cn(
+                'flex h-[72px] w-[72px] items-center justify-center overflow-hidden rounded-xl border-2 border-transparent bg-[var(--bg-subtle)]',
+                st.look.id === f && 'border-brand-500',
+              )}
+            >
+              {thumbs[f] && <img src={thumbs[f]} alt="" className="max-h-full max-w-full" />}
+            </span>
+            {t.editor.lookNames[f]}
+          </button>
         ))}
       </div>
+      {st.look.id !== 'none' && (
+        <div onPointerUp={onAmountDone} onKeyUp={onAmountDone}>
+          <Slider
+            label={t.editor.adjustments.amount!}
+            min={0}
+            zero={100}
+            value={st.look.amount}
+            onChange={onAmount}
+          />
+        </div>
+      )}
     </div>
   );
 }

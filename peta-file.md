@@ -132,7 +132,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `components/explorer/*`, `components/ui/*`, `components/*.tsx` | Explorer file, dialog, menu, toast, panel upload, meter, TOTP, Turnstile, iklan. |
 | `upload/*` | Antrean upload multipart + resume (IndexedDB), folder, thumbnail, share target. |
 | `editors/{files,ui,EditorHost}.ts(x)` | Editor (ADR-050): ambil bytes lewat URL pratinjau, simpan lewat antrean upload (baru / ganti asli → Sampah) atau unduh; bingkai layar penuh, dialog simpan; editor dimuat saat dibuka. |
-| `editors/photo/*` | `adjust.ts` (warna per piksel), `geometry.ts` (potong/putar/balik), `render.ts` (kanvas), `PhotoEditor.tsx`. |
+| `editors/photo/*` | `adjust.ts` (atur gambar, white balance, kurva, looks), `effects.ts` (struktur, ketajaman, glow, blur lensa, vinyet, butiran, perbaiki), `geometry.ts` (potong/putar/balik/luruskan, matriks foto↔layar), `render.ts` (kanvas, teks, bingkai), `CurveEditor.tsx`, `overlays.tsx`, `panels.tsx`, `PhotoEditor.tsx` (ADR-052). |
 | `editors/video/*` | `engine.ts` (mediabunny: cepat = salin paket, tepat = encode ulang WebCodecs), `timeline.ts`, `VideoEditor.tsx`. |
 | `editors/text/*` | `codec.ts` (UTF-8, BOM, CRLF), `markdown.ts` (marked + DOMPurify), `TextEditor.tsx` (CodeMirror 6, bahasa dimuat saat dipakai), `text.css` (warna kode). `editors/sanitize.ts`: DOMPurify untuk HTML dari file orang. |
 | `editors/doc/*` | `read.ts` (mammoth → HTML bersih), `write.ts` (docx/html → .docx; halaman HTML), `DocEditor.tsx` (TipTap), `DocxPreview.tsx` (docx-preview, dibersihkan, muat lebar layar), `picture.ts` (gambar → PNG/JPEG ≤1600 px). |

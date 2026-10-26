@@ -58,7 +58,7 @@ yang butuh secret/binding/DNS pemilik didaftarkan di sana dan disembunyikan samp
 **Editor foto, video, PDF** (ADR-050, `src/web/editors/`, halaman `/alat`): semuanya jalan di browser, isi file tidak
 dikirim ke mana pun. Bytes dari URL pratinjau, hasil lewat antrean upload biasa. Library dibundel dan dimuat saat editor
 dibuka: `mediabunny`, `pdfjs-dist` (build **legacy**; aset `/pdfjs-<versi>/` disalin plugin di `vite.config.ts`),
-`pdf-lib`. Batas ukuran: `editor_*_max_bytes` di config. **Editor teks/kode, dokumen, spreadsheet, ZIP** (ADR-051): aturan
+`pdf-lib`. Batas ukuran: `editor_*_max_bytes` di config. Editor foto ala Snapseed (ADR-052): tab Looks/Alat, alat dibuka dengan ✕/✓, efek piksel sendiri di `editors/photo/effects.ts`. **Editor teks/kode, dokumen, spreadsheet, ZIP** (ADR-051): aturan
 yang sama; teks pakai CodeMirror 6 (`editors/text/`), dokumen TipTap + mammoth/docx (`editors/doc/`), spreadsheet
 FortuneSheet + FortuneExcel (`editors/sheet/`; plugin `fortuneSheetFixes` di `vite.config.ts` membuang `new Function`
 karena CSP, jadi cek spreadsheet di build production, bukan dev), ZIP dibaca sendiri + fflate (`editors/zip/`, CRC

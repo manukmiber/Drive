@@ -136,3 +136,81 @@ export function dragCorner(
   }
   return { x: west ? ax - w : ax, y: north ? ay - h : ay, w, h };
 }
+
+/** A 2D affine transform, in DOMMatrix's order: x' = a·x + c·y + e, y' = b·x + d·y + f. */
+export type Mat = readonly [number, number, number, number, number, number];
+
+export const IDENT: Mat = [1, 0, 0, 1, 0, 0];
+
+/** `m` after `n` (n is applied first). */
+export function mul(m: Mat, n: Mat): Mat {
+  return [
+    m[0] * n[0] + m[2] * n[1],
+    m[1] * n[0] + m[3] * n[1],
+    m[0] * n[2] + m[2] * n[3],
+    m[1] * n[2] + m[3] * n[3],
+    m[0] * n[4] + m[2] * n[5] + m[4],
+    m[1] * n[4] + m[3] * n[5] + m[5],
+  ];
+}
+
+export const move = (x: number, y: number): Mat => [1, 0, 0, 1, x, y];
+export const stretch = (x: number, y = x): Mat => [x, 0, 0, y, 0, 0];
+/** Clockwise on screen (y points down). */
+export function spin(deg: number): Mat {
+  const a = (deg * Math.PI) / 180;
+  return [Math.cos(a), Math.sin(a), -Math.sin(a), Math.cos(a), 0, 0];
+}
+
+export const apply = (m: Mat, x: number, y: number): [number, number] => [
+  m[0] * x + m[2] * y + m[4],
+  m[1] * x + m[3] * y + m[5],
+];
+
+export function invert(m: Mat): Mat {
+  const det = m[0] * m[3] - m[1] * m[2];
+  return [
+    m[3] / det,
+    -m[1] / det,
+    -m[2] / det,
+    m[0] / det,
+    (m[2] * m[5] - m[3] * m[4]) / det,
+    (m[1] * m[4] - m[0] * m[5]) / det,
+  ];
+}
+
+/** How much a w × h picture turned `deg` must grow to cover its own frame (no empty corners). */
+export function coverScale(w: number, h: number, deg: number): number {
+  const a = (Math.abs(deg) * Math.PI) / 180;
+  return Math.cos(a) + Math.max(w / h, h / w) * Math.sin(a);
+}
+
+/**
+ * Photo pixels → canvas pixels, for a `cw` × `ch` canvas showing `view` (fractions) of the photo
+ * turned, flipped and straightened by `angle` degrees (clockwise, grown to fill its frame).
+ */
+export function photoMatrix(
+  srcW: number,
+  srcH: number,
+  o: Orientation,
+  angle: number,
+  view: Rect,
+  cw: number,
+  ch: number,
+): Mat {
+  const { w: OW, h: OH } = turnedSize(srcW, srcH, o.turn);
+  const steps: Mat[] = [
+    stretch(cw / (view.w * OW), ch / (view.h * OH)),
+    move(-view.x * OW + OW / 2, -view.y * OH + OH / 2),
+    spin(angle),
+    stretch(coverScale(OW, OH, angle)),
+    // Flips are as seen, after the turn.
+    stretch(o.flipH ? -1 : 1, o.flipV ? -1 : 1),
+    spin(o.turn),
+    move(-srcW / 2, -srcH / 2),
+  ];
+  return steps.reduce((m, n) => mul(m, n), IDENT);
+}
+
+/** How many canvas pixels one photo pixel is under `m`. */
+export const matScale = (m: Mat) => Math.hypot(m[0], m[1]);
