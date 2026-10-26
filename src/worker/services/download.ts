@@ -6,6 +6,7 @@ import { AppError } from '../lib/errors';
 import { isUlid } from '../lib/ids';
 import { previewKind, type PreviewKind } from '../../shared/preview';
 import { requireNode } from './access';
+import { collectFiles } from './archive';
 
 const SIG_LEN = 32;
 
@@ -96,6 +97,69 @@ export async function downloadUrl(
   });
   await touchRecent(ctx, userId, node.id);
   return { url: `/d/${token}/${encodeURIComponent(node.name)}`, expiresAt };
+}
+
+export interface PlannedDownload {
+  nodeId: string;
+  name: string;
+  /** Path from the chosen item ("Foto/2024/a.jpg"; just the name for a chosen file). */
+  path: string;
+  size: number;
+  mime: string | null;
+  url: string;
+}
+
+/**
+ * "Download separately" (ADR-053): every ready file under the chosen items, each with its own
+ * signed /d/ link, so the app's download queue can fetch a few at a time and resume with Range.
+ * Folders are expanded like an archive; files still scanning or rejected are counted as skipped.
+ */
+export async function downloadPlan(
+  ctx: Ctx,
+  userId: string,
+  nodeIds: string[],
+): Promise<{
+  items: PlannedDownload[];
+  folders: string[];
+  skipped: number;
+  totalBytes: number;
+  expiresAt: number;
+}> {
+  const ids = [...new Set(nodeIds)];
+  for (const id of ids) await requireNode(ctx, userId, id, 'view');
+  const cfg = await ctx.config();
+  const tree = await collectFiles(ctx, ids, cfg.download_plan_max_items);
+  const expiresAt = ctx.now() + cfg.download_link_ttl_seconds * 1000;
+  const seen = new Set<string>();
+  const items: PlannedDownload[] = [];
+  let totalBytes = 0;
+  for (const f of tree.files) {
+    // A file chosen next to its own folder comes once.
+    if (seen.has(f.nodeId)) continue;
+    seen.add(f.nodeId);
+    const token = await createDownloadToken(ctx.env.DOWNLOAD_SECRET, {
+      blobId: f.blobId,
+      nodeId: f.nodeId,
+      userId,
+      exp: expiresAt,
+    });
+    items.push({
+      nodeId: f.nodeId,
+      name: f.name,
+      path: f.path,
+      size: f.size,
+      mime: f.mime,
+      url: `/d/${token}/${encodeURIComponent(f.name)}`,
+    });
+    totalBytes += f.size;
+  }
+  return {
+    items,
+    folders: [...new Set(tree.folders)],
+    skipped: tree.skipped,
+    totalBytes,
+    expiresAt,
+  };
 }
 
 /** "Terbaru": remember opened files, keeping at most 200 rows per user (SPEC §4). */

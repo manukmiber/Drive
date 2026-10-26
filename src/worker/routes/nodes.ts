@@ -3,9 +3,10 @@ import { z } from 'zod';
 import { AppError } from '../lib/errors';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
+import { rateLimit } from '../middleware/ratelimit';
 import { requireNode } from '../services/access';
 import { listRecent, listStarred, parseType, search, setStar } from '../services/browse';
-import { downloadUrl, previewUrl } from '../services/download';
+import { downloadPlan, downloadUrl, previewUrl } from '../services/download';
 import {
   breadcrumb,
   copyFile,
@@ -180,6 +181,14 @@ export const nodes = new Hono<AppBindings>()
   )
   .get('/files/:id/download', async (c) =>
     c.json(await downloadUrl(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),
+  )
+  // "Download separately" (ADR-053): signed links for every file under the chosen items.
+  .post(
+    '/files/download-plan',
+    rateLimit('RL_DOWNLOAD', 'download-plan'),
+    validate('json', z.object({ nodeIds: z.array(z.string().max(40)).min(1).max(1000) })),
+    async (c) =>
+      c.json(await downloadPlan(c.get('ctx'), c.get('user')!.id, c.req.valid('json').nodeIds)),
   )
   .put('/files/:id/thumbnail', async (c) => {
     const ctx = c.get('ctx');

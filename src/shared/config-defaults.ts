@@ -71,8 +71,12 @@ export const configSchema = z.object({
     }),
 
   // ── Upload / storage ──
+  /** Defaults for a device that has not picked its own (ADR-053). */
   upload_part_concurrency: int().min(1).max(16).default(4),
-  upload_max_parallel_files: int().min(1).max(10).default(3),
+  upload_max_parallel_files: int().min(1).max(20).default(3),
+  /** The most a person may pick on their device (ADR-053; the owner's ceiling is 20 files). */
+  upload_parallel_files_cap: int().min(1).max(20).default(20),
+  upload_part_concurrency_cap: int().min(1).max(16).default(8),
   upload_expiry_hours: int().min(1).max(160).default(144),
   trash_retention_days: int().min(1).default(30),
   manifest_rebuild_min_interval_minutes: int().min(1).default(60),
@@ -84,6 +88,11 @@ export const configSchema = z.object({
     .default(6 * 3600),
   download_edge_cache: z.boolean().default(false),
   download_edge_cache_max_bytes: nonNeg().default(256 * MIB),
+  /** Files downloading at once in the app's download queue (ADR-053), default and ceiling. */
+  download_max_parallel_files: int().min(1).max(20).default(3),
+  download_parallel_files_cap: int().min(1).max(20).default(20),
+  /** Files one "download separately" request may list (folders expanded). */
+  download_plan_max_items: int().min(1).max(20_000).default(5_000),
   preview_link_ttl_seconds: int()
     .min(30)
     .default(15 * 60),
@@ -330,6 +339,10 @@ export const CONFIG_DEFAULTS: AppConfig = configSchema.parse({});
 export const PUBLIC_CONFIG_KEYS = [
   'upload_part_concurrency',
   'upload_max_parallel_files',
+  'upload_parallel_files_cap',
+  'upload_part_concurrency_cap',
+  'download_max_parallel_files',
+  'download_parallel_files_cap',
   'share_default_expiry_days',
   'share_expiry_choices_hours',
   'share_message_max_chars',

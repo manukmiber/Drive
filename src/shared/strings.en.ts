@@ -283,6 +283,7 @@ export const en: Strings = {
   upload: {
     panelTitle: (n: number) => `Uploading ${n} ${n === 1 ? 'file' : 'files'}`,
     done: 'Upload complete',
+    offline: 'Waiting for a connection…',
     paused: 'Paused',
     pause: 'Pause',
     resume: 'Resume',
@@ -308,6 +309,74 @@ export const en: Strings = {
     conflictBody: (name: string) => `"${name}" is already in this folder. What should we do?`,
     quotaFullAction: 'Get more space',
     allDone: (n: number) => `${n} ${n === 1 ? 'upload' : 'uploads'} complete`,
+  },
+  transfer: {
+    settingsTitle: 'Uploads & downloads',
+    settingsBody:
+      'Choose how many files move at once, to suit your internet. Applies to this device only.',
+    presets: { saver: 'Saver', normal: 'Normal', fast: 'Fast', max: 'Maximum' } as Record<
+      string,
+      string
+    >,
+    presetHints: {
+      saver: 'Weak signal or limited data',
+      normal: 'Right for most connections',
+      fast: 'Fast Wi-Fi or 4G',
+      max: 'Fibre or office internet',
+    } as Record<string, string>,
+    custom: 'Custom',
+    uploadFiles: 'Uploads at once',
+    uploadParts: 'Parts per large file',
+    uploadPartsHint:
+      'Files over 16 MB are sent in parts. More parts is faster, as long as your internet keeps up.',
+    downloadFiles: 'Downloads at once',
+    downloadFilesHint:
+      'For "Download as separate files". A single file still goes straight to the browser.',
+    files: (n: number) => `${n} ${n === 1 ? 'file' : 'files'}`,
+    parts: (n: number) => `${n} ${n === 1 ? 'part' : 'parts'}`,
+    max: (n: number) => `max ${n}`,
+    suggestion: (preset: string) => `Suggested for this connection: ${preset}`,
+    usePreset: 'Use',
+    keepAwake: 'Keep the screen on while transferring',
+    keepAwakeHint: 'Phones often stop tabs once the screen goes off. This prevents it.',
+    reset: 'Back to defaults',
+    tabUpload: (n: number) => `Uploads (${n})`,
+    tabDownload: (n: number) => `Downloads (${n})`,
+    downloadingTitle: (n: number) => `Downloading ${n} ${n === 1 ? 'file' : 'files'}`,
+    downloadsDone: (n: number) => `${n} ${n === 1 ? 'download' : 'downloads'} done`,
+    pauseAll: 'Pause all',
+    resumeAll: 'Resume all',
+    cancelAll: 'Cancel all',
+    settings: 'Set how many at once',
+    actions: 'Transfer actions',
+    expand: 'Expand panel',
+    collapse: 'Collapse panel',
+    offline: 'Waiting for a connection…',
+    saving: 'Saving…',
+    savedToDevice: 'Saved to your Downloads folder',
+    savedToFolder: 'Saved to the folder you picked',
+    handedToBrowser: "Handed to the browser's downloads",
+    total: (done: string, total: string) => `${done} of ${total}`,
+    separate: 'Separate files',
+    separateHint: (n: number) =>
+      `One by one, ${n} at a time. Can be paused, and picks up again if the internet drops.`,
+    toFolder: 'Save into a folder on this device (keeps the folder structure)',
+    queued: (n: number) => `${n} ${n === 1 ? 'file' : 'files'} added to the download queue`,
+    queuedSkipped: (n: number, skipped: number) =>
+      `${n} ${n === 1 ? 'file' : 'files'} added to the download queue. ${skipped} skipped because they are not ready yet.`,
+    nothingToDownload: 'No files are ready to download.',
+    tooMany: (max: number) => `Too many files at once (max ${max}). Use a ZIP instead.`,
+    failed: 'Failed',
+    errorText: {
+      NOT_FOUND: 'The file is no longer there',
+      QuotaExceededError: 'Device storage is full',
+      NotAllowedError: 'Permission to save to the folder was refused',
+      INCOMPLETE: 'The download was cut off',
+      NETWORK: 'The connection dropped',
+    } as Record<string, string>,
+    sec: (n: number) => `${n} s`,
+    min: (n: number) => `${n} min`,
+    hour: (h: number, m: number) => `${h} h ${m} min`,
   },
   files: {
     scanning: 'Being checked',
@@ -381,7 +450,7 @@ export const en: Strings = {
     cutToClipboard: (n: number) =>
       `${n} ${n === 1 ? 'item' : 'items'} cut — press Ctrl+V in the folder you want`,
     filterAll: 'All',
-    downloadZip: 'Download as an archive',
+    downloadZip: 'Download…',
     preparingZip: 'Preparing the ZIP…',
     filterTypes: {
       folder: 'Folders',
@@ -1224,7 +1293,7 @@ export const en: Strings = {
     advertiser: 'Advertiser',
   },
   archive: {
-    title: 'Download as an archive',
+    title: 'Download',
     summary: (files: number, size: string) =>
       `${files} ${files === 1 ? 'file' : 'files'} · ${size}`,
     zipStore: 'ZIP, fast (no compression)',

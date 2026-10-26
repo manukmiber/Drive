@@ -1,6 +1,9 @@
 // Global upload queue (SPEC §5.2 client): ≤ N files at once, ≤ M parallel parts per file, per-part
 // retry with exponential backoff + jitter (max 5), pause/resume/cancel, resume after refresh via
-// IndexedDB, then a browser-made thumbnail.
+// IndexedDB, then a browser-made thumbnail. N and M are the person's own pick for their connection
+// (ADR-053) and apply right away, also to files already uploading. Without a network, parts wait
+// for it instead of using up their retries, and uploads that failed on the network restart when
+// it comes back.
 import { api, ApiError, sendJson } from '../lib/api';
 import type { NodeDto } from '../lib/files';
 import { deleteResume, fingerprint, getResume, putResume } from './idb';
@@ -15,6 +18,7 @@ export type TaskStatus =
   | 'resumable'
   | 'conflict'
   | 'uploading'
+  | 'offline'
   | 'paused'
   | 'completing'
   | 'done'
@@ -48,6 +52,10 @@ interface Runtime {
   samples: Array<[number, number]>;
   paused: boolean;
   canceled: boolean;
+  /** A part failed for good: the other parts stop too. */
+  failed: boolean;
+  /** Starts more part workers after the part limit went up. */
+  grow: (() => void) | null;
 }
 
 export interface ManagerOptions {
@@ -57,6 +65,12 @@ export interface ManagerOptions {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
+const whenOnline = () =>
+  new Promise<void>((resolve) => {
+    if (isOnline()) return resolve();
+    window.addEventListener('online', () => resolve(), { once: true });
+  });
 const backoff = (attempt: number) => Math.min(30_000, 500 * 2 ** attempt) * (0.5 + Math.random());
 
 export class UploadManager {
@@ -67,10 +81,16 @@ export class UploadManager {
   /** "Terapkan ke semua" choice per batch. */
   private batchChoice = new Map<string, ConflictChoice>();
 
-  constructor(private opts: ManagerOptions) {}
+  constructor(private opts: ManagerOptions) {
+    if (typeof window !== 'undefined')
+      window.addEventListener('online', () => this.retryNetworkFailures());
+  }
 
+  /** New limits apply now: more files start, and running files get more part workers. */
   configure(o: Partial<Pick<ManagerOptions, 'maxFiles' | 'partConcurrency'>>): void {
     Object.assign(this.opts, o);
+    for (const rt of this.runtime.values()) rt.grow?.();
+    this.pump();
   }
 
   subscribe = (fn: () => void): (() => void) => {
@@ -200,13 +220,56 @@ export class UploadManager {
     this.pump();
   }
 
+  pauseAll(): void {
+    for (const t of this.tasks)
+      if (['queued', 'uploading', 'offline'].includes(t.status)) this.pause(t.id);
+  }
+
+  resumeAll(): void {
+    for (const t of this.tasks)
+      if (t.status === 'paused' || t.status === 'error') this.resume(t.id);
+  }
+
+  cancelAll(): void {
+    for (const t of this.tasks)
+      if (['queued', 'uploading', 'offline', 'paused', 'error', 'resumable'].includes(t.status))
+        this.cancel(t.id);
+  }
+
+  /** Something still queued or running (the page should not close silently). */
+  busy(): boolean {
+    return this.tasks.some((t) =>
+      ['queued', 'uploading', 'offline', 'completing'].includes(t.status),
+    );
+  }
+
+  /** The network is back: uploads that gave up because of it start again. */
+  private retryNetworkFailures(): void {
+    for (const t of this.tasks)
+      if (t.status === 'error' && t.errorCode === 'NETWORK') this.resume(t.id);
+  }
+
   clearFinished(): void {
     this.tasks = this.tasks.filter((t) => !['done', 'canceled', 'skipped'].includes(t.status));
     this.emit();
   }
 
   private active(): number {
-    return this.tasks.filter((t) => t.status === 'uploading' || t.status === 'completing').length;
+    return this.tasks.filter((t) => ['uploading', 'offline', 'completing'].includes(t.status))
+      .length;
+  }
+
+  /**
+   * Waits for the network when there is none (status "offline" meanwhile). True = it was gone,
+   * so the attempt that failed does not count.
+   */
+  private async awaitNetwork(t: UploadTask, rt: Runtime): Promise<boolean> {
+    if (isOnline()) return false;
+    if (t.status === 'uploading') this.patch(t.id, { status: 'offline', speed: 0 });
+    await whenOnline();
+    if (!rt.paused && !rt.canceled && t.status === 'offline')
+      this.patch(t.id, { status: 'uploading' });
+    return true;
   }
 
   private pump(): void {
@@ -240,6 +303,8 @@ export class UploadManager {
       samples: [],
       paused: false,
       canceled: false,
+      failed: false,
+      grow: null,
     };
     this.runtime.set(t.id, rt);
     try {
@@ -277,6 +342,7 @@ export class UploadManager {
     });
     if (t.file.type) q.set('mime', t.file.type);
     for (let attempt = 0; ; attempt++) {
+      if (rt.paused || rt.canceled) return null;
       const h = putWithProgress(`/api/uploads/simple?${q}`, t.file, (loaded) => {
         rt.partLoaded.set(1, loaded);
         this.progress(t, rt);
@@ -287,7 +353,12 @@ export class UploadManager {
         return res.node;
       } catch (e) {
         if (rt.paused || rt.canceled) return null;
-        if (!(e instanceof ApiError) || !retryable(e) || attempt >= MAX_PART_RETRIES) throw e;
+        if (!(e instanceof ApiError) || !retryable(e)) throw e;
+        if (await this.awaitNetwork(t, rt)) {
+          attempt--;
+          continue;
+        }
+        if (attempt >= MAX_PART_RETRIES) throw e;
         await sleep(backoff(attempt));
       } finally {
         rt.handles.delete(h);
@@ -350,38 +421,78 @@ export class UploadManager {
     this.progress(t, rt);
 
     const queue = Array.from({ length: total }, (_, i) => i + 1).filter((n) => !done.has(n));
-    const worker = async () => {
-      for (;;) {
-        const n = queue.shift();
-        if (n === undefined || rt.paused || rt.canceled) return;
-        const start = (n - 1) * ps;
-        const chunk = t.file.slice(start, Math.min(start + ps, t.size));
-        for (let attempt = 0; ; attempt++) {
-          const h = putWithProgress(`/api/uploads/${uploadId}/parts/${n}`, chunk, (loaded) => {
-            rt.partLoaded.set(n, loaded);
-            this.progress(t, rt);
-          });
-          rt.handles.add(h);
-          try {
-            await h.promise;
-            rt.partLoaded.delete(n);
-            rt.doneBytes += chunk.size;
-            this.progress(t, rt);
-            break;
-          } catch (e) {
-            rt.partLoaded.delete(n);
-            if (rt.paused || rt.canceled) return;
-            if (!(e instanceof ApiError) || !retryable(e) || attempt >= MAX_PART_RETRIES) throw e;
-            await sleep(backoff(attempt));
-          } finally {
-            rt.handles.delete(h);
+    const stop = () => rt.paused || rt.canceled || rt.failed;
+    /** One part, with its retries. */
+    const sendPart = async (n: number) => {
+      const start = (n - 1) * ps;
+      const chunk = t.file.slice(start, Math.min(start + ps, t.size));
+      for (let attempt = 0; ; attempt++) {
+        if (stop()) return;
+        const h = putWithProgress(`/api/uploads/${uploadId}/parts/${n}`, chunk, (loaded) => {
+          rt.partLoaded.set(n, loaded);
+          this.progress(t, rt);
+        });
+        rt.handles.add(h);
+        try {
+          await h.promise;
+          rt.partLoaded.delete(n);
+          rt.doneBytes += chunk.size;
+          this.progress(t, rt);
+          return;
+        } catch (e) {
+          rt.partLoaded.delete(n);
+          if (stop()) return;
+          if (!(e instanceof ApiError) || !retryable(e)) throw e;
+          if (await this.awaitNetwork(t, rt)) {
+            attempt--;
+            continue;
           }
+          if (attempt >= MAX_PART_RETRIES) throw e;
+          await sleep(backoff(attempt));
+          if (stop()) return;
+        } finally {
+          rt.handles.delete(h);
         }
       }
     };
-    await Promise.all(
-      Array.from({ length: Math.min(this.opts.partConcurrency, queue.length || 1) }, worker),
-    );
+    // Workers take parts off the queue; their number follows partConcurrency as it changes.
+    await new Promise<void>((resolve, reject) => {
+      let running = 0;
+      let settled = false;
+      const finish = (err?: unknown) => {
+        if (settled) return;
+        if (err !== undefined) {
+          settled = true;
+          rt.failed = true;
+          for (const h of rt.handles) h.abort();
+          reject(err);
+        } else if (running === 0 && (!queue.length || stop())) {
+          settled = true;
+          resolve();
+        }
+      };
+      const spawn = () => {
+        while (!settled && !stop() && running < this.opts.partConcurrency && queue.length) {
+          const n = queue.shift()!;
+          running++;
+          sendPart(n).then(
+            () => {
+              running--;
+              spawn();
+              finish();
+            },
+            (e: unknown) => {
+              running--;
+              finish(e);
+            },
+          );
+        }
+        finish();
+      };
+      rt.grow = spawn;
+      spawn();
+    });
+    rt.grow = null;
     if (rt.paused || rt.canceled) return null;
 
     this.patch(t.id, { status: 'completing' });

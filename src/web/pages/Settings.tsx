@@ -1,12 +1,22 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Brain, CircleUser, KeyRound, Languages, MapPin, ShieldCheck, Trash2 } from 'lucide-react';
+import {
+  ArrowDownUp,
+  Brain,
+  CircleUser,
+  KeyRound,
+  Languages,
+  MapPin,
+  ShieldCheck,
+  Trash2,
+} from 'lucide-react';
 import { useState } from 'react';
 import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
 import { sitePage } from '../lib/zeiko';
 import { Button } from '../components/Button';
 import { TotpSetup } from '../components/TotpSetup';
+import { TransferSettingsForm } from '../components/TransferSettings';
 import { api, ApiError, sendJson } from '../lib/api';
 import { downloadZip } from '../lib/files';
 import { authClient } from '../lib/auth-client';
@@ -74,6 +84,7 @@ export function Settings() {
 
       <ZeikoAccount />
       <Language />
+      <Transfers />
 
       <section className={card} aria-labelledby="profil">
         <h2 id="profil" className="font-medium">
@@ -174,6 +185,19 @@ function ZeikoAccount() {
           <Brain className="h-4 w-4" aria-hidden="true" /> {t.products.ai}
         </Link>
       </div>
+    </section>
+  );
+}
+
+/** How many files upload and download at once on this device (ADR-053). */
+function Transfers() {
+  return (
+    <section className={card} aria-labelledby="transfer">
+      <h2 id="transfer" className="flex items-center gap-2 font-medium">
+        <ArrowDownUp className="h-4 w-4" aria-hidden="true" /> {t.transfer.settingsTitle}
+      </h2>
+      <p className="mt-1 mb-4 text-sm text-[var(--fg-muted)]">{t.transfer.settingsBody}</p>
+      <TransferSettingsForm />
     </section>
   );
 }

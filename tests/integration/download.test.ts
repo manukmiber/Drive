@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { APP, makeRuntime } from '../helpers/runtime';
 import { signIn } from '../helpers/session';
-import { downloadPath, grantPlan, rootOf, uploadText } from '../helpers/files';
+import { invalidateConfigMemo } from '../../src/worker/services/config';
+import { createFolder, downloadPath, grantPlan, rootOf, uploadText } from '../helpers/files';
 
 async function setup() {
   const rt = await makeRuntime();
@@ -104,5 +105,83 @@ describe('signed downloads (SPEC §5.3)', () => {
     const body = await (await s.req('GET', `/api/files/${node.id}/download`)).text();
     expect(body).not.toMatch(/r2\.cloudflarestorage|X-Amz|amazonaws|r2\.dev/i);
     expect(JSON.parse(body).url).toMatch(/^\/d\//);
+  });
+});
+
+describe('download separately (ADR-053)', () => {
+  interface Plan {
+    items: Array<{ nodeId: string; name: string; path: string; size: number; url: string }>;
+    folders: string[];
+    skipped: number;
+    totalBytes: number;
+    expiresAt: number;
+  }
+
+  it('lists every ready file under the chosen items with its own working link', async () => {
+    const rt = await makeRuntime();
+    const s = await signIn(rt, 'plan@example.com');
+    await grantPlan(rt, s.userId);
+    const root = await rootOf(s);
+    const photos = await createFolder(s, root, 'Foto');
+    const y2024 = await createFolder(s, photos.id, '2024');
+    await createFolder(s, photos.id, 'Kosong');
+    const a = await uploadText(s, photos.id, 'a.txt', 'aaa');
+    await uploadText(s, y2024.id, 'b.txt', 'bbbbb');
+    const loose = await uploadText(s, root, 'c.txt', 'cc');
+    await rt.settle();
+    // Still being scanned: left out, and counted.
+    await uploadText(s, y2024.id, 'pending.txt', 'zz');
+
+    const res = await s.req('POST', '/api/files/download-plan', {
+      // The folder, a file inside it again, and a loose file.
+      nodeIds: [photos.id, a.id, loose.id],
+    });
+    expect(res.status).toBe(200);
+    const plan = (await res.json()) as Plan;
+    expect(plan.items.map((i) => i.path).sort()).toEqual([
+      'Foto/2024/b.txt',
+      'Foto/a.txt',
+      'c.txt',
+    ]);
+    expect(plan.folders).toEqual(expect.arrayContaining(['Foto', 'Foto/2024', 'Foto/Kosong']));
+    expect(plan.skipped).toBe(1);
+    expect(plan.totalBytes).toBe(10);
+    for (const i of plan.items) {
+      expect(i.url).toMatch(/^\/d\//);
+      // No cookie: the queue fetches like a download manager, Range included.
+      const r = await rt.fetch(new Request(`${APP}${i.url}`, { headers: { range: 'bytes=1-' } }));
+      expect(r.status).toBe(206);
+      expect((await r.text()).length).toBe(i.size - 1);
+    }
+  });
+
+  it("refuses someone else's items and too many files", async () => {
+    const rt = await makeRuntime();
+    const owner = await signIn(rt, 'owner-plan@example.com');
+    await grantPlan(rt, owner.userId);
+    const root = await rootOf(owner);
+    const folder = await createFolder(owner, root, 'Rahasia');
+    await uploadText(owner, folder.id, '1.txt', '1');
+    await uploadText(owner, folder.id, '2.txt', '2');
+    await uploadText(owner, folder.id, '3.txt', '3');
+    await rt.settle();
+
+    const other = await signIn(rt, 'other-plan@example.com');
+    await grantPlan(rt, other.userId);
+    const stolen = await other.req('POST', '/api/files/download-plan', { nodeIds: [folder.id] });
+    expect([403, 404]).toContain(stolen.status);
+    expect(await stolen.text()).not.toContain('/d/');
+
+    rt.d1.sqlite
+      .prepare(
+        `INSERT INTO app_config (key, value_json, updated_by, updated_at)
+         VALUES ('download_plan_max_items', '2', 'test', 0)`,
+      )
+      .run();
+    await rt.env.CONFIG_KV.delete('config:v1');
+    invalidateConfigMemo(rt.env);
+    const big = await owner.req('POST', '/api/files/download-plan', { nodeIds: [folder.id] });
+    expect(big.status).toBe(413);
+    expect(((await big.json()) as { error: { data: { max: number } } }).error.data.max).toBe(2);
   });
 });

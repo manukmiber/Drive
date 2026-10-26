@@ -1115,3 +1115,46 @@ Hapus/ganti latar belakang dibatalkan pemilik (butuh model AI), jadi tidak ada m
 **Konsekuensi:**
 - Menyimpan foto 2 MP dengan semua efek ±1,5 detik di HP uji; foto 12 MP bisa beberapa detik (ada tanda memproses).
 - Belum ada: kuas lokal (selective/brush), perspektif, hapus latar, sensor PDF permanen, sandi PDF, OCR.
+
+## ADR-053 — Batas upload/unduh sendiri (maks 20) dan antrean unduhan di app
+
+**Status:** diterima (pemilik, 2026-10-26). **Konteks:** pemilik: "buat untuk share, S3, dan upload/download lebih
+robust dan punya banyak fitur. Sekarang user bisa ngelimit upload dan download per batch sesuai dengan internet
+mereka. Mentok 20 upload dan 20 download." Sebelumnya batas upload hanya dari config (3 file × 4 bagian) dan unduhan
+banyak file hanya lewat ZIP.
+
+**Keputusan:**
+- **Pilihan orangnya sendiri, per perangkat** (`src/web/lib/transfer.ts`, localStorage `zk_transfer`): upload
+  bersamaan, bagian per file besar, dan unduhan bersamaan. Internet melekat ke perangkat dan jaringannya, bukan ke
+  akun, jadi tidak disimpan di server. Preset Hemat (1/2/1), Normal (default config), Cepat (8/6/8), Maksimal (batas
+  atas), atau atur sendiri; saran dari `navigator.connection` kalau browser punya. Di Pengaturan → "Upload &
+  unduhan" dan lewat ⋮ di panel transfer.
+- **Batas atas 20 file tiap arah, tidak bisa lebih**: config `upload_parallel_files_cap` dan
+  `download_parallel_files_cap` (skema `max(20)`, default 20) hanya bisa menurunkan; `upload_part_concurrency_cap`
+  (default 8) untuk bagian per file. Default untuk perangkat yang belum memilih: `upload_max_parallel_files` (3),
+  `upload_part_concurrency` (4), `download_max_parallel_files` (3). Semua ada di config publik.
+- **Upload lebih tahan banting** (`upload/manager.ts`): batas baru langsung berlaku, juga untuk file yang sedang
+  berjalan (jumlah pekerja bagian ikut naik/turun); tanpa jaringan, bagian **menunggu** (status "Menunggu koneksi")
+  tanpa menghabiskan jatah coba ulang; upload yang gagal karena jaringan dimulai lagi otomatis saat online; satu bagian
+  yang gagal permanen menghentikan bagian lain; jeda/lanjut/batal semua.
+- **Unduh file terpisah** (dialog Unduh untuk banyak item/folder, di samping ZIP): `POST /api/files/download-plan
+  {nodeIds}` membuka folder seperti arsip (`collectFiles`) dan memberi link `/d/` bertanda tangan per file (izin
+  `view` per item, maks `download_plan_max_items` = 5.000, file yang belum siap dihitung `skipped`). Antrean unduhan
+  (`download/manager.ts`) mengambil N file sekaligus dengan `fetch` + Range: jeda/lanjut dari byte terakhir, coba ulang
+  dengan backoff (maks 5), menunggu jaringan, link baru lewat `/api/files/:id/download` kalau yang lama kedaluwarsa
+  (410/403), mulai dari awal kalau server mengabaikan Range, ukuran akhir dicek.
+- **Ke mana byte-nya**: (1) penyimpanan privat browser (OPFS), lalu file jadi diserahkan ke folder Unduhan lewat blob
+  URL dan dihapus dari OPFS 15 menit kemudian (sisa tab yang tertutup dibersihkan saat app dibuka lagi); (2) **folder
+  pilihan** di perangkat (File System Access API, Chrome/Edge desktop) dengan struktur folder ikut, nama aman untuk
+  semua sistem, tidak pernah menimpa ("a (1).jpg"); (3) kalau OPFS tidak ada atau ruangnya kurang, file diserahkan
+  ke unduhan browser sendiri, berjeda 400 ms. Satu file tetap langsung ke browser seperti dulu (IDM/aria2 tetap jalan).
+- Panel transfer di kanan bawah sekarang punya tab Upload/Unduh, progres dan kecepatan total, ⋮ (jeda/lanjut/batal
+  semua, atur jumlah bersamaan). Selama ada transfer: menutup tab ditanya dulu, dan layar dijaga menyala (wake lock,
+  bisa dimatikan) karena HP menghentikan tab yang tidur.
+- Tidak ada pembatasan kecepatan buatan dari server (SPEC §5.1 tetap): yang diatur hanya berapa yang berjalan bersamaan.
+
+**Konsekuensi:** unduhan lewat OPFS butuh ruang dua kali ukuran file sebentar. Safari lama tanpa
+`createWritable` memakai jalur (3). Test: `tests/unit/transfer.test.ts` (batas 20, preset, saran koneksi, antrean:
+batas bersamaan dan perubahannya, Range setelah putus, link kedaluwarsa, server tanpa Range, offline, coba ulang,
+jeda/lanjut/batal, serah ke browser), `tests/integration/download.test.ts` (plan, link per file, akses orang lain,
+batas jumlah).
