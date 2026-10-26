@@ -78,6 +78,8 @@ export const sessions = sqliteTable('sessions', {
   userAgent: text('user_agent'),
   createdAt: date('created_at').notNull(),
   updatedAt: date('updated_at').notNull(),
+  /** Last TOTP/passkey proof in this session (ADR-056); staff routes want it fresh. */
+  secondFactorAt: date('second_factor_at'),
 });
 
 export const accounts = sqliteTable('accounts', {

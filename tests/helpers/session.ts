@@ -104,7 +104,21 @@ export async function signIn(
   };
 }
 
-/** An admin (or moderator) with a second factor, as staff-only routes want (SPEC §13.1). */
+/** Marks the user's sessions as having just proved TOTP or a passkey (ADR-056). */
+export function proveSecondFactor(
+  rt: DevRuntime,
+  userId: string,
+  at = rt.env.CLOCK?.now() ?? Date.now(),
+): void {
+  rt.d1.sqlite
+    .prepare('UPDATE sessions SET second_factor_at = ? WHERE user_id = ?')
+    .run(at, userId);
+}
+
+/**
+ * An admin (or moderator) with a second factor, as staff-only routes want (SPEC §13.1), proved in
+ * this session (ADR-056).
+ */
 export async function staffSignIn(
   rt: DevRuntime,
   email: string,
@@ -115,5 +129,7 @@ export async function staffSignIn(
   rt.d1.sqlite
     .prepare('UPDATE users SET role = ?, two_factor_enabled = 1 WHERE id = ?')
     .run(role, s.userId);
-  return signIn(rt, email, over); // a fresh session carries the new role
+  const fresh = await signIn(rt, email, over); // a fresh session carries the new role
+  proveSecondFactor(rt, fresh.userId);
+  return fresh;
 }

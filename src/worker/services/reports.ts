@@ -1,5 +1,8 @@
 // Abuse reports & takedown (SPEC §13.1, §14.3). SLA per Permenkominfo 5/2020: urgent 4 h, normal
-// 24 h (config). CSAM reports act immediately: links off, quarantine + legal hold, uploader frozen.
+// 24 h (config). A CSAM report from someone accountable (signed in, or past Turnstile) acts at once
+// on the content: links off, quarantine + legal hold. Freezing the uploader's account is a
+// moderator's call, never automatic: a report is only a claim (ADR-056). Rejecting a report undoes
+// what it switched off.
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
@@ -111,6 +114,8 @@ export async function createReport(
     details?: string | undefined;
     contact?: string | undefined;
     reporterUserId?: string | null;
+    /** Signed in, or a human by Turnstile: only then does a CSAM report act before review. */
+    accountable?: boolean;
   },
 ): Promise<{ id: string; priority: string; slaDueAt: number }> {
   const cfg = await ctx.config();
@@ -141,13 +146,13 @@ export async function createReport(
       now,
     )
     .run();
-  if (input.category === 'csam' && input.targetType !== 'ad') {
-    // Automatic: never wait for a human on CSAM (SPEC §14.3).
+  if (input.category === 'csam' && input.targetType !== 'ad' && input.accountable) {
+    // The content goes dark before anyone looks (SPEC §14.3); the account waits for a moderator.
     await applyActions(
       ctx,
       null,
       id,
-      ['disable_links', 'quarantine', 'legal_hold', 'ban_uploader'],
+      ['disable_links', 'quarantine', 'legal_hold'],
       'auto: laporan CSAM',
     );
   }
@@ -177,22 +182,26 @@ export async function applyActions(
     }>();
   if (!report) throw new AppError('NOT_FOUND', 'report not found');
   const target = await resolveTarget(ctx, report.target_type, report.target_id);
+  if (actions.includes('ban_uploader'))
+    for (const u of target.uploaderIds) await assertMaySuspend(ctx, actorId, u);
   const now = ctx.now();
+  // Marks carry the report, so rejecting it undoes exactly what it switched off.
+  const mark = `abuse:${reportId}`;
   for (const action of actions) {
     switch (action) {
       case 'disable_links':
         if (report.target_type === 'share')
-          await DB.prepare(`UPDATE shares SET disabled_reason = 'abuse' WHERE id = ?1`)
-            .bind(report.target_id)
+          await DB.prepare(`UPDATE shares SET disabled_reason = ?2 WHERE id = ?1`)
+            .bind(report.target_id, mark)
             .run();
-        for (const n of target.nodeIds.slice(0, 500)) await disableSharesForNode(ctx, n, 'abuse');
+        for (const n of target.nodeIds.slice(0, 500)) await disableSharesForNode(ctx, n, mark);
         break;
       case 'quarantine':
         for (const b of target.blobIds)
           await DB.prepare(
             `UPDATE blobs SET scan_status = 'quarantined', scan_detail = ?2 WHERE id = ?1`,
           )
-            .bind(b, `abuse:${reportId}`)
+            .bind(b, mark)
             .run();
         break;
       case 'unquarantine':
@@ -243,19 +252,31 @@ export async function applyActions(
         }
         break;
       case 'resolve':
-      case 'reject':
-        await DB.prepare(
+      case 'reject': {
+        const close = DB.prepare(
           `UPDATE abuse_reports SET status = ?2, resolved_by = ?3, resolved_at = ?4, action = ?5 WHERE id = ?1`,
-        )
-          .bind(
-            reportId,
-            action === 'resolve' ? 'resolved' : 'rejected',
-            actorId,
-            now,
-            note.slice(0, 500),
-          )
-          .run();
+        ).bind(
+          reportId,
+          action === 'resolve' ? 'resolved' : 'rejected',
+          actorId,
+          now,
+          note.slice(0, 500),
+        );
+        if (action === 'resolve') await close.run();
+        // A rejected report was wrong: put back what it switched off (only its own marks).
+        else
+          await DB.batch([
+            close,
+            DB.prepare(`UPDATE shares SET disabled_reason = NULL WHERE disabled_reason = ?1`).bind(
+              mark,
+            ),
+            DB.prepare(
+              `UPDATE blobs SET scan_status = 'clean', scan_detail = NULL WHERE scan_detail = ?1 AND scan_status = 'quarantined'`,
+            ).bind(mark),
+            DB.prepare(`DELETE FROM legal_holds WHERE reason = ?1`).bind(`report:${reportId}`),
+          ]);
         break;
+      }
     }
   }
   if (report.status === 'open' && !actions.includes('resolve') && !actions.includes('reject')) {
@@ -270,6 +291,27 @@ export async function applyActions(
     note,
     nodes: target.nodeIds.length,
     blobs: target.blobIds.length,
+  });
+}
+
+/**
+ * Moderators act on ordinary accounts only; freezing a staff account is an admin's call (ADR-056).
+ * `actorId` null = automatic; an actor that is no user here is the relay's operator (ops API).
+ */
+export async function assertMaySuspend(
+  ctx: Ctx,
+  actorId: string | null,
+  userId: string,
+): Promise<void> {
+  if (actorId === null) return;
+  const { results } = await ctx.env.DB.prepare('SELECT id, role FROM users WHERE id IN (?1, ?2)')
+    .bind(actorId, userId)
+    .all<{ id: string; role: string }>();
+  const actor = results.find((r) => r.id === actorId);
+  const target = results.find((r) => r.id === userId);
+  if (!actor || !target || target.role === 'user' || actor.role === 'admin') return;
+  throw new AppError('FORBIDDEN', 'only an admin can suspend a staff account', {
+    reason: 'STAFF_TARGET',
   });
 }
 

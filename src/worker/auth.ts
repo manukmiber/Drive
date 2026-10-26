@@ -17,6 +17,7 @@ import { isAppError } from './lib/errors';
 import { log } from './lib/log';
 import { ensurePersonalSpace } from './services/accounts';
 import { areaForCity } from './services/ads';
+import { secondFactor } from './auth-second-factor';
 
 export const AUTH_BASE_PATH = '/api/auth';
 /** `__Host-` cookies: Secure, Path=/, no Domain → never sent to USERCONTENT_ORIGIN (SPEC §14.4). */
@@ -28,7 +29,12 @@ export const ZEIKO_PROVIDER = 'zeiko';
 /** Sign-in paths that would bypass Zeiko Accounts: a passkey is a second factor only. */
 const DISABLED_PATHS = ['/passkey/generate-authenticate-options', '/passkey/verify-authentication'];
 
-const STATUS = { 400: 'BAD_REQUEST', 403: 'FORBIDDEN', 503: 'SERVICE_UNAVAILABLE' } as const;
+const STATUS = {
+  400: 'BAD_REQUEST',
+  403: 'FORBIDDEN',
+  429: 'TOO_MANY_REQUESTS',
+  503: 'SERVICE_UNAVAILABLE',
+} as const;
 
 /** An AppError in Better Auth's own error shape, keeping our code for the client. */
 function asApiError(e: unknown): unknown {
@@ -98,7 +104,11 @@ function zeikoSignIn(ctx: Ctx): BetterAuthPlugin {
               .where(eq(schema.users.email, email))
               .get();
             if (same) {
-              await ia.createAccount({ userId: same.id, providerId: ZEIKO_PROVIDER, accountId: a.id });
+              await ia.createAccount({
+                userId: same.id,
+                providerId: ZEIKO_PROVIDER,
+                accountId: a.id,
+              });
               userId = same.id;
               log.info('zeiko_linked', { userId });
             } else {
@@ -181,6 +191,8 @@ function build(ctx: Ctx) {
       modelName: 'sessions',
       expiresIn: 60 * 60 * 24 * 30,
       updateAge: 60 * 60 * 24,
+      // Set only by auth-second-factor.ts when this session proves TOTP or a passkey (ADR-056).
+      additionalFields: { secondFactorAt: { type: 'date', required: false, input: false } },
     },
     account: { modelName: 'accounts', accountLinking: { enabled: false } },
     verification: { modelName: 'verifications' },
@@ -207,6 +219,7 @@ function build(ctx: Ctx) {
     },
     plugins: [
       zeikoSignIn(ctx),
+      secondFactor(ctx),
       passkey({
         rpID: new URL(env.APP_ORIGIN).hostname,
         rpName: 'Zeiko Drive',

@@ -23,11 +23,16 @@ export const reports = new Hono<AppBindings>().post(
   ),
   async (c) => {
     const { turnstileToken, ...input } = c.req.valid('json');
+    const user = c.get('user');
     // Signed-in reporters are already rate-limited per account; anonymous ones prove they're human.
-    if (!c.get('user')) await verifyTurnstile(c.get('ctx'), turnstileToken, clientIp(c.req.raw));
+    // Without Turnstile here an anonymous report still lands, but only a moderator acts on it.
+    const human = user
+      ? true
+      : await verifyTurnstile(c.get('ctx'), turnstileToken, clientIp(c.req.raw));
     const r = await createReport(c.get('ctx'), {
       ...input,
-      reporterUserId: c.get('user')?.id ?? null,
+      reporterUserId: user?.id ?? null,
+      accountable: human,
     });
     return c.json({ id: r.id, priority: r.priority }, 201);
   },

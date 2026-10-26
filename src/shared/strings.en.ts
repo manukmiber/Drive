@@ -485,6 +485,7 @@ export const en: Strings = {
     spacePersonal: 'Personal',
     spaceFamily: 'Family',
     scanLabels: {
+      basic: 'Basic check (no antivirus yet)',
       pending: 'Being checked',
       clean: 'Safe',
       infected: 'Harmful',
@@ -1478,6 +1479,16 @@ export const en: Strings = {
     totpDisable: 'Turn off',
     backupCodes: 'Backup codes (keep them somewhere safe)',
     verify: 'Verify',
+    stepUpTitle: 'Confirm your second factor',
+    stepUpBody:
+      'Signing in with your Zeiko Account isn’t enough for this. Confirm with a passkey or a code from your authenticator app.',
+    stepUpManage: 'To change a passkey or the authenticator, confirm with one you already have.',
+    stepUpPasskey: 'Use a passkey',
+    stepUpCode: '6-digit code',
+    stepUpConfirm: 'Confirm',
+    stepUpDone: 'Confirmed.',
+    stepUpPasskeyFailed: 'The passkey didn’t work. Try again or use a code.',
+    stepUpLocked: 'Too many wrong codes. Wait a few minutes.',
   },
   share: {
     linkExpired: 'This link no longer works.',

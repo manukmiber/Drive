@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@better-auth/passkey": "^1.7.12",
+    "@better-auth/utils": "0.5.0",
     "@cloudflare/containers": "^0.3.7",
     "@codemirror/commands": "6.11.1",
     "@codemirror/language": "6.13.1",
@@ -41,6 +42,8 @@
     "@fortune-sheet/react": "1.0.4",
     "@hono/zod-validator": "^0.9.1",
     "@lezer/highlight": "1.2.5",
+    "@simplewebauthn/browser": "13.3.0",
+    "@simplewebauthn/server": "13.3.3",
     "@tanstack/react-query": "^5.104.5",
     "@tanstack/react-router": "^1.170.45",
     "@tanstack/react-virtual": "^3.14.21",

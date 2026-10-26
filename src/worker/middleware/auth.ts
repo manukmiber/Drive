@@ -1,8 +1,7 @@
 import type { MiddlewareHandler } from 'hono';
 import { getCookie, setCookie } from 'hono/cookie';
-import { and, count, eq } from 'drizzle-orm';
 import { COOKIE_PREFIX, getAuth } from '../auth';
-import { schema } from '../db/client';
+import { hasSecondFactor, secondFactorFresh } from '../auth-second-factor';
 import { AppError } from '../lib/errors';
 import { randomBase62 } from '../lib/ids';
 import { timingSafeEqual } from '../lib/crypto';
@@ -17,6 +16,7 @@ export const loadSession: MiddlewareHandler<AppBindings> = async (c, next) => {
   const result = await auth.api.getSession({ headers: c.req.raw.headers });
   if (result) {
     const u = result.user as typeof result.user & Partial<SessionUser>;
+    const proved = (result.session as { secondFactorAt?: Date | null }).secondFactorAt;
     c.set('user', {
       id: u.id,
       email: u.email,
@@ -24,6 +24,7 @@ export const loadSession: MiddlewareHandler<AppBindings> = async (c, next) => {
       role: u.role ?? 'user',
       status: u.status ?? 'active',
       twoFactorEnabled: Boolean(u.twoFactorEnabled),
+      secondFactorAt: proved ? proved.getTime() : null,
     });
   }
   await next();
@@ -38,8 +39,9 @@ export const requireUser: MiddlewareHandler<AppBindings> = async (c, next) => {
 };
 
 /**
- * Admin/moderator routes: role check plus a second factor on the account — TOTP enabled or at
- * least one passkey (SPEC §13.1 "wajib passkey/TOTP").
+ * Admin/moderator routes (SPEC §13.1 "wajib passkey/TOTP"): an active account with the role, a
+ * second factor on it (TOTP or a passkey), and that factor proved in this session recently
+ * (ADR-056). Signing in through Zeiko Accounts alone never opens them.
  */
 export function requireStaff(
   roles: Array<SessionUser['role']> = ['admin'],
@@ -47,18 +49,17 @@ export function requireStaff(
   return async (c, next) => {
     const user = c.get('user');
     if (!user) throw new AppError('UNAUTHORIZED', 'sign in required');
+    if (user.status !== 'active')
+      throw new AppError('FORBIDDEN', 'account suspended', { reason: user.status });
     if (!roles.includes(user.role)) throw new AppError('FORBIDDEN', 'staff only');
-    if (!user.twoFactorEnabled) {
-      const { db } = c.get('ctx');
-      const row = await db
-        .select({ n: count() })
-        .from(schema.passkeys)
-        .where(and(eq(schema.passkeys.userId, user.id)))
-        .get();
-      if (!row || row.n === 0) {
-        throw new AppError('FORBIDDEN', 'second factor required', { reason: 'ADMIN_2FA_REQUIRED' });
-      }
-    }
+    const ctx = c.get('ctx');
+    if (!(await hasSecondFactor(ctx, user)))
+      throw new AppError('FORBIDDEN', 'second factor required', { reason: 'ADMIN_2FA_REQUIRED' });
+    const hours = (await ctx.config()).staff_second_factor_hours;
+    if (!secondFactorFresh(user.secondFactorAt, hours, ctx.now()))
+      throw new AppError('FORBIDDEN', 'confirm your second factor', {
+        reason: 'SECOND_FACTOR_REQUIRED',
+      });
     await next();
   };
 }

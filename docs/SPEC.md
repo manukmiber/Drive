@@ -625,7 +625,7 @@ Selama `pending`, file hanya bisa diakses pemiliknya dan tidak bisa di-share.
 ### 14.3 Anti-CSAM dan konten ilegal
 - Nyalakan **Cloudflare CSAM Scanning Tool** di zona. Tool ini mencocokkan konten yang dilayani **lewat cache Cloudflare**, jadi verifikasi apakah respons Worker/Cache API kita tercakup. Kalau tidak, buat rute thumbnail/pratinjau gambar yang cacheable (dengan kunci yang tidak membocorkan akses). Catat keputusannya di `DECISIONS.md`.
 - Adapter `CsamDetector` (perceptual hash matching) dengan provider opsional: Hive, Thorn Safer, atau PhotoDNA. Semuanya butuh perjanjian vendor, jadi pakai mock dulu. Dijalankan di pipeline scan untuk gambar dan keyframe video.
-- Laporan kategori CSAM → link share langsung nonaktif otomatis, file dikarantina + legal hold (jangan dihapus sebelum prosedur hukum jelas), akun pengunggah dibekukan, masuk antrean prioritas mendesak.
+- Laporan kategori CSAM dari pelapor yang login atau lolos Turnstile → link share langsung nonaktif otomatis, file dikarantina + legal hold (jangan dihapus sebelum prosedur hukum jelas), masuk antrean prioritas mendesak. Akun pengunggah dibekukan oleh moderator setelah memeriksa, tidak otomatis: laporan hanyalah klaim (ADR-056). Laporan yang ditolak memulihkan yang dimatikannya.
 - Hash konten yang sudah di-takedown masuk blocklist untuk mencegah upload ulang.
 - SLA takedown sesuai Permenkominfo 5/2020: 1×24 jam sejak permintaan, dan 4 jam untuk konten mendesak (terorisme, CSAM, konten yang meresahkan). Timer SLA tampil di admin.
 

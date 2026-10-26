@@ -73,6 +73,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `entry.ts`, `index.ts` | Entry wrangler: handler fetch/queue/scheduled + kelas Container. |
 | `app.ts` ★ | Router Hono. Mount `/api/ops` sebelum `/api`, fallback SPA di root, `/dashboard/…` → `/…` (301). |
 | `auth.ts` ★ | Better Auth + plugin `zeikoSignIn` (`/api/auth/zeiko/exchange`); passkey/TOTP untuk faktor kedua staf. |
+| `auth-second-factor.ts` | Bukti faktor kedua per sesi (ADR-056): `/api/auth/second-factor/{totp,passkey/options,passkey/verify}`, hook "ubah faktor butuh faktor", `secondFactorFresh`. |
 | `env.ts` ★ | Tipe binding, var, dan secret (`ZEIKO_*`, `APP_BASE_PATH`). |
 | `context.ts`, `types.ts`, `containers.ts` | Konteks per request, tipe Hono, Container DO. |
 | `db/schema.ts` ★, `db/client.ts` | Mirror Drizzle dari SQL (+`locale`). |
@@ -114,6 +115,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `lib/errors.ts` ★ | Kode error, termasuk `SIGN_IN_EXPIRED`, `EMAIL_UNVERIFIED`, `ACCOUNTS_UNAVAILABLE`. |
 | `middleware/base.ts` ★ | Header keamanan + CSP app (`connect-src` termasuk pintu Zeiko). |
 | `lib/{crypto,http,serve,zip,tar,crc32,sha256,sniff,mp4,names,ids,r2-put,validate,turnstile,analytics,log}.ts` | Helper kripto, Range, streaming R2, arsip, hash, sniff MIME, nama file, ULID, log. |
+| `lib/batch-guard.ts` | `guardStmt`: syarat yang membatalkan seluruh batch D1 bila tidak lagi benar (tabel `batch_guards`, ADR-056). |
 | `middleware/{auth,errors,ratelimit}.ts` | Sesi, format error, rate limit. |
 | `queues/{index,handlers,messages}.ts` | Konsumer queue (scan, compress, notify, …); payload berisi ID saja. |
 | `cron/{index,tasks}.ts` ★ | Satu cron gabungan; tugas per jam/malam, termasuk `reconcile_payments`. |
@@ -134,6 +136,7 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `pages/{Drive,Lists,Trash,Billing,Family,Compress,Downloads,Advertiser,Admin,Report,Legal,NotFound}.tsx` | Halaman lain (sudah dua bahasa). `Landing.tsx` **dihapus** (pindah ke website). |
 | `components/AppShell.tsx` ★ | Sidebar (navigasi + "Produk Zeiko"), tombol bahasa, keluar (Better Auth + pintu). |
 | `components/explorer/*`, `components/ui/*`, `components/*.tsx` | Explorer file, dialog, menu, toast, panel upload, meter, TOTP, Turnstile, iklan. |
+| `components/SecondFactorPrompt.tsx` | Konfirmasi passkey/kode autentikator untuk panel admin dan ubah faktor (ADR-056). |
 | `upload/*` | Antrean upload multipart + resume (IndexedDB), folder, thumbnail, share target. |
 | `editors/{files,ui,EditorHost}.ts(x)` | Editor (ADR-050): ambil bytes lewat URL pratinjau, simpan lewat antrean upload (baru / ganti asli → Sampah) atau unduh; bingkai layar penuh, dialog simpan; editor dimuat saat dibuka. |
 | `editors/photo/*` | `adjust.ts` (atur gambar, white balance, kurva, looks), `effects.ts` (struktur, ketajaman, glow, blur lensa, vinyet, butiran, perbaiki), `geometry.ts` (potong/putar/balik/luruskan, matriks foto↔layar), `render.ts` (kanvas, teks, bingkai), `CurveEditor.tsx`, `overlays.tsx`, `panels.tsx`, `PhotoEditor.tsx` (ADR-052). |

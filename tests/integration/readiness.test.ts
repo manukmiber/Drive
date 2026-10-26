@@ -30,6 +30,7 @@ describe('feature readiness', () => {
   it('shows everything that is set up, and the relay sees the same', async () => {
     const rt = await makeRuntime({ vars: { ZEIKO_OPS_TOKEN: OPS_KEY, S3_ORIGIN } });
     expect(await capabilities(rt)).toEqual({
+      antivirus: false,
       asyncArchives: true,
       emailShare: true,
       s3: true,

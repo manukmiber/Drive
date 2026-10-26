@@ -238,6 +238,38 @@ describe('family plan (SPEC §9)', () => {
     );
   });
 
+  it('an invite taken by someone else mid-accept changes nothing (ADR-056)', async () => {
+    const { rt, owner, invite } = await setupFamily();
+    rt.d1.sqlite.prepare("UPDATE plans SET max_members = 6 WHERE code = 'family'").run();
+    const t = await invite();
+    const late = await signIn(rt, 'telat@example.com');
+    const winner = await signIn(rt, 'menang@example.com');
+    // The race: between our checks and our batch, the winner's accept lands.
+    const db = rt.env.DB as unknown as {
+      batch: (s: Array<{ sql: string }>) => Promise<unknown>;
+    };
+    const batch = db.batch.bind(db);
+    db.batch = async (stmts) => {
+      if (stmts[0]?.sql.startsWith('UPDATE family_invites SET accepted_by'))
+        rt.d1.sqlite
+          .prepare(
+            'UPDATE family_invites SET accepted_by = ?, accepted_at = 1 WHERE accepted_at IS NULL',
+          )
+          .run(winner.userId);
+      return batch(stmts);
+    };
+    const r = await late.req('POST', `/api/family/invites/${t}/accept`, {});
+    expect(r.status).toBe(409);
+    const me = (await (await late.req('GET', '/api/me')).json()) as {
+      space: { familyId: string | null };
+    };
+    expect(me.space.familyId).toBeNull();
+    const fam = (await (await owner.req('GET', '/api/family')).json()) as {
+      family: { members: Array<{ email: string }> };
+    };
+    expect(fam.family.members.map((m) => m.email)).not.toContain('telat@example.com');
+  });
+
   it('invites: single-use, expire, family size limit, personal plan conversion', async () => {
     const { rt, owner, invite } = await setupFamily();
     const t = await invite();
@@ -293,8 +325,7 @@ describe('family plan (SPEC §9)', () => {
       .get(f.id) as { space: string; pool_id: string };
     expect(node).toEqual({ space: 'personal', pool_id: after.space.poolId });
     expect(
-      ((await (await owner.req('GET', '/api/billing')).json()) as { creditIdr: number })
-        .creditIdr,
+      ((await (await owner.req('GET', '/api/billing')).json()) as { creditIdr: number }).creditIdr,
     ).toBeGreaterThan(49_000);
   });
 });

@@ -203,3 +203,15 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   versi `b51ffa80-e5e8-4317-8c94-37a94628b299`. Dicek dari luar: app, health, katalog (batas 20), link share palsu 404,
   preflight S3 tanpa CORS 403.
 - [ ] Belum: logo di tengah QR, upload multipart dari halaman `/s3`.
+
+## Audit OWASP Top 10:2025 (ADR-056, 2026-10-26)
+- [x] Faktor kedua staf dibuktikan per sesi (TOTP atau passkey, 12 jam); mengubah faktor butuh faktor; alert saat
+  faktor staf berubah.
+- [x] Staf yang dibekukan tidak bisa membuka admin; moderator tidak bisa membekukan staf.
+- [x] Laporan CSAM: isi dimatikan otomatis hanya dari pelapor login/Turnstile, akun dibekukan moderator; tolak
+  laporan memulihkan.
+- [x] Redirect `/dashboard//…` hanya ke app sendiri; undangan keluarga tidak bisa direbut/melewati batas (guard batch).
+- [x] Label "Dicek dasar" tanpa ClamAV; kesiapan `antivirus` dan `captcha` di tab Features relay.
+- [ ] Pemilik: Turnstile (site key di `deploy/production.json` → `turnstileSiteKey`, secret `TURNSTILE_SECRET_KEY`),
+  migrasi `0011` di D1 remote, deploy. Staf memasang TOTP/passkey kalau belum.
+

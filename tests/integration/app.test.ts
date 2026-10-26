@@ -47,6 +47,20 @@ describe('worker skeleton', () => {
     expect((await rt.fetch(`${APP}/dashboard`)).headers.get('location')).toBe('/');
   });
 
+  it('never sends the old /dashboard address to another site', async () => {
+    const rt = await makeRuntime();
+    for (const path of [
+      '/dashboard//evil.example/x',
+      '/dashboard/\\evil.example',
+      '/dashboard///a',
+    ]) {
+      const res = await rt.fetch(`${APP}${path}`);
+      const to = res.headers.get('location')!;
+      expect(to, path).toMatch(/^\/[^/\\]/);
+      expect(new URL(to, APP).origin, path).toBe(APP);
+    }
+  });
+
   it('serves nothing but previews on the user-content host', async () => {
     const rt = await makeRuntime();
     for (const path of ['/api/health', '/', '/__dev/mail']) {

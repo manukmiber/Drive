@@ -20,7 +20,7 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 | ---------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | Isi file keluar hanya ke VirusTotal, hanya executable/dokumen ber-macro yang belum dikenal (ADR-046) | ✅     | `services/virustotal.ts` (`vtKind`, `UPLOADED_KINDS`), nama file diganti `file.<ext>`, `tests/integration/virustotal.test.ts` |
 | SHA-256 + CRC32 semua file, blocklist hash                                                           | ✅     | `containers/scanner`, `services/scan.ts`, `tests/integration/scan.test.ts`                                                    |
-| ClamAV ≤ `scan_max_bytes`, retry 3× lalu alert                                                       | ✅     | container scanner + `scan_max_attempts`                                                                                       |
+| ClamAV ≤ `scan_max_bytes`, retry 3× lalu alert                                                       | 🟡     | container scanner + `scan_max_attempts`. Production masih pemindai dasar (butuh Containers/Workers Paid); app menulis "Dicek dasar", bukan "Aman", sampai ClamAV jalan, dan tab Features relay menyebutnya (ADR-056) |
 | File `pending` hanya untuk pemilik, tidak bisa di-share                                              | ✅     | `assertDownloadable`, `createShare` mewajibkan `ready`                                                                        |
 | Hasil kompres mewarisi status `clean`                                                                | ✅     | ADR-031 (dibuat transcoder kita sendiri dari file yang sudah dipindai)                                                        |
 
@@ -28,7 +28,7 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 
 | Item                                                                                     | Status | Bukti                                                                                 |
 | ---------------------------------------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------- |
-| Laporan CSAM → link mati, karantina + legal hold, uploader dibekukan, prioritas mendesak | ✅     | `services/reports.ts`, `tests/integration/admin.test.ts`                              |
+| Laporan CSAM → link mati, karantina + legal hold, prioritas mendesak; pembekuan akun oleh moderator | ✅     | `services/reports.ts`, `tests/integration/admin.test.ts`. Otomatis hanya dari pelapor yang login atau lolos Turnstile; menolak laporan memulihkan yang dimatikannya (ADR-056) |
 | Hash takedown masuk blocklist                                                            | ✅     | aksi `blocklist`                                                                      |
 | Timer SLA 4 jam / 24 jam di admin                                                        | ✅     | Admin → Laporan                                                                       |
 | Adapter `CsamDetector`                                                                   | 🟡     | mock; butuh perjanjian vendor (LAUNCH-CHECKLIST)                                      |
@@ -63,6 +63,28 @@ Status: ✅ terpenuhi & teruji · 🟡 terpenuhi sebagian / butuh tindakan pemil
 | Ekspor data + hapus akun (7 hari)               | ✅     | `tests/integration/account.test.ts`                                                                                             |
 | Runbook kebocoran data (3×24 jam)               | ✅     | `docs/runbook/kebocoran-data.md`. **Temuan audit:** sebelumnya belum ada                                                        |
 | Retensi log `log_retention_days`                | ✅     | cron `purge_old_logs`. **Temuan audit:** sebelumnya config ada tapi tidak dipakai. Audit log admin tidak ikut dihapus (ADR-034) |
+
+## Audit OWASP Top 10:2025 (2026-10-26, ADR-056)
+
+Audit statis seluruh repo. Yang ditemukan dan diperbaiki:
+
+- **Faktor kedua staf** hanya dicek "sudah dipasang", tidak pernah diminta. Sekarang rute admin/moderator meminta
+  TOTP atau passkey yang dibuktikan di sesi itu dalam `staff_second_factor_hours` (default 12 jam), dan menambah
+  atau menghapus faktor meminta faktor yang sudah ada. Perubahan faktor akun staf mengirim alert ke operator.
+- **Akun staf yang dibekukan** masih bisa membuka rute admin setelah login ulang. `requireStaff` sekarang
+  memeriksa status akun.
+- **Moderator** bisa membekukan admin. Sekarang hanya admin yang boleh membekukan akun staf.
+- **Laporan CSAM** langsung membekukan akun pengunggah, dari siapa pun. Sekarang laporan hanya mematikan link
+  dan mengarantina isi (dan hanya dari pelapor yang login atau lolos Turnstile); akun dibekukan oleh moderator.
+- **Redirect `/dashboard`** bisa diarahkan ke situs lain. Sekarang hanya ke halaman app sendiri.
+- **Undangan keluarga** yang diterima bersamaan bisa melewati batas anggota. Sekarang dicek ulang di dalam batch
+  (`lib/batch-guard.ts`).
+- **Label "Aman"** tampil walau production belum memakai ClamAV. Sekarang "Dicek dasar" sampai antivirus jalan.
+
+Yang dicek tanpa temuan: injeksi SQL (semua query ber-parameter), XSS (React + DOMPurify, HTML server di-escape),
+IDOR (`requireNode`), token bertanda tangan, SigV4 S3, webhook pembayaran. Catatan kecil yang belum diubah: token
+`ZEIKO_OPS_TOKEN` dipakai sebagai bearer ops sekaligus kunci tanda tangan callback pembayaran; password link
+share minimal 4 karakter.
 
 ## Zeiko S3 (ADR-044)
 

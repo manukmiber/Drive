@@ -484,6 +484,7 @@ export const t = {
     spacePersonal: 'Pribadi',
     spaceFamily: 'Keluarga',
     scanLabels: {
+      basic: 'Dicek dasar (belum dengan antivirus)',
       pending: 'Sedang dipindai',
       clean: 'Aman',
       infected: 'Berbahaya',
@@ -1505,6 +1506,17 @@ export const t = {
     totpDisable: 'Nonaktifkan',
     backupCodes: 'Kode cadangan (simpan di tempat aman)',
     verify: 'Verifikasi',
+    stepUpTitle: 'Konfirmasi lapisan kedua',
+    stepUpBody:
+      'Masuk lewat Akun Zeiko belum cukup untuk ini. Konfirmasi dengan passkey atau kode dari aplikasi autentikator.',
+    stepUpManage:
+      'Untuk mengubah passkey atau autentikator, konfirmasi dulu dengan yang sudah ada.',
+    stepUpPasskey: 'Pakai passkey',
+    stepUpCode: 'Kode 6 digit',
+    stepUpConfirm: 'Konfirmasi',
+    stepUpDone: 'Terkonfirmasi.',
+    stepUpPasskeyFailed: 'Passkey tidak berhasil. Coba lagi atau pakai kode.',
+    stepUpLocked: 'Terlalu banyak kode salah. Tunggu beberapa menit.',
   },
   share: {
     linkExpired: 'Link ini sudah tidak berlaku.',

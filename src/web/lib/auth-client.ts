@@ -6,3 +6,8 @@ export const authClient = createAuthClient({
   basePath: '/api/auth',
   plugins: [emailOTPClient(), passkeyClient(), twoFactorClient()],
 });
+
+/** Better Auth's answer when a factor change needs this session's proof first (ADR-056). */
+export function needsStepUp(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'SECOND_FACTOR_REQUIRED';
+}

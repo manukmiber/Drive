@@ -2,6 +2,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { formatBytes, formatDateTime } from '../../../shared/format';
+import { useCatalog } from '../../lib/catalog';
 import { t } from '../../lib/i18n';
 import { nodeInfo } from '../../lib/files';
 import { useMe } from '../../lib/session';
@@ -9,8 +10,14 @@ import { FileIcon } from '../FileIcon';
 
 export function Details({ id, onClose }: { id: string; onClose: () => void }) {
   const me = useMe();
+  const catalog = useCatalog();
   const q = useQuery({ queryKey: ['node', id], queryFn: () => nodeInfo(id) });
   const n = q.data?.node;
+  // "Safe" only when an antivirus looked; the basic check says what it is (ADR-056).
+  const scan =
+    n?.scanStatus === 'clean' && catalog.data?.capabilities?.antivirus === false
+      ? 'basic'
+      : (n?.scanStatus ?? 'pending');
   const row = (label: string, value: string) => (
     <div>
       <dt className="text-xs text-[var(--fg-muted)]">{label}</dt>
@@ -61,8 +68,7 @@ export function Details({ id, onClose }: { id: string; onClose: () => void }) {
             {row(t.files.space, n.space === 'family' ? t.files.spaceFamily : t.files.spacePersonal)}
             {row(t.files.created, formatDateTime(n.createdAt))}
             {row(t.files.modified, formatDateTime(n.updatedAt))}
-            {n.kind === 'file' &&
-              row(t.files.scanStatus, t.files.scanLabels[n.scanStatus ?? 'pending'] ?? '—')}
+            {n.kind === 'file' && row(t.files.scanStatus, t.files.scanLabels[scan] ?? '—')}
           </dl>
         </>
       )}

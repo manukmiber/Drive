@@ -15,11 +15,12 @@ import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
 import { sitePage } from '../lib/zeiko';
 import { Button } from '../components/Button';
+import { SecondFactorPrompt } from '../components/SecondFactorPrompt';
 import { TotpSetup } from '../components/TotpSetup';
 import { TransferSettingsForm } from '../components/TransferSettings';
 import { api, ApiError, sendJson } from '../lib/api';
 import { downloadZip } from '../lib/files';
-import { authClient } from '../lib/auth-client';
+import { authClient, needsStepUp } from '../lib/auth-client';
 import { meQueryKey, useMe } from '../lib/session';
 
 const card = 'z-card rounded-2xl p-5';
@@ -31,6 +32,8 @@ export function Settings() {
   const qc = useQueryClient();
   const [name, setName] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  /** A factor change the server refused until this session proves a factor (ADR-056). */
+  const [retry, setRetry] = useState<(() => Promise<void>) | null>(null);
   const passkeys = useQuery({
     queryKey: ['passkeys'],
     queryFn: async () => (await authClient.passkey.listUserPasskeys()).data ?? [],
@@ -52,7 +55,8 @@ export function Settings() {
     const res = await authClient.passkey.addPasskey({
       name: navigator.platform || t.settings.thisDevice,
     });
-    if (res?.error) setMsg(t.settings.passkeyFailed);
+    if (needsStepUp(res?.error)) setRetry(() => addPasskey);
+    else if (res?.error) setMsg(t.settings.passkeyFailed);
     else {
       setMsg(t.settings.passkeyAdded);
       await Promise.all([
@@ -63,7 +67,11 @@ export function Settings() {
   }
 
   async function removePasskey(id: string) {
-    await authClient.passkey.deletePasskey({ id });
+    const res = await authClient.passkey.deletePasskey({ id });
+    if (needsStepUp(res.error)) {
+      setRetry(() => () => removePasskey(id));
+      return;
+    }
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['passkeys'] }),
       qc.invalidateQueries({ queryKey: meQueryKey }),
@@ -140,13 +148,29 @@ export function Settings() {
         <Button variant="secondary" className="mt-3" onClick={addPasskey}>
           <KeyRound className="h-4 w-4" aria-hidden="true" /> {t.settings.addPasskey}
         </Button>
-        <TotpSetup enabled={user.twoFactorEnabled} />
+        <TotpSetup
+          enabled={user.twoFactorEnabled}
+          onNeedStepUp={(again) => setRetry(() => again)}
+        />
         {(user.role === 'admin' || user.role === 'moderator') &&
           !user.twoFactorEnabled &&
           !me.data.hasPasskey && (
             <p className="mt-3 text-sm text-amber-600">{t.settings.staffNeeds2fa}</p>
           )}
       </section>
+      {retry && (
+        <SecondFactorPrompt
+          manage
+          hasPasskey={me.data.hasPasskey}
+          hasTotp={user.twoFactorEnabled}
+          onDone={() => {
+            const again = retry;
+            setRetry(null);
+            setMsg(t.settings.stepUpDone);
+            void again();
+          }}
+        />
+      )}
 
       <NotificationPrefs />
       <AdLocation />

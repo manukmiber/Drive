@@ -8,6 +8,8 @@ export interface SessionUser {
   role: 'user' | 'moderator' | 'admin';
   status: 'active' | 'suspended' | 'deleted';
   twoFactorEnabled: boolean;
+  /** When this session last proved TOTP or a passkey (ms), or null (ADR-056). */
+  secondFactorAt: number | null;
 }
 
 export type AppBindings = {

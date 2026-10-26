@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { formatBytes, formatDateTime, formatRupiah } from '../../shared/format';
 import { t } from '../lib/i18n';
 import { Button } from '../components/Button';
+import { SecondFactorPrompt } from '../components/SecondFactorPrompt';
 import { toast } from '../components/ui/Toast';
 import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { cn } from '../lib/cn';
@@ -688,6 +689,7 @@ function AuditTab() {
 
 export function Admin() {
   const me = useMe();
+  const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>('dashboard');
   const who = useQuery({
     queryKey: ['admin', 'whoami'],
@@ -698,9 +700,22 @@ export function Admin() {
   if (who.isPending)
     return <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>;
   if (who.isError) {
-    const need2fa =
-      who.error instanceof ApiError &&
-      (who.error.data as { reason?: string } | undefined)?.reason === 'ADMIN_2FA_REQUIRED';
+    const reason =
+      who.error instanceof ApiError
+        ? (who.error.data as { reason?: string } | undefined)?.reason
+        : undefined;
+    const need2fa = reason === 'ADMIN_2FA_REQUIRED';
+    // Enrolled but not proved in this session (ADR-056): ask here, then open the panel.
+    if (reason === 'SECOND_FACTOR_REQUIRED' && me.data)
+      return (
+        <div className="mx-auto max-w-lg p-4 md:p-6">
+          <SecondFactorPrompt
+            hasPasskey={me.data.hasPasskey}
+            hasTotp={me.data.user.twoFactorEnabled}
+            onDone={() => void qc.invalidateQueries({ queryKey: ['admin'] })}
+          />
+        </div>
+      );
     return (
       <div className="mx-auto max-w-lg p-6">
         <p className="flex items-center gap-2 text-sm">

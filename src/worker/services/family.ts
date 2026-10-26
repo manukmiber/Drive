@@ -5,6 +5,7 @@ import { DAY_MS, SHARE_ID_LENGTH } from '../../shared/constants';
 import { formatBytes, formatRupiah } from '../../shared/format';
 import { addBillingMonth } from '../../shared/time';
 import type { Ctx } from '../context';
+import { guardStmt, isGuardFailure } from '../lib/batch-guard';
 import { sha256Hex } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { randomBase62, ulid } from '../lib/ids';
@@ -458,17 +459,36 @@ export async function acceptInvite(
   }
   const convert = await convertPersonalPlan(ctx, userId, personal);
   const DB = ctx.env.DB;
-  await DB.batch([
-    DB.prepare(
-      `UPDATE family_invites SET accepted_by = ?2, accepted_at = ?3 WHERE id = ?1 AND accepted_at IS NULL`,
-    ).bind(inv.id, userId, now),
-    DB.prepare(
-      `INSERT INTO family_members (family_id, user_id, role, joined_at) VALUES (?1, ?2, 'member', ?3)`,
-    ).bind(inv.family_id, userId, now),
-    ...movePoolStmts(ctx, personal, inv.pool_id),
-    ...convert.stmts,
-    poolLimitStmt(ctx, personal),
-  ]);
+  try {
+    await DB.batch([
+      DB.prepare(
+        `UPDATE family_invites SET accepted_by = ?2, accepted_at = ?3 WHERE id = ?1 AND accepted_at IS NULL`,
+      ).bind(inv.id, userId, now),
+      DB.prepare(
+        `INSERT INTO family_members (family_id, user_id, role, joined_at) VALUES (?1, ?2, 'member', ?3)`,
+      ).bind(inv.family_id, userId, now),
+      // The checks above ran before the batch: two people accepting at once must not both get in
+      // on one invite, nor past the plan's member limit (ADR-056).
+      guardStmt(
+        DB,
+        `(SELECT accepted_by FROM family_invites WHERE id = ?1) = ?2
+           AND (SELECT COUNT(*) FROM family_members WHERE family_id = ?3) <= ?4`,
+        inv.id,
+        userId,
+        inv.family_id,
+        p.max_members,
+      ),
+      ...movePoolStmts(ctx, personal, inv.pool_id),
+      ...convert.stmts,
+      poolLimitStmt(ctx, personal),
+    ]);
+  } catch (e) {
+    if (!isGuardFailure(e)) throw e;
+    throw new AppError('CONFLICT', 'the invite was just used or the family is full', {
+      reason: 'FAMILY_FULL',
+      max: p.max_members,
+    });
+  }
   await audit(ctx, userId, 'family.join', inv.family_id, {
     userId,
     inviteId: inv.id,

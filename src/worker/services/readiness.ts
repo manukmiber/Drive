@@ -32,7 +32,9 @@ export type FeatureId =
   | 's3_url_custom'
   | 'virustotal'
   | 'r2_meters'
-  | 'async_archives';
+  | 'async_archives'
+  | 'antivirus'
+  | 'captcha';
 
 export interface Feature {
   id: FeatureId;
@@ -228,6 +230,40 @@ export async function readiness(ctx: Ctx): Promise<Feature[]> {
       ],
     },
     {
+      id: 'antivirus',
+      title: 'Antivirus (ClamAV)',
+      what: 'Files are checked by ClamAV, and only then shown as “safe”. Without it they get the basic check (hashes, blocklist, test signature) and say so (ADR-056).',
+      hidden: false,
+      after: [],
+      needs: [
+        deploy(
+          'SCANNER',
+          ctx.adapters.scanner.name !== 'mock',
+          'Needs Workers Paid (Containers): set "plan": "paid" in deploy/production.json and deploy from CI (the scanner image needs Docker).',
+        ),
+      ],
+    },
+    {
+      id: 'captcha',
+      title: 'Turnstile',
+      what: 'Anonymous abuse reports and share emails prove a human sent them. Without it an anonymous report still arrives, but only a moderator acts on it (ADR-056).',
+      hidden: false,
+      after: [],
+      needs: [
+        {
+          name: 'TURNSTILE_SITE_KEY',
+          kind: 'cloudflare',
+          ok: Boolean(env.TURNSTILE_SITE_KEY),
+          how: 'Cloudflare → Turnstile → Add widget (hostname drive.zeiko.biz.id, Managed). Put its site key in deploy/production.json as "turnstileSiteKey" and deploy.',
+        },
+        secret(
+          'TURNSTILE_SECRET_KEY',
+          Boolean(env.TURNSTILE_SECRET_KEY),
+          'The same Turnstile widget → Secret key. Paste it here.',
+        ),
+      ],
+    },
+    {
       id: 'async_archives',
       title: 'TAR.ZST and large ZIP downloads',
       what: 'Downloading a big folder as TAR.ZST or a compressed ZIP.',
@@ -260,6 +296,8 @@ export async function capabilities(ctx: Ctx) {
   const hostnames = s3 && ctx.adapters.hostnames !== null;
   return {
     asyncArchives: ctx.adapters.archiver.name !== 'none',
+    /** ClamAV checks files; without it "clean" only means the basic check passed (ADR-056). */
+    antivirus: ctx.adapters.scanner.name !== 'mock',
     emailShare: realEmail(ctx),
     s3,
     s3ThreeCopies: s3 && replicasAvailable(env),

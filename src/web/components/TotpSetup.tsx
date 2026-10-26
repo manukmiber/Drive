@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import QRCode from 'qrcode';
 import { useState } from 'react';
-import { authClient } from '../lib/auth-client';
+import { authClient, needsStepUp } from '../lib/auth-client';
 import { meQueryKey } from '../lib/session';
 import { Button } from './Button';
 import { t } from '../lib/i18n';
@@ -9,7 +9,14 @@ import { t } from '../lib/i18n';
 const input =
   'h-10 w-32 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 text-center tracking-[0.3em] outline-none focus:border-brand-500';
 
-export function TotpSetup({ enabled }: { enabled: boolean }) {
+export function TotpSetup({
+  enabled,
+  onNeedStepUp,
+}: {
+  enabled: boolean;
+  /** The server wants this session's second factor first; `again` repeats the step after. */
+  onNeedStepUp: (again: () => Promise<void>) => void;
+}) {
   const qc = useQueryClient();
   const [qr, setQr] = useState<string | null>(null);
   const [backup, setBackup] = useState<string[]>([]);
@@ -19,6 +26,10 @@ export function TotpSetup({ enabled }: { enabled: boolean }) {
   async function start() {
     setMsg(null);
     const res = await authClient.twoFactor.enable({});
+    if (needsStepUp(res.error)) {
+      onNeedStepUp(start);
+      return;
+    }
     if (res.error || !res.data || res.data.method !== 'totp') {
       setMsg(t.settings.totpFailed);
       return;
@@ -45,7 +56,11 @@ export function TotpSetup({ enabled }: { enabled: boolean }) {
   }
 
   async function disable() {
-    await authClient.twoFactor.disable({});
+    const res = await authClient.twoFactor.disable({});
+    if (needsStepUp(res.error)) {
+      onNeedStepUp(disable);
+      return;
+    }
     await qc.invalidateQueries({ queryKey: meQueryKey });
   }
 

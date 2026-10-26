@@ -10,7 +10,7 @@ import { CONFIG_DEFAULTS } from '../../src/shared/config-defaults';
 import { areaForCity, ctaUrl, resolveAreaChain } from '../../src/worker/services/ads';
 import { invalidateConfigMemo } from '../../src/worker/services/config';
 import { APP, makeRuntime } from '../helpers/runtime';
-import { signIn, staffSignIn, type Session } from '../helpers/session';
+import { proveSecondFactor, signIn, staffSignIn, type Session } from '../helpers/session';
 import { grantPlan, rootOf, uploadText } from '../helpers/files';
 import type { DevRuntime } from '../../dev/env';
 
@@ -418,6 +418,7 @@ describe('ads entered by the operator and checked by hand (ADR-043)', () => {
     clock.set(Date.UTC(2026, 9, 11, 17, 6));
     await rt.runCron(CRON.dailyAds);
     expect(status(rt, late.campaignId)).toBe('expired');
+    proveSecondFactor(rt, op.userId); // a day later: the staff proof is renewed (ADR-056)
     const tooLate = await op.req('POST', `/api/admin/ads/campaigns/${late.campaignId}/send-payment`, {});
     expect(tooLate.status).toBe(409);
 

@@ -10,7 +10,7 @@ import { addBillingMonth } from '../../shared/time';
 import { ensurePersonalSpace } from './accounts';
 import { poolLimitStmt, wibAnchorDay } from './billing';
 import { getConfig, setConfig } from './config';
-import { setUserStatus } from './reports';
+import { assertMaySuspend, setUserStatus } from './reports';
 import { noticeEmail } from './email-templates';
 
 async function audit(
@@ -220,6 +220,7 @@ export async function setUserSuspended(
 ): Promise<void> {
   const r = requireReason(reason);
   if (userId === actorId) throw new AppError('BAD_REQUEST', 'cannot suspend yourself');
+  await assertMaySuspend(ctx, actorId, userId);
   await setUserStatus(ctx, userId, suspended ? 'suspended' : 'active');
   await audit(ctx, actorId, suspended ? 'user.suspend' : 'user.unsuspend', 'user', userId, {
     reason: r,

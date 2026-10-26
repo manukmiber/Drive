@@ -1235,3 +1235,48 @@ atau membagikan satu objek harus lewat aws-cli/rclone.
 header CORS di error, aturan salah, bucket orang lain; daftar per folder, upload lewat app + dibaca SDK, folder kosong,
 link presigned yang jalan tanpa sesi, hapus, tanpa key, batas ukuran; presign dicek `verifySignature` + kedaluwarsa),
 `tests/integration/idor.test.ts`.
+
+## ADR-056 — Perbaikan audit OWASP Top 10:2025: faktor kedua staf, laporan CSAM, guard batch
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: "kerjakan semua OWASP"). **Konteks:** audit statis OWASP
+Top 10:2025 atas seluruh repo menemukan tujuh hal (ringkasan di `docs/SECURITY.md`). Yang paling berat: laporan
+kategori CSAM dari siapa pun langsung membekukan akun pengunggah, sesuai SPEC §14.3 lama; dan "wajib passkey/TOTP"
+untuk staf hanya memeriksa bahwa faktor itu terpasang, tidak pernah memintanya.
+
+**Keputusan:**
+- **Faktor kedua dibuktikan per sesi** (`src/worker/auth-second-factor.ts`). Kolom `sessions.second_factor_at`
+  (migrasi `0011`) diisi saat sesi itu membuktikan TOTP (`POST /api/auth/second-factor/totp`) atau passkey
+  (`/second-factor/passkey/options` + `/verify`, `@simplewebauthn/server`, challenge di `verifications` 5 menit, kunci
+  harus milik user sesi itu). `requireStaff` meminta: akun `active`, peran cocok, faktor terpasang
+  (`ADMIN_2FA_REQUIRED`), dan bukti yang belum lewat `staff_second_factor_hours` (config, default 12 jam;
+  `SECOND_FACTOR_REQUIRED`). Login baru lewat Akun Zeiko selalu mulai tanpa bukti. 5 kode TOTP salah berturut-turut →
+  istirahat 15 menit; rate limit `RL_AUTH` per user. Passkey tetap bukan faktor pertama (ADR-036).
+- **Mengubah faktor butuh faktor:** begitu akun punya TOTP atau passkey, rute Better Auth untuk menambah, melihat,
+  atau menghapus faktor (`/passkey/*register*`, `/passkey/delete-passkey`, `/two-factor/enable|disable|…`) meminta
+  bukti yang sama. Faktor pertama tetap bebas dipasang (tidak ada yang bisa dibuktikan). Perubahan faktor akun staf
+  dicatat di log dan dikirim sebagai `admin_alert`. UI: `components/SecondFactorPrompt.tsx` di Admin dan Pengaturan.
+- **Status dan hierarki:** akun staf yang dibekukan tidak lagi bisa membuka rute admin walau login ulang. Moderator
+  hanya boleh membekukan akun biasa; akun staf hanya oleh admin (`assertMaySuspend`, juga untuk aksi
+  `ban_uploader`).
+- **Laporan CSAM** (SPEC §14.3 diubah): hanya isi yang langsung dimatikan (link mati, karantina, legal hold), dan
+  hanya bila pelapornya login atau lolos Turnstile. Pembekuan akun adalah keputusan moderator. Laporan anonim tanpa
+  Turnstile tetap masuk antrean mendesak dan alert, tanpa aksi otomatis. Tanda di link dan blob memuat ID laporan
+  (`abuse:<id>`), sehingga **menolak** laporan memulihkan link, karantina, dan legal hold yang dipasang laporan itu
+  saja. `verifyTurnstile` sekarang mengembalikan apakah manusia benar-benar dicek (tanpa secret = tidak).
+- **Guard batch D1** (`lib/batch-guard.ts`, tabel `batch_guards` dengan `CHECK (ok = 1)`): pernyataan yang
+  membatalkan seluruh batch bila syaratnya tidak lagi benar saat batch jalan. Dipakai saat menerima undangan
+  keluarga: undangan yang sama tidak bisa dipakai dua orang sekaligus, dan anggota tidak melewati `max_members`.
+- **Redirect `/dashboard/…`** hanya ke path app sendiri (garis miring/backslash di depan dibuang).
+- **Label pindai:** `capabilities.antivirus` (scanner bukan mock). Tanpa ClamAV, status `clean` ditampilkan
+  "Dicek dasar (belum dengan antivirus)", bukan "Aman". Kesiapan baru di tab Features relay: `antivirus` (butuh
+  Containers) dan `captcha` (Turnstile: site key di `deploy/<env>.json` → `turnstileSiteKey`, secret
+  `TURNSTILE_SECRET_KEY`).
+
+**Tidak dikerjakan:** kode cadangan TOTP sebagai bukti (staf yang kehilangan HP dipulihkan operator lewat ops API);
+pemakaian ulang kode TOTP yang sama dalam 30 detik; memisahkan `ZEIKO_OPS_TOKEN` jadi bearer dan kunci callback
+(butuh perubahan di relay); panjang minimum password link share.
+
+**Konsekuensi:** staf mengetik kode atau memakai passkey sekali per 12 jam per sesi. Test:
+`tests/integration/auth.test.ts` (passkey sungguhan dengan kunci ES256 software `tests/helpers/webauthn.ts`,
+challenge/kunci salah, TOTP benar/salah/terkunci/kedaluwarsa, login baru, ubah faktor, staf dibekukan, moderator vs
+admin), `admin.test.ts` (laporan CSAM dari user login/anonim, tolak laporan), `family.test.ts` (undangan direbut di
+tengah jalan), `app.test.ts` (redirect), `readiness.test.ts`.

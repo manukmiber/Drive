@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { APP, jsonReq, makeRuntime } from '../helpers/runtime';
-import { signIn, type Session } from '../helpers/session';
+import { proveSecondFactor, signIn, type Session } from '../helpers/session';
 import { grantPlan, rootOf, uploadText } from '../helpers/files';
 import type { DevRuntime } from '../../dev/env';
 
@@ -14,7 +14,9 @@ async function staff(
   rt.d1.sqlite
     .prepare('UPDATE users SET role = ?, two_factor_enabled = ? WHERE id = ?')
     .run(role, secondFactor ? 1 : 0, s.userId);
-  return signIn(rt, email); // fresh session carries the new role
+  const fresh = await signIn(rt, email); // fresh session carries the new role
+  if (secondFactor) proveSecondFactor(rt, fresh.userId);
+  return fresh;
 }
 
 async function sharedFile(
@@ -218,15 +220,21 @@ describe('reports & takedown (SPEC §14.3)', () => {
     expect(done.items.map((x) => x.id)).toEqual([id]);
   });
 
-  it('CSAM reports act immediately: link off, quarantine + legal hold, uploader frozen; deletion is refused', async () => {
+  it('a CSAM report from a signed-in person takes the content down, not the account', async () => {
     const rt = await makeRuntime();
     const adm = await staff(rt, 'adm@example.com', 'admin');
     const { owner, f, share } = await sharedFile(rt, 'pelaku@example.com', 'x');
-    const r = await report(rt, { targetType: 'share', targetId: share.id, category: 'csam' });
+    const reporter = await signIn(rt, 'pelapor@example.com');
+    const r = await reporter.req('POST', '/api/public/reports', {
+      targetType: 'share',
+      targetId: share.id,
+      category: 'csam',
+    });
     const { id, priority } = (await r.json()) as { id: string; priority: string };
     expect(priority).toBe('urgent');
     expect((await rt.fetch(new Request(share.url))).status).toBe(410);
-    expect((await owner.req('GET', '/api/me')).status).toBe(401);
+    // A report is only a claim: the account waits for a moderator (ADR-056).
+    expect((await owner.req('GET', '/api/me')).status).toBe(200);
     const blobId = (
       rt.d1.sqlite.prepare('SELECT blob_id FROM nodes WHERE id = ?').get(f.id) as {
         blob_id: string;
@@ -243,6 +251,13 @@ describe('reports & takedown (SPEC §14.3)', () => {
       note: 'hapus',
     });
     expect(del.status).toBe(409);
+    // The moderator freezes the account after looking.
+    const ban = await adm.req('POST', `/api/admin/reports/${id}/actions`, {
+      actions: ['ban_uploader'],
+      note: 'terbukti',
+    });
+    expect(ban.status).toBe(204);
+    expect((await owner.req('GET', '/api/me')).status).toBe(401);
     expect(
       (
         await rt.fetch(
@@ -254,6 +269,54 @@ describe('reports & takedown (SPEC §14.3)', () => {
         )
       ).status,
     ).toBe(404);
+  });
+
+  it('an anonymous CSAM report without Turnstile waits for a moderator', async () => {
+    const rt = await makeRuntime();
+    const { owner, f, share } = await sharedFile(rt, 'korban@example.com', 'x');
+    const r = await report(rt, { targetType: 'share', targetId: share.id, category: 'csam' });
+    expect(r.status).toBe(201);
+    expect(((await r.json()) as { priority: string }).priority).toBe('urgent');
+    expect((await rt.fetch(new Request(share.url))).status).toBe(200);
+    expect((await owner.req('GET', '/api/me')).status).toBe(200);
+    const nodeReport = await report(rt, { targetType: 'node', targetId: f.id, category: 'csam' });
+    expect(nodeReport.status).toBe(201);
+    expect(
+      rt.d1.sqlite
+        .prepare(
+          'SELECT b.scan_status FROM nodes n JOIN blobs b ON b.id = n.blob_id WHERE n.id = ?',
+        )
+        .get(f.id),
+    ).toEqual({ scan_status: 'clean' });
+  });
+
+  it('rejecting a report puts back what it switched off', async () => {
+    const rt = await makeRuntime();
+    const mod = await staff(rt, 'mod@example.com', 'moderator');
+    const { f, share } = await sharedFile(rt, 'dituduh@example.com', 'x');
+    const reporter = await signIn(rt, 'iseng@example.com');
+    const r = await reporter.req('POST', '/api/public/reports', {
+      targetType: 'share',
+      targetId: share.id,
+      category: 'csam',
+    });
+    const { id } = (await r.json()) as { id: string };
+    expect((await rt.fetch(new Request(share.url))).status).toBe(410);
+    const rej = await mod.req('POST', `/api/admin/reports/${id}/actions`, {
+      actions: ['reject'],
+      note: 'laporan palsu',
+    });
+    expect(rej.status).toBe(204);
+    expect((await rt.fetch(new Request(share.url))).status).toBe(200);
+    const blob = rt.d1.sqlite
+      .prepare(
+        'SELECT b.id, b.scan_status FROM nodes n JOIN blobs b ON b.id = n.blob_id WHERE n.id = ?',
+      )
+      .get(f.id) as { id: string; scan_status: string };
+    expect(blob.scan_status).toBe('clean');
+    expect(
+      rt.d1.sqlite.prepare('SELECT COUNT(*) AS n FROM legal_holds WHERE blob_id = ?').get(blob.id),
+    ).toEqual({ n: 0 });
   });
 });
 

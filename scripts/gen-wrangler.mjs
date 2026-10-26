@@ -67,6 +67,8 @@ function bindings(env, nsBase, ids) {
             // a person's own domain is not offered.
             ...(ids.s3CnameTarget ? { S3_CNAME_TARGET: ids.s3CnameTarget } : {}),
             ...(ids.zoneId ? { CF_ZONE_ID: ids.zoneId } : {}),
+            // Turnstile's public site key (ADR-056); its secret is TURNSTILE_SECRET_KEY.
+            ...(ids.turnstileSiteKey ? { TURNSTILE_SITE_KEY: ids.turnstileSiteKey } : {}),
           }),
       EMAIL_FROM: 'no-reply@zeiko.biz.id',
       ADAPTER_EMAIL: email,

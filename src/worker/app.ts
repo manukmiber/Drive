@@ -127,7 +127,8 @@ export function createApp() {
     // The app used to be at zeiko.biz.id/dashboard (ADR-036), and the website still sends people
     // back here through that path: /dashboard/drive is /drive.
     if (!base && /^\/dashboard(\/|$)/.test(url.pathname)) {
-      const rest = url.pathname.slice('/dashboard'.length) || '/';
+      // One leading slash only: "//host" would send the browser to another site (ADR-056).
+      const rest = `/${url.pathname.slice('/dashboard'.length).replace(/^[/\\]+/, '')}`;
       return c.redirect(`${rest}${url.search}`, 301);
     }
     if (base && (url.pathname === '/' || url.pathname === base)) return c.redirect(`${base}/`, 302);

@@ -32,6 +32,8 @@ export interface Catalog {
   /** Only what works here (ADR-049); the app hides the rest. */
   capabilities?: {
     asyncArchives: boolean;
+    /** ClamAV runs here; without it "clean" means only the basic check passed (ADR-056). */
+    antivirus: boolean;
     emailShare: boolean;
     s3: boolean;
     s3ThreeCopies: boolean;
