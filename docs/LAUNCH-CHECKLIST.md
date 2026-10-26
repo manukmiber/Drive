@@ -5,7 +5,7 @@ Centang sebelum production dibuka untuk umum (SPEC §14.6).
 ## Legal & kepatuhan
 - [ ] Daftar **PSE Lingkup Privat** di Komdigi (OSS RBA) atas nama badan usaha/perorangan pemilik.
 - [ ] Review hukum: Syarat & Ketentuan, Kebijakan Privasi, Kebijakan Konten, Kebijakan Iklan
-      (`/kebijakan/*`, sekarang berlabel "DRAF, perlu review hukum"). Hapus label setelah disetujui.
+      (`/kebijakan/*`). Label "DRAF" sudah dihapus atas permintaan pemilik (2026-10-26).
 - [ ] Tetapkan alamat kontak abuse resmi (default di draf: `abuse@zeiko.biz.id`) dan pastikan kotak masuknya dipantau.
 - [ ] Konfirmasi isian ToS/Kebijakan Privasi (ADR-045, `src/web/legal/contacts.ts`): dukungan & privasi
       `admin@zeiko.biz.id`, retensi log akses 90 hari, enkripsi saat disimpan (R2).

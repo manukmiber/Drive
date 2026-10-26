@@ -1,5 +1,5 @@
 // Policy pages (SPEC §14.5, ADR-045): Terms of Service, Privacy Policy and Ad Policy, in the UI's
-// language. Marked as drafts until a lawyer has reviewed them.
+// language. The owner's own texts, no longer marked as drafts (owner, 2026-10-26).
 import { Link } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { formatDate } from '../../shared/format';
@@ -25,10 +25,7 @@ export function Legal({ slug }: { slug: string }) {
       <Link to="/">
         <Logo />
       </Link>
-      <p className="mt-6 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
-        {t.legal.draft}
-      </p>
-      <h1 className="mt-4 text-2xl font-semibold">{doc.title}</h1>
+      <h1 className="mt-6 text-2xl font-semibold">{doc.title}</h1>
       <p className="mt-1 text-xs text-[var(--fg-muted)]">
         {t.legal.effective(formatDate(Date.parse(`${entry.effective}T00:00:00+07:00`)))}
       </p>

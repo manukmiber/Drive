@@ -787,6 +787,7 @@ otomatis, lokasi dari IP).
   tautan dan email otomatis), dirender sebagai teks React, bukan HTML. Kebijakan Iklan ikut dipindah ke format yang
   sama dan diterjemahkan. **Kebijakan Konten** digabung: isinya kini ToS Bagian 3, dan `/kebijakan/kebijakan-konten`
   menampilkan ToS. Label "DRAF, perlu review hukum" tetap (SPEC §14.5) sampai pemilik bilang sudah direview.
+  **Diperbarui 2026-10-26:** pemilik minta label draf dihapus dari semua halaman kebijakan; sekarang tidak ada label.
 - Tautan ke ToS dan Kebijakan Privasi ada di halaman masuk, sidebar, dan halaman Zeiko S3.
 
 **Yang tidak sesuai dengan kode sekarang (perlu keputusan pemilik, belum diubah):**

@@ -100,7 +100,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [~] Lighthouse mobile: landing di HP dev 81–88, di staging 82–83 (dari HP yang sama, benchmarkIndex 1493).
   A11y/SEO 100. Best Practices di staging 92 karena script inline JavaScript Detections Cloudflare diblokir
   CSP (lihat SECURITY.md). Target ≥ 90 diukur ulang di CI.
-- [x] Draf kebijakan (/kebijakan/*, label DRAF) + docs/LAUNCH-CHECKLIST.md + ekspor data & hapus akun (UU PDP)
+- [x] Kebijakan (/kebijakan/*; label DRAF dihapus 2026-10-26) + docs/LAUNCH-CHECKLIST.md + ekspor data & hapus akun (UU PDP)
 - [x] Deploy staging (2026-10-22, **Workers Free**, ADR-035): https://staging.zeiko.biz.id dan
   https://uc-staging.zeiko.biz.id. D1/KV/R2/6 Queue, 1 cron gabungan, 8 secret acak, email relay (fallback
   mock sampai `MAIL_RELAY_TOKEN` dipasang). Smoke test lolos: login OTP → upload 10 KB, 0,5 MB, 1 MB, 5 MB, dan

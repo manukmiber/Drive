@@ -643,7 +643,7 @@ Selama `pending`, file hanya bisa diakses pemiliknya dan tidak bisa di-share.
 
 ### 14.5 Privasi (UU PDP No. 27/2022)
 - Minimalkan data. Tanpa tracker pihak ketiga. IP disimpan sebagai hash (salt harian), kecuali untuk keperluan keamanan jangka pendek.
-- Halaman: Syarat & Ketentuan, Kebijakan Privasi, Kebijakan Konten, Kebijakan Iklan, Lapor Penyalahgunaan. Semua ditandai **"DRAF, perlu review hukum"**.
+- Halaman: Syarat & Ketentuan, Kebijakan Privasi, Kebijakan Konten, Kebijakan Iklan, Lapor Penyalahgunaan. Dulu ditandai **"DRAF, perlu review hukum"**; label dihapus atas permintaan pemilik (2026-10-26, ADR-045).
 - Fitur ekspor data dan hapus akun (masa tunggu 7 hari + konfirmasi).
 - Runbook kebocoran data (notifikasi dalam 3×24 jam).
 - Retensi log 90 hari (config).

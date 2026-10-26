@@ -244,7 +244,6 @@ export const t = {
     privacy: 'Kebijakan Privasi',
   },
   legal: {
-    draft: 'DRAF, perlu review hukum',
     effective: (d: string) => `Berlaku sejak ${d}`,
     translationNote: '',
     navLabel: 'Kebijakan',

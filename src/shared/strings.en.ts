@@ -244,7 +244,6 @@ export const en: Strings = {
     privacy: 'Privacy Policy',
   },
   legal: {
-    draft: 'DRAFT, pending legal review',
     effective: (d: string) => `In effect from ${d}`,
     translationNote:
       'This is a translation. Where it differs from the Indonesian text, the Indonesian text applies.',
