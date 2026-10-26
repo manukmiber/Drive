@@ -199,5 +199,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   layar penuh, Dibagikan dengan cari/atur/QR.
 - [x] Zeiko S3: CORS (Put/Get/DeleteBucketCors + preflight), isi bucket di `/s3` (daftar, upload ≤ 95 MiB, folder
   baru, unduh, link sementara, hapus), editor CORS.
-- [ ] Belum: logo di tengah QR, upload multipart dari halaman `/s3`, migrasi `0009`/`0010` di D1 remote (ikut deploy
-  berikutnya, butuh izin pemilik).
+- [x] Di production (izin pemilik, 2026-10-26): migrasi `0009` dan `0010` di D1 production, Worker `zeiko-production`
+  versi `b51ffa80-e5e8-4317-8c94-37a94628b299`. Dicek dari luar: app, health, katalog (batas 20), link share palsu 404,
+  preflight S3 tanpa CORS 403.
+- [ ] Belum: logo di tengah QR, upload multipart dari halaman `/s3`.
