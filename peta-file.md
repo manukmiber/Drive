@@ -35,6 +35,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | `peta-file.md` ★ | Dokumen ini. |
 | `CLAUDE.md` ★ | Aturan proyek, perintah, konvensi (dua bahasa, `appPath`), larangan. |
 | `docs/SPEC.md` | Sumber kebenaran fitur (Bahasa Indonesia, per bagian §). |
+| `docs/ROADMAP.md` | Fitur Drive, Zeiko S3, dan API/SDK yang belum ada, dengan satu prompt per ID (`Kerjakan S1 dari docs/ROADMAP.md`). |
 | `PLAN.md` | Rencana per fase. |
 | `PROGRESS.md` ★ | Checklist fase + bagian "Zeiko Drive di Akun Zeiko". |
 | `DECISIONS.md` ★ | ADR-001…036; ADR-036 = Akun Zeiko, dengan tambahan nama, `/dashboard`, dan EN/ID di bawahnya. |
