@@ -40,6 +40,8 @@ const RL = [
   ['RL_DOWNLOAD', 600],
   ['RL_AD_BOOK', 20],
   ['RL_REPORT', 5],
+  // Per access token on /api/v1 (ADR-061): 300 a minute.
+  ['RL_API', 300],
 ];
 function bindings(env, nsBase, ids) {
   // Containers need Docker at deploy time; `containers: false` deploys without them and falls back

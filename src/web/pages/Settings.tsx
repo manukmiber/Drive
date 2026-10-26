@@ -1,16 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import {
-  ArrowDownUp,
-  Brain,
-  CircleUser,
-  Languages,
-  MapPin,
-} from 'lucide-react';
+import { ArrowDownUp, Brain, CircleUser, Languages, MapPin } from 'lucide-react';
 import { useState } from 'react';
 import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
 import { sitePage } from '../lib/zeiko';
+import { AccessTokens } from '../components/AccessTokens';
 import { Button } from '../components/Button';
 import { TransferSettingsForm } from '../components/TransferSettings';
 import { api, ApiError, sendJson } from '../lib/api';
@@ -81,6 +76,7 @@ export function Settings() {
 
       <NotificationPrefs />
       <AdLocation />
+      <AccessTokens />
 
       <AccountData />
     </div>

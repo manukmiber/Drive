@@ -113,6 +113,16 @@ describe('IDOR (SPEC §14.1)', () => {
     ).key;
     expect((await a.req('POST', '/api/s3/buckets', { name: 'milik-a' })).status).toBe(201);
     expect((await b.req('POST', '/api/s3/buckets', { name: 'milik-b' })).status).toBe(201);
+    // ADR-061: A's access token.
+    const aToken = (
+      (await (
+        await a.req('POST', '/api/tokens', {
+          name: 'A',
+          scopes: ['drive.read'],
+          expiresInDays: null,
+        })
+      ).json()) as { info: { id: string } }
+    ).info;
     const payment = 'pay_a';
     rt.d1.sqlite
       .prepare(
@@ -143,6 +153,9 @@ describe('IDOR (SPEC §14.1)', () => {
           .all(a.userId),
         rt.d1.sqlite.prepare('SELECT node_id FROM node_stars WHERE user_id = ?').all(b.userId),
         rt.d1.sqlite.prepare('SELECT id, revoked_at FROM s3_keys ORDER BY id').all(),
+        rt.d1.sqlite
+          .prepare('SELECT id, user_id, revoked_at, scopes FROM api_tokens ORDER BY id')
+          .all(),
         rt.d1.sqlite
           .prepare(
             'SELECT name, user_id, public, cors_json, logging_json FROM s3_buckets ORDER BY name',
@@ -236,6 +249,8 @@ describe('IDOR (SPEC §14.1)', () => {
       ['GET', '/api/s3/buckets/milik-a/stats'],
       ['PUT', '/api/s3/buckets/milik-a/logging', { target: 'milik-b', prefix: '' }],
       ['DELETE', '/api/s3/buckets/milik-a/logging'],
+      // ADR-061: A's token cannot be revoked by B.
+      ['DELETE', `/api/tokens/${aToken.id}`],
     ];
 
     const leaks: string[] = [];

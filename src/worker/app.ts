@@ -33,6 +33,8 @@ import { adPublic, adsApi, advertiser } from './routes/ads';
 import { billing } from './routes/billing';
 import { payments } from './routes/payments';
 import { ops } from './routes/ops';
+import { tokens } from './routes/tokens';
+import { v1 } from './routes/v1';
 import { notifications } from './routes/notifications';
 import { family } from './routes/family';
 import { s3 } from './routes/s3';
@@ -64,6 +66,8 @@ export function createApp() {
   app.route('/', integrations);
   app.route('/', payments);
   app.route('/api/ops', ops);
+  // The public API (ADR-061): Bearer tokens, no session cookie, no Origin/CSRF.
+  app.route('/api/v1', v1);
 
   const api = new Hono<AppBindings>();
   api.use('*', apiHeaders, originCheck);
@@ -103,6 +107,7 @@ export function createApp() {
   api.route('/notifications', notifications);
   api.route('/family', family);
   api.route('/s3', s3);
+  api.route('/tokens', tokens);
   api.route('/', nodes);
   api.all('*', (c) => c.json(errorBody('NOT_FOUND', 'no such endpoint'), 404));
   app.route('/api', api);

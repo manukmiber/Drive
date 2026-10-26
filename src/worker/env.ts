@@ -105,6 +105,7 @@ export interface Env {
   RL_DOWNLOAD: RateLimit;
   RL_AD_BOOK: RateLimit;
   RL_REPORT: RateLimit;
+  RL_API: RateLimit;
   IMAGES: ImagesBinding;
   MEDIA: MediaBinding;
   /** Email Sending (Workers Paid). Absent with ADAPTER_EMAIL=relay|mock. */

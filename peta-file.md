@@ -24,6 +24,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | Download / share | `src/worker/routes/{download,share-public,shares,archive-download}.ts`, `src/worker/services/{download,shares,share-send}.ts`, `components/explorer/{ShareDialog,ShareSettings,ShareQr}.tsx` (ADR-054) | — | link share diteruskan oleh `src/worker.js` |
 | Zeiko S3: CORS dan isi bucket (ADR-055) | `services/{s3-cors,s3-browse}.ts`, `routes/s3-api.ts` (`corsOp`, `preflight`), `routes/s3.ts`, `lib/s3-sigv4.ts` (`presignUrl`), `pages/{S3,S3Browser}.tsx` | — | — |
 | Zeiko S3: statistik bucket dan log akses (ADR-060) | `services/s3-stats.ts` (`recordS3Request`, `deliverS3Logs`), `services/s3-index.ts` (v3), `routes/s3-api.ts` (`loggingOp`, akhir `handleS3`), `routes/s3.ts`, `pages/S3Stats.tsx`, `migrations/0013_s3_bucket_logging.sql` | — | — |
+| Token akses + API v1 (ADR-061) | `services/tokens.ts`, `middleware/token.ts` (`tokenAuth`, `scope`), `routes/v1.ts`, `routes/tokens.ts`, `components/AccessTokens.tsx`, `migrations/0014_api_tokens.sql` | — | — |
 | Editor foto/video/PDF (ADR-050, di browser) | `src/web/editors/*`, `src/web/pages/Tools.tsx` (`/alat`), menu di `components/explorer/useNodeActions.tsx`, tombol Edit + pdf.js di `Preview.tsx`, aset pdf.js di `vite.config.ts` | — | — |
 | Editor teks/kode, dokumen, file baru (ADR-051) | `src/web/editors/{text,doc}/*`, `editors/sanitize.ts`, `editors/prose.css`, Baru → Dokumen / File teks di `components/NewMenu.tsx`, pratinjau `.docx` di `Preview.tsx` | — | — |
 

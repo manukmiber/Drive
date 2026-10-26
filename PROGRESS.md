@@ -222,6 +222,11 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Token akses (A1, ADR-061, 2026-10-26)
+- [x] `api_tokens` (hash SHA-256, prefix publik, scope, kedaluwarsa, cabut), Bearer hanya di `/api/v1`, `RL_API` per token.
+- [x] Pengaturan → Token & aplikasi: buat (nama, scope, kedaluwarsa), rahasia sekali tampil, daftar, cabut.
+- [ ] Pemilik: migrasi `0014` di D1 remote, deploy (binding rate limit `RL_API` ikut `wrangler.jsonc`).
+
 ## Statistik bucket dan log akses S3 (S9, ADR-060, 2026-10-26)
 - [x] Per bucket di `/s3`: objek, ukuran, request/error/diunduh 30 hari (grafik per hari WIB + tabel).
 - [x] `PutBucketLogging`/`GetBucketLogging` dan dari `/s3`; log format Amazon dikirim per jam ke bucket sendiri, IP di-hash.

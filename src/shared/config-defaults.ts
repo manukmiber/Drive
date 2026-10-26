@@ -158,6 +158,10 @@ export const configSchema = z.object({
       cache_days: 30,
     }),
 
+  // ── Access tokens (ADR-061) ──
+  /** Working personal tokens one user may have. */
+  api_tokens_max_per_user: int().min(1).max(100).default(20),
+
   // ── Zeiko S3 (ADR-044) ──
   s3_max_buckets_per_account: int().min(1).default(100),
   s3_max_keys_per_account: int().min(1).default(10),

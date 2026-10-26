@@ -10,7 +10,9 @@ export type RateLimitBinding =
   | 'RL_SHARE_SEND'
   | 'RL_DOWNLOAD'
   | 'RL_AD_BOOK'
-  | 'RL_REPORT';
+  | 'RL_REPORT'
+  /** Per access token on /api/v1 (ADR-061). */
+  | 'RL_API';
 
 export function clientIp(req: Request): string {
   return (

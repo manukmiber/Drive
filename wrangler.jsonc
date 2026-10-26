@@ -205,6 +205,14 @@
         "limit": 5,
         "period": 60
       }
+    },
+    {
+      "name": "RL_API",
+      "namespace_id": "908",
+      "simple": {
+        "limit": 300,
+        "period": 60
+      }
     }
   ],
   "images": {
@@ -404,6 +412,14 @@
           "namespace_id": "1007",
           "simple": {
             "limit": 5,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_API",
+          "namespace_id": "1008",
+          "simple": {
+            "limit": 300,
             "period": 60
           }
         }
@@ -606,6 +622,14 @@
           "namespace_id": "2007",
           "simple": {
             "limit": 5,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_API",
+          "namespace_id": "2008",
+          "simple": {
+            "limit": 300,
             "period": 60
           }
         }

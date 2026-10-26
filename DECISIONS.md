@@ -1396,3 +1396,29 @@ tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.t
 
 **Konsekuensi:** satu tulis D1 per request S3 (dua kalau bucket mencatat log). Test: `tests/integration/s3-stats.test.ts`,
 `idor.test.ts`.
+
+## ADR-061 — Token akses untuk API publik (fondasi A2–A6, D9)
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: roadmap A1, "pick acak 3 API").
+
+**Keputusan:**
+- Tabel `api_tokens` (migrasi `0014`). Token = `zkd_` + id publik 8 karakter + rahasia 32 karakter (base62). Yang disimpan:
+  `prefix` (`zkd_` + id, unik, tampil di daftar) dan SHA-256 seluruh token. Rahasia ditampilkan sekali saat dibuat.
+  Baris dicari lewat prefix, hash dibandingkan dengan `timingSafeEqual` (juga saat prefix tidak ditemukan, supaya
+  waktunya sama). Token salah, rusak, kedaluwarsa, dan dicabut semuanya 401 yang sama.
+- Scope: `drive.read`, `drive.write`, `share`, `webdav`, `s3.manage`; dicek per route (`scope()` di
+  `middleware/token.ts`). `kind`: `personal` (dibuat di Pengaturan) dan nanti `oauth_access`/`oauth_refresh` (A3).
+- **Token hanya untuk `/api/v1/*`** (dan host WebDAV nanti). `/api/*` tetap cookie + Origin + CSRF; Bearer di sana
+  dijawab 401 `token_not_accepted_here`. Token tidak bisa membuat atau melihat token (route `/api/tokens` cookie saja),
+  dan tidak pernah membuka ops (bearer ops terpisah, ADR-057). `/api/v1` dipasang sebelum `/api` dengan 404 sendiri.
+- Rate limit per token: binding baru `RL_API` (300/menit). `last_used_at` ditulis paling sering 5 menit sekali.
+  Batas token aktif per user: `api_tokens_max_per_user` (20).
+- Akun dibekukan/dihapus → 403 `ACCOUNT_SUSPENDED`; penghapusan akun menghapus semua barisnya. Ekspor data memuat
+  nama, prefix, scope, dan tanggal (tidak pernah hash).
+- **Hubungan dengan ADR-039:** keluar dari Akun Zeiko (sesi pintu) **tidak** mencabut token. Token dipakai skrip dan
+  aplikasi yang berjalan tanpa browser, sama seperti personal access token di layanan lain; kalau ikut mati setiap
+  logout, backup otomatis akan berhenti diam-diam. Pengaturan menulis ini terang-terangan dan token bisa dicabut di sana.
+  Kalau pemilik ingin sebaliknya, cukup cabut token di jalur logout pintu.
+- CORS untuk `/api/v1` dari situs lain belum dibuka (A2/A4 memutuskan).
+
+**Konsekuensi:** satu baca D1 per request v1 (plus tulis paling sering 5 menit sekali). Test:
+`tests/integration/tokens.test.ts`, `idor.test.ts`.

@@ -22,6 +22,11 @@ export const loadSession: MiddlewareHandler<AppBindings> = async (c, next) => {
 
 export const requireUser: MiddlewareHandler<AppBindings> = async (c, next) => {
   const user = c.get('user');
+  // Access tokens work on /api/v1 only (ADR-061); this API is the browser's, with its CSRF check.
+  if (!user && /^Bearer\s/i.test(c.req.header('authorization') ?? ''))
+    throw new AppError('UNAUTHORIZED', 'access tokens work on /api/v1 only', {
+      reason: 'token_not_accepted_here',
+    });
   if (!user) throw new AppError('UNAUTHORIZED', 'sign in required');
   if (user.status !== 'active')
     throw new AppError('FORBIDDEN', 'account suspended', { reason: user.status });
