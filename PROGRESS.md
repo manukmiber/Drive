@@ -222,6 +222,12 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## API publik v1 + OpenAPI (A2, ADR-062, 2026-10-26)
+- [x] `/api/v1`: akun, Drive (list cursor, detail, cari, unduh, Sampah, folder, ganti nama, pindah, salin), upload
+  multipart, share, Zeiko S3 (key, bucket, publik, CORS); scope per operasi; Idempotency-Key; 300/menit per token.
+- [x] `/api/v1/openapi.json` (OpenAPI 3.1 dari skema zod yang sama dengan router) dan halaman `/developer`.
+- [ ] Pemilik: migrasi `0015` di D1 remote, deploy.
+
 ## Token akses (A1, ADR-061, 2026-10-26)
 - [x] `api_tokens` (hash SHA-256, prefix publik, scope, kedaluwarsa, cabut), Bearer hanya di `/api/v1`, `RL_API` per token.
 - [x] Pengaturan → Token & aplikasi: buat (nama, scope, kedaluwarsa), rahasia sekali tampil, daftar, cabut.

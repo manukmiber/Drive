@@ -118,6 +118,8 @@ registerCronTask(CRON.nightly, {
         `DELETE FROM compress_jobs WHERE updated_at < ?1 AND status IN ('done', 'failed', 'skipped') AND source_key IS NULL AND out_key IS NULL`,
       ).bind(cutoff),
       DB.prepare(`DELETE FROM archive_jobs WHERE updated_at < ?1 AND out_key IS NULL`).bind(cutoff),
+      // Idempotency-Key answers are kept a day (ADR-062).
+      DB.prepare('DELETE FROM api_idempotency WHERE created_at < ?1').bind(ctx.now() - DAY_MS),
     ]);
   },
 });

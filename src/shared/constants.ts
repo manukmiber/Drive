@@ -51,3 +51,6 @@ export const DAY_MS = 24 * HOUR_MS;
 /** The operator's address: alerts go there, and so do people who want to advertise (ADR-041). */
 export const OPERATOR_EMAIL = 'admin@zeiko.biz.id';
 export const AD_CONTACT = OPERATOR_EMAIL;
+
+/** Requests a minute one access token may make on /api/v1 (ADR-061): RL_API in wrangler.jsonc. */
+export const API_RATE_PER_MINUTE = 300;

@@ -1,6 +1,7 @@
 // Settings → Tokens & apps (ADR-061): make an access token for the public API, see when each was
 // last used, revoke. The secret is shown once, right after it is made.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { Copy, KeyRound, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { formatDate } from '../../shared/format';
@@ -75,6 +76,12 @@ export function AccessTokens() {
       </h2>
       <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.tokens.intro}</p>
       <p className="mt-1 text-xs text-[var(--fg-muted)]">{t.tokens.signOutNote}</p>
+      <Link
+        to="/developer"
+        className="mt-2 inline-block text-sm text-brand-700 underline dark:text-brand-300"
+      >
+        {t.apiDocs.docsLink}
+      </Link>
 
       {q.data && q.data.tokens.length > 0 ? (
         <ul className="mt-3 divide-y divide-[var(--border)]">

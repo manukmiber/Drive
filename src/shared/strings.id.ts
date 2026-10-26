@@ -1361,6 +1361,29 @@ export const t = {
     deleteCancelled: 'Penghapusan dibatalkan.',
     familyOwner: 'Keluarkan dulu semua anggota keluarga sebelum menghapus Drive.',
   },
+  apiDocs: {
+    title: 'Dokumentasi API',
+    intro:
+      'API publik dipakai skrip dan aplikasimu untuk memakai Zeiko Drive dan mengelola Zeiko S3. Buat token di Pengaturan → Token & aplikasi, lalu kirim di setiap request.',
+    base: 'URL dasar',
+    auth: 'Masuk',
+    limits: 'Batas',
+    limitsBody: (n: number) =>
+      `${n} request per menit per token; lewat dari itu jawabannya 429 dengan Retry-After. Error berbentuk JSON: { "error": { "code", "message", "data" } }.`,
+    idempotency: 'Coba ulang dengan aman',
+    idempotencyBody:
+      'POST bertanda “Idempotency-Key” boleh diulang dengan key yang sama selama 24 jam dan mengembalikan jawaban pertama, bukan membuat item kedua.',
+    download: 'Unduh openapi.json',
+    scope: 'Scope',
+    anyToken: 'token apa saja',
+    params: 'Parameter',
+    body: 'Body',
+    required: 'wajib',
+    loading: 'Memuat deskripsi API…',
+    english: 'Referensi di bawah ini berbahasa Inggris, bahasa API-nya sendiri.',
+    manageTokens: 'Kelola token',
+    docsLink: 'Dokumentasi API',
+  },
   tokens: {
     title: 'Token & aplikasi',
     intro:

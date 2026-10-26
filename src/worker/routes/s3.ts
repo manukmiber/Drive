@@ -2,16 +2,12 @@
 // access keys and buckets. Plans and addresses are bought through /api/billing/checkout (ADR-047/048).
 import { Hono } from 'hono';
 import { z } from 'zod';
-import { AppError } from '../lib/errors';
-import { isS3Error, type S3Error } from '../lib/s3-errors';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
 import {
   createBucket,
   createKey,
-  getAccount,
   revokeKey,
-  s3Configured,
   s3Overview,
   setBucketPublic,
 } from '../services/s3';
@@ -21,61 +17,9 @@ import { CORS_METHODS, getBucketCors, MAX_CORS_RULES, setBucketCors } from '../s
 import { contentLength } from '../lib/http';
 import { rateLimit } from '../middleware/ratelimit';
 import { checkS3Url, releaseS3Url } from '../services/s3-urls';
+import { activeAccount, s3Call } from '../services/s3-app';
 import { bucketStats, MAX_LOG_PREFIX, setBucketLogging } from '../services/s3-stats';
-import type { Ctx } from '../context';
 import type { AppBindings } from '../types';
-
-function asAppError(e: S3Error): AppError {
-  switch (e.code) {
-    case 'BucketAlreadyExists':
-    case 'BucketAlreadyOwnedByYou':
-      return new AppError('NAME_CONFLICT', e.message, { reason: e.code });
-    case 'BucketNotEmpty':
-    case 'TooManyBuckets':
-      return new AppError('CONFLICT', e.message, { reason: e.code });
-    case 'InvalidBucketName':
-      return new AppError('VALIDATION', e.message, { field: 'name', reason: e.code });
-    case 'NoSuchBucket':
-    case 'NoSuchKey':
-      return new AppError('NOT_FOUND', e.message, { reason: e.code });
-    case 'MalformedXML':
-    case 'InvalidTargetBucketForLogging':
-    case 'InvalidRequest':
-    case 'KeyTooLongError':
-    case 'InvalidArgument':
-      return new AppError('VALIDATION', e.message, { reason: e.code });
-    case 'QuotaExceeded':
-      return new AppError('QUOTA_FULL', e.message, { reason: e.code });
-    case 'EntityTooLarge':
-      return new AppError('PAYLOAD_TOO_LARGE', e.message, { reason: e.code });
-    case 'AccessDenied':
-    case 'AccountProblem':
-      return new AppError('FORBIDDEN', e.message, { reason: e.code });
-    default:
-      return new AppError('BAD_REQUEST', e.message, { reason: e.code });
-  }
-}
-
-async function s3Call<T>(fn: () => Promise<T>): Promise<T> {
-  try {
-    return await fn();
-  } catch (e) {
-    throw isS3Error(e) ? asAppError(e) : e;
-  }
-}
-
-async function activeAccount(ctx: Ctx, userId: string) {
-  if (!s3Configured(ctx.env))
-    throw new AppError('FORBIDDEN', 'Zeiko S3 is not available', { reason: 's3_unconfigured' });
-  const acc = await getAccount(ctx, userId);
-  if (!acc || acc.status === 'deleting')
-    throw new AppError('FORBIDDEN', 'Zeiko S3 is not enabled for this account', {
-      reason: 's3_disabled',
-    });
-  if (acc.status !== 'active')
-    throw new AppError('ACCOUNT_SUSPENDED', 'this Zeiko S3 account is suspended');
-  return acc;
-}
 
 const bucketName = z.string().min(3).max(63);
 const objectKey = z.string().min(1).max(1024);

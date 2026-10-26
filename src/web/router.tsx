@@ -38,6 +38,7 @@ const Legal = page(() => import('./pages/Legal'), 'Legal');
 const FamilyPage = page(() => import('./pages/Family'), 'FamilyPage');
 const JoinFamily = page(() => import('./pages/Family'), 'JoinFamily');
 const Settings = page(() => import('./pages/Settings'), 'Settings');
+const ApiDocs = page(() => import('./pages/ApiDocs'), 'ApiDocs');
 const Compress = page(() => import('./pages/Compress'), 'Compress');
 const Advertiser = page(() => import('./pages/Advertiser'), 'Advertiser');
 const Downloads = page(() => import('./pages/Downloads'), 'Downloads');
@@ -137,6 +138,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => appRoute, path: '/iklan', component: Advertiser }),
     createRoute({ getParentRoute: () => appRoute, path: '/unduhan', component: Downloads }),
     createRoute({ getParentRoute: () => appRoute, path: '/pengaturan', component: Settings }),
+    createRoute({ getParentRoute: () => appRoute, path: '/developer', component: ApiDocs }),
   ]),
 ]);
 

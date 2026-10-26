@@ -1332,6 +1332,29 @@ export const en: Strings = {
     deleteCancelled: 'The deletion is cancelled.',
     familyOwner: 'Remove every family member before deleting your Drive.',
   },
+  apiDocs: {
+    title: 'API documentation',
+    intro:
+      'The public API lets your scripts and apps use Zeiko Drive and manage Zeiko S3. Make a token in Settings → Tokens & apps, then send it with every request.',
+    base: 'Base URL',
+    auth: 'Sign in',
+    limits: 'Limits',
+    limitsBody: (n: number) =>
+      `${n} requests a minute per token; past that the answer is 429 with Retry-After. Errors are JSON: { "error": { "code", "message", "data" } }.`,
+    idempotency: 'Safe retries',
+    idempotencyBody:
+      'POSTs marked “Idempotency-Key” can be repeated with the same key for 24 hours and return the first answer instead of making a second item.',
+    download: 'Download openapi.json',
+    scope: 'Scope',
+    anyToken: 'any token',
+    params: 'Parameters',
+    body: 'Body',
+    required: 'required',
+    loading: 'Loading the API description…',
+    english: 'The reference below is in English, the language of the API itself.',
+    manageTokens: 'Manage tokens',
+    docsLink: 'API documentation',
+  },
   tokens: {
     title: 'Tokens & apps',
     intro:

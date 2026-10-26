@@ -1422,3 +1422,37 @@ tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.t
 
 **Konsekuensi:** satu baca D1 per request v1 (plus tulis paling sering 5 menit sekali). Test:
 `tests/integration/tokens.test.ts`, `idor.test.ts`.
+
+## ADR-062 — API publik v1 dan OpenAPI
+**Tanggal:** 2026-10-26 · **Status:** diterima (pemilik: roadmap A2, "pick acak 3 API").
+
+**Keputusan:**
+- `/api/v1` terpisah dari `/api` internal (yang boleh berubah kapan saja). **Aturan versi:** field baru di respons boleh
+  ditambah; menghapus/mengganti arti field, mengubah tipe, atau mewajibkan input baru → `/api/v2`.
+- **Satu daftar endpoint** (`ENDPOINTS` di `routes/v1.ts`, tipe `Endpoint` di `lib/openapi.ts`): method, path, scope,
+  skema zod untuk path/query/body/respons, dan tanda `idempotent`. Router Hono dan `/api/v1/openapi.json` (OpenAPI 3.1
+  dari `z.toJSONSchema`, tanpa token) dibangun dari daftar yang sama. Test gagal kalau router punya route yang tidak ada di
+  daftar, atau respons tidak cocok dengan skemanya. Skema respons `strictObject`: field baru di service harus ditulis juga
+  di `v1-schemas.ts`.
+- Isi awal: akun (`/me`, `/account`: profil, kuota, paket); Drive (detail node + breadcrumb, isi folder dengan cursor,
+  cari, URL unduh bertanda tangan absolut, Sampah, buat folder, ganti nama, pindah, salin, ke Sampah/pulihkan); upload
+  multipart (init/part/status/complete/abort, protokol yang sama dengan app); link share (daftar/buat/cabut); Zeiko S3
+  dengan `s3.manage` (ringkasan akun, key buat/cabut, bucket buat/publik/CORS/hapus). Key S3 berizin terbatas (S1) dan
+  lifecycle (S3) menyusul saat fitur itu ada. Route tetap tipis: service yang sama dengan app, termasuk `requireNode`.
+- Error = `{ error: { code, message, data } }` dari `lib/errors.ts`. Scope kurang → 403 `missing_scope` (dicek sebelum
+  validasi input).
+- **Idempotency-Key** (POST yang membuat sesuatu: folder, salin, upload, share, key S3, bucket): tabel `api_idempotency`
+  (migrasi `0015`), per token + key, 24 jam. Request sama → jawaban pertama + `Idempotent-Replayed: true`; key sama dengan
+  request lain → 409 `idempotency_key_reused`; masih berjalan → 409 `idempotency_in_progress`. Hanya jawaban sukses yang
+  disimpan, jadi percobaan yang gagal boleh diulang. Dibersihkan cron malam.
+- **Rate limit:** 300 request/menit per token (`RL_API`), ditambah batas upload/share yang sama dengan app. Header
+  `X-RateLimit-Limit` dan `RateLimit-Policy`; **sisa kuota tidak dikirim**: binding rate limit Cloudflare tidak
+  melaporkannya, dan menghitung sendiri berarti satu tulis KV/D1 per request (Workers Free: KV 1.000 tulis/hari).
+  300/menit per token masuk akal di Workers Free (100 ribu request/hari per akun Cloudflare): satu skrip tidak bisa
+  menghabiskan jatah harian dalam sejam tanpa terlihat di log.
+- Dokumentasi ringan di app: `/developer` (dibangun dari `openapi.json`, tanpa skrip CDN), ditautkan dari Pengaturan →
+  Token & aplikasi. Teks halaman dua bahasa; ringkasan per operasi berbahasa Inggris seperti dokumen API-nya.
+- CORS untuk `/api/v1` dari situs lain belum dibuka (A4 memutuskan kalau SDK dipakai di browser).
+
+**Konsekuensi:** `services/s3-app.ts` (error S3 → error app, akun aktif) dipakai `/api/s3` dan v1. Test:
+`tests/integration/api-v1.test.ts` (dokumen, kontrak, pagination, idempotency, scope per endpoint, IDOR, S3).

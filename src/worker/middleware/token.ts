@@ -1,5 +1,6 @@
 // Bearer access tokens on /api/v1 (ADR-061): who the request is, at the token's rate.
 import type { MiddlewareHandler } from 'hono';
+export { API_RATE_PER_MINUTE } from '../../shared/constants';
 import { authenticateToken, requireScope, type TokenScope } from '../services/tokens';
 import type { AppBindings } from '../types';
 import { enforceRateLimit } from './ratelimit';
