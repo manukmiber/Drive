@@ -18,7 +18,8 @@ lain. Setelah selesai, sesi itu mengisi kolom Status di tabel.
    bilang "tanya pemilik dulu", tanyakan dan tunggu jawabannya.
 3. **Drive tidak boleh menambah tabel atau kolom D1** (ADR-064): data Drive masuk index R2 user/keluarga atau
    tempat lain sesuai tabel di ADR-064. Migrasi D1 (`migrations/`, append-only) hanya untuk Zeiko S3 dan untuk
-   memindahkan/menghapus tabel lama Drive selama fase R. Index S3 per akun: tambah langkah di `MIGRATIONS`
+   memindahkan/menghapus tabel lama Drive selama fase R. D1 khusus akses (R5/R6) hanya berisi sesi, token, OAuth,
+   dan share. Index S3 per akun: tambah langkah di `MIGRATIONS`
    (`src/worker/services/s3-index.ts`).
 4. Teks UI di `strings.id.ts` + `strings.en.ts`. Angka bisnis di `config-defaults.ts` lewat `services/config.ts`.
    Fitur yang butuh secret, binding, atau DNS dari pemilik didaftarkan di `services/readiness.ts` dan
@@ -57,17 +58,17 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 
 ### Fase R — Drive tanpa D1 (ADR-064)
 
-| ID  | Langkah                                                                                      | Ukuran | Butuh dulu | Status |
-| --- | -------------------------------------------------------------------------------------------- | ------ | ---------- | ------ |
-| R0  | Pemilik menjawab pertanyaan terbuka (lihat bagian R di bawah)                                | –      | –          | belum  |
-| R1  | Format index + pustaka baca/tulis (gzip, ETag, tulis bersyarat etag + ulang), benchmark      | M      | R0         | belum  |
-| R2  | Baca dari index: explorer, detail, breadcrumb, cari, bintang, Sampah; klien tarik index dulu | L      | R1         | belum  |
-| R3  | Tulis ke index: upload + kuota, hasil pindai, ganti nama/pindah/salin/Sampah/hapus, dekorasi | L      | R2         | belum  |
-| R4  | Index keluarga `f/{familyId}/index.txt` (kepemilikan, anggota, izin)                         | M      | R3         | belum  |
-| R5  | Link share dan unduhan publik tanpa D1                                                       | M      | R3         | belum  |
-| R6  | Sesi, token API, OAuth, idempotency tanpa D1                                                 | M      | R0         | belum  |
-| R7  | Akun, paket, pembayaran, katalog, data operator ke relay (repo Relay + ops API dibalik)      | L      | R0         | belum  |
-| R8  | Pindahkan data production, hapus tabel Drive dari D1 (D1 utama tinggal untuk S3)             | M      | R2–R7      | belum  |
+| ID  | Langkah                                                                                      | Ukuran | Butuh dulu | Status                 |
+| --- | -------------------------------------------------------------------------------------------- | ------ | ---------- | ---------------------- |
+| R0  | Pemilik menjawab pertanyaan terbuka (lihat bagian R di bawah)                                | –      | –          | dijawab, kecuali no. 3 |
+| R1  | Format index + pustaka baca/tulis (gzip, ETag, tulis bersyarat etag + ulang), benchmark      | M      | R0         | belum                  |
+| R2  | Baca dari index: explorer, detail, breadcrumb, cari, bintang, Sampah; klien tarik index dulu | L      | R1         | belum                  |
+| R3  | Tulis ke index: upload + kuota, hasil pindai, ganti nama/pindah/salin/Sampah/hapus, dekorasi | L      | R2         | belum                  |
+| R4  | Index keluarga `f/{familyId}/index.txt` (kepemilikan, anggota, izin)                         | M      | R3         | belum                  |
+| R5  | Link share dan unduhan publik ke D1 khusus akses                                             | M      | R3         | belum                  |
+| R6  | Sesi, token API, OAuth, idempotency ke D1 khusus akses                                       | M      | R0         | belum                  |
+| R7  | Akun, paket, pembayaran, katalog, data operator ke relay (repo Relay + ops API dibalik)      | L      | R0         | belum                  |
+| R8  | Pindahkan data production, hapus tabel Drive dari D1 (D1 utama tinggal untuk S3)             | M      | R2–R7      | belum                  |
 
 ### Zeiko Drive
 
@@ -120,17 +121,15 @@ Keputusan pemilik (2026-10-26) ada di ADR-064: satu user = satu folder R2 dengan
 folder); keluarga satu folder satu index (plus kepemilikan); tulis bersyarat etag; index ditarik paling awal oleh semua
 klien, jadi harus super ringan; Drive tidak memakai D1, akun/paket/pembayaran di relay; S3 tetap.
 
-### R0 — Pertanyaan terbuka untuk pemilik (jawab sebelum R1)
+### R0 — Pertanyaan untuk pemilik (dijawab 2026-10-26, rinci di ADR-064)
 
-1. **Link share, token API (A1–A3), dan sesi login**: tetap di Cloudflare sebagai objek R2 (link publik dan API tetap
-   jalan walau relay di HP sedang mati), atau pindah ke database relay? Usul: R2.
-2. **Data operator** (laporan & takedown, legal hold, blocklist hash, audit, iklan): pindah ke database relay? Usul: ya,
-   relay sudah jadi tempat kerja operator (ADR-057).
-3. **Notifikasi, preferensi email, tautan Telegram**: relay atau R2 per user? Usul: relay.
-4. **Batas kuota dan paket** dibaca Drive dari mana saat upload? Usul: relay sumber kebenarannya, lalu menulis salinan
-   kecil ke `u/{userId}/` setiap kali berubah, supaya upload tetap jalan saat relay mati.
-5. **Nama dan format index**: `index.txt` berisi JSON tabel ringkas ter-gzip (usul ADR-064), atau format lain?
-6. **Fitur Drive baru** dibekukan sampai R3 selesai? Usul: ya (kecuali yang murni di browser).
+1. **Link share, token API (A1–A3), dan sesi login** → **D1 khusus** terpisah dari D1 S3 (usul nama `zeiko-access`).
+2. **Data operator** (laporan & takedown, legal hold, blocklist hash, audit, iklan) → **relay**.
+3. **Notifikasi, preferensi email, daftar berhenti berlangganan** → _belum_: pemilik bertanya gunanya dulu.
+   `telegram_links` dan `contacts` tidak dipakai (usul dibuang).
+4. **Batas kuota dan paket** → relay sumber kebenarannya, menulis salinan kecil ke `u/{userId}/` setiap kali berubah.
+5. **Index** → `index.txt`, JSON tabel ringkas ter-gzip.
+6. **Fitur Drive baru dibekukan** sampai R3 selesai. Fitur S3 boleh jalan.
 
 ### R1–R8
 

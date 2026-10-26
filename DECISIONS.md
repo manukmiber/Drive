@@ -1492,8 +1492,9 @@ tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.t
 kedaluwarsa, rotasi + deteksi pemakaian ulang, revoke, putuskan dari Pengaturan, assetlinks).
 
 ## ADR-064 — Drive tanpa D1: satu index per user (dan per keluarga) di R2
-**Tanggal:** 2026-10-26 · **Status:** diterima sebagai arah (pemilik); **implementasi belum dimulai**. Menggantikan
-ADR-002 ("Index D1 sebagai sumber kebenaran"). Bagian bertanda *usul* menunggu konfirmasi pemilik.
+**Tanggal:** 2026-10-26 · **Status:** diterima sebagai arah (pemilik); pertanyaan R0 dijawab 2026-10-26 (kecuali no. 3,
+lihat di bawah); implementasi mulai di R1. Menggantikan ADR-002 ("Index D1 sebagai sumber kebenaran"). Bagian bertanda
+*usul* menunggu konfirmasi pemilik.
 
 **Konteks.** Diagram pemilik (`Zeiko drive x Zeiko S3`): Drive = "1 folder, 1 index.txt di satu R2"; S3 = "1 user, 1 D1
 pengganti index.txt". Sejak ADR-002 Drive justru menyimpan pohon file di D1 bersama (`nodes`, `blobs`, …), dan cadangan
@@ -1510,8 +1511,25 @@ pengganti index.txt". Sejak ADR-002 Drive justru menyimpan pohon file di D1 bers
 5. Index adalah hal pertama yang ditarik web, aplikasi, dan software sebelum apa pun dimuat: formatnya harus seringan dan
    secepat mungkin.
 6. **Drive tidak memakai D1.** D1 hanya untuk Zeiko S3 (yang tetap seperti ADR-044: 1 user, 1 D1 pengganti index.txt).
-   Akun, paket, dan pembayaran ditangani relay.
+   Akun, paket, dan pembayaran ditangani relay. *Pengecualian (jawaban R0 no. 1):* satu **D1 khusus akses**, terpisah
+   dari D1 S3, hanya untuk sesi login, token API/OAuth, dan link share. Tidak ada pohon file, nama file, atau data akun
+   di sana.
 7. S3 tidak berubah.
+
+**Jawaban R0 (pemilik, 2026-10-26):**
+1. Link share, token API (A1–A3), dan sesi login: **D1 khusus** untuk itu ("better handling pakai D1 daripada R2").
+   Satu database D1 baru yang terpisah dari D1 S3 (usul nama `zeiko-access`, binding `ACCESS_DB`), dipakai bersama semua
+   user; isinya tabel sesi, `api_tokens`, `oauth_grants`, `oauth_codes`, `api_idempotency`, `shares`, `share_items`,
+   `share_sends`. Pindahnya di R5 (share) dan R6 (sesi/token/OAuth).
+2. Data operator (laporan & takedown, legal hold, blocklist hash, audit, iklan): **relay**.
+3. Notifikasi, preferensi email, tautan Telegram: **belum diputuskan**, pemilik bertanya dulu gunanya (dijelaskan
+   2026-10-26). Temuan saat menjelaskan: `telegram_links` hanya sisa bot Telegram yang dicabut ADR-041 (dibaca untuk
+   ekspor dan dihapus saat akun dihapus, tidak dipakai fitur apa pun) dan `contacts` tidak pernah dipakai kode; keduanya
+   *usul* dibuang. `notifications` (lonceng di app + email), `notification_prefs` (saklar email per jenis), dan
+   `email_suppressions` (penerima email share yang berhenti berlangganan) menunggu jawaban.
+4. Batas kuota/paket: relay sumber kebenarannya dan menulis salinan kecil ke `u/{userId}/` setiap kali berubah. **Ya.**
+5. Index: `index.txt` berisi JSON tabel ringkas ter-gzip. **Ya.** Rincian format di bawah (R1).
+6. Fitur Drive baru dibekukan sampai R3 selesai. **Ya** (fitur S3 tetap boleh jalan).
 
 **Format index (usul, diuji di fase R1):** objek `u/{userId}/index.txt` (dan `f/{familyId}/index.txt`), isinya JSON
 ringkas berbentuk tabel (array of arrays, bukan objek per file: nama kolom sekali di header), disimpan ter-gzip dengan
@@ -1531,27 +1549,27 @@ D6 dan D8 dibangun di atas index ini, bukan di atas FTS5.
 | `nodes`, `nodes_fts`, `blobs` (status pindai, ukuran, sha256, thumbnail, refcount), dekorasi folder (ADR-058), `storage_pools.used/reserved` | **Index R2** user/keluarga (keputusan 1–3) |
 | `node_stars`, `node_recent` | *usul:* index user sendiri (bintang) dan klien saja (terbaru) |
 | `uploads`, `upload_parts` | *usul:* objek kecil `u/{userId}/uploads/{id}` selama upload berjalan, lalu entri di index |
-| `users`, `accounts`, `sessions`, `verifications` (Better Auth) | **Relay** (Akun Zeiko). *usul:* sesi Drive jadi cookie bertanda tangan tanpa tabel, ikut pintu (ADR-039) |
+| `users`, `accounts`, `verifications` (Better Auth) | **Relay** (Akun Zeiko) |
+| `sessions` | **D1 khusus akses** (R0 no. 1) |
 | `passkeys`, `two_factors` | dibuang (tidak dipakai sejak ADR-057) |
-| `plans`, `addons`, `compress_packs`, `app_config`, `subscriptions`, `subscription_addons`, `storage_pools.limit`, `payments`, `invoices`, `wallets`, `wallet_ledger`, `credit_ledger` | **Relay** (paket dan pembayaran). *usul:* relay menulis salinan batas kuota/paket ke `u/{userId}/` saat berubah, supaya upload tetap jalan walau relay sedang mati |
+| `plans`, `addons`, `compress_packs`, `app_config`, `subscriptions`, `subscription_addons`, `storage_pools.limit`, `payments`, `invoices`, `wallets`, `wallet_ledger`, `credit_ledger` | **Relay** (paket dan pembayaran). Relay menulis salinan batas kuota/paket ke `u/{userId}/` saat berubah, supaya upload tetap jalan walau relay sedang mati (R0 no. 4) |
 | `families`, `family_members`, `family_invites` | *usul:* anggota di header index keluarga; undangan di relay |
-| `shares`, `share_items`, `share_sends` | *usul:* objek `s/{r64}` di R2 (link publik tetap jalan tanpa relay); daftar link di index pemilik |
-| `api_tokens`, `oauth_grants`, `oauth_codes`, `api_idempotency` (A1–A3) | *usul:* objek R2 per token (`t/{prefix}`), supaya API tidak bergantung relay |
-| `abuse_reports`, `legal_holds`, `blocked_hashes`, `audit_logs`, `ad_*`, `advertisers` | *usul:* relay (data operator) |
-| `notifications`, `notification_prefs`, `email_suppressions`, `telegram_links`, `contacts` | *usul:* relay |
+| `shares`, `share_items`, `share_sends` | **D1 khusus akses** (R0 no. 1); item share menunjuk index pemilik + nomor entri |
+| `api_tokens`, `oauth_grants`, `oauth_codes`, `api_idempotency` (A1–A3) | **D1 khusus akses** (R0 no. 1) |
+| `abuse_reports`, `legal_holds`, `blocked_hashes`, `audit_logs`, `ad_*`, `advertisers` | **Relay** (data operator, R0 no. 2) |
+| `notifications`, `notification_prefs`, `email_suppressions` | menunggu jawaban R0 no. 3 |
+| `telegram_links`, `contacts` | *usul:* dibuang (tidak dipakai, lihat R0 no. 3) |
 | `archive_jobs`, `compress_jobs`, `vt_verdicts`, `vt_budget`, `usage_counters`, `counters` | *usul:* objek R2/KV sementara atau Analytics Engine |
 | `manifest_dirty`, `batch_guards` | dibuang |
 
-**Yang perlu diputuskan pemilik sebelum kode** (daftar yang sama ada di `docs/ROADMAP.md` bagian R):
-link share, token API, dan sesi tetap di Cloudflare (R2) supaya tidak mati saat relay mati, atau pindah ke relay; data
-operator (laporan, iklan, audit) ke database relay; nama dan format akhir objek index; urutan fase dan apakah fitur Drive
-baru dibekukan sampai fase R3.
+**Yang masih menunggu pemilik:** R0 no. 3 (notifikasi, preferensi email, daftar berhenti berlangganan).
 
 **Fase (rinci di ROADMAP bagian R):** R1 format + pustaka index (CAS etag, benchmark) → R2 baca dari index (explorer,
 detail, breadcrumb, cari, bintang, Sampah) → R3 tulis ke index (upload/kuota, pindai, ganti nama/pindah/salin/Sampah/hapus,
-dekorasi) → R4 index keluarga → R5 link share di R2 → R6 sesi, token API, OAuth tanpa D1 → R7 akun/paket/pembayaran/data
+dekorasi) → R4 index keluarga → R5 link share ke D1 khusus akses → R6 sesi, token API, OAuth ke D1 khusus akses → R7 akun/paket/pembayaran/data
 operator di relay (repo Relay) → R8 pindahkan data production, hapus tabel Drive dari D1 (D1 utama tinggal untuk S3).
 
 **Dampak ke yang sudah ada:** ADR-002, ADR-058 (kolom dekorasi), ADR-061–063 (tabel token/OAuth) dan sebagian besar
 `services/` Drive dibangun di atas D1 dan akan dipindah lewat fase di atas. Sampai fase itu selesai, kode yang ada tetap
-jalan apa adanya (production saat ini: 6 node). Fitur Drive baru tidak boleh menambah tabel atau kolom D1.
+jalan apa adanya (production saat ini: 6 node). Fitur Drive baru tidak boleh menambah tabel atau kolom D1 (D1 S3
+maupun D1 khusus akses; yang terakhir hanya menerima tabel sesi, token, OAuth, dan share yang dipindah di R5/R6).

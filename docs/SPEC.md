@@ -58,7 +58,7 @@ Sumber harga: spreadsheet "Zeiko cloud storage" (https://docs.google.com/spreads
 | Runtime | Cloudflare Workers (TypeScript). Satu Worker utama dengan handler `fetch`, `queue`, `scheduled`. Frontend dilayani lewat Workers Static Assets. Boleh dipecah nanti via service bindings. |
 | API | Hono + Zod |
 | Frontend | React + Vite (`@cloudflare/vite-plugin`), TanStack Router + Query, Tailwind + shadcn/ui, TanStack Virtual, PWA |
-| Database | **Target (ADR-064, pemilik 2026-10-26): Drive tidak memakai D1.** Pohon file = satu index per user (`u/{userId}/index.txt`) dan per keluarga (`f/{familyId}/index.txt`) di R2; akun, paket, dan pembayaran di relay; D1 hanya untuk Zeiko S3. *Sekarang (sebelum migrasi fase R):* D1 + Drizzle, FTS5 untuk nama. |
+| Database | **Target (ADR-064, pemilik 2026-10-26): Drive tidak memakai D1.** Pohon file = satu index per user (`u/{userId}/index.txt`) dan per keluarga (`f/{familyId}/index.txt`) di R2; akun, paket, pembayaran, dan data operator di relay; D1 hanya untuk Zeiko S3, plus satu D1 khusus akses (sesi, token API/OAuth, link share). *Sekarang (sebelum migrasi fase R):* D1 + Drizzle, FTS5 untuk nama. |
 | Objek | R2 bucket privat (public access dan r2.dev mati), location hint APAC |
 | Async | Queues: `scan`, `archive`, `compress`, `notify`, `cleanup` |
 | Terjadwal | Cron Triggers (13.4) |
@@ -684,8 +684,8 @@ Setiap fase selesai = DoD terpenuhi + test hijau + `PROGRESS.md` diperbarui + co
 
 ## 16. Keputusan terbuka
 
-- **Drive tanpa D1 (ADR-064):** tempat link share, token API, sesi, data operator, notifikasi, dan salinan batas kuota;
-  format akhir index. Daftar lengkap di `docs/ROADMAP.md` bagian R0.
+- **Drive tanpa D1 (ADR-064):** R0 dijawab 2026-10-26 kecuali tempat notifikasi, preferensi email, dan daftar berhenti
+  berlangganan. Lihat `docs/ROADMAP.md` bagian R0.
 
 Pakai default ini sampai pemilik menjawab. Semua dibuat sebagai config supaya mudah diubah.
 

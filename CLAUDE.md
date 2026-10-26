@@ -8,12 +8,13 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
   kepemilikan. Index = sumber kebenaran pohon file dan hal pertama yang ditarik web, aplikasi, dan software, jadi
   formatnya harus seringan mungkin (usul: JSON tabel ringkas ter-gzip + ETag). Ditulis dengan syarat etag R2: bentrok →
   baca ulang, ulangi.
-- **Drive tidak memakai D1.** Akun, paket, dan pembayaran di relay. D1 hanya untuk Zeiko S3 (tidak berubah: 1 user, 1 D1
-  pengganti index.txt, ADR-044).
+- **Drive tidak memakai D1.** Akun, paket, pembayaran, dan data operator di relay. D1 hanya untuk Zeiko S3 (tidak
+  berubah: 1 user, 1 D1 pengganti index.txt, ADR-044), plus satu **D1 khusus akses** terpisah untuk sesi login, token
+  API/OAuth, dan link share (jawaban R0, ADR-064). Pohon file dan nama file tidak pernah masuk D1.
 - **Kode sekarang belum begitu:** Drive masih memakai D1 (`nodes`, `blobs`, `shares`, sesi, token, dll.). Pindahnya
-  bertahap lewat **fase R di `docs/ROADMAP.md`**, dimulai setelah pemilik menjawab pertanyaan terbuka di ADR-064.
-  Sampai itu: **jangan menambah tabel atau kolom D1 untuk Drive**, dan fitur Drive baru di roadmap menunggu fase R
-  (kecuali yang murni berjalan di browser).
+  bertahap lewat **fase R di `docs/ROADMAP.md`**, R0 sudah dijawab (ADR-064), kecuali no. 3 (notifikasi).
+  Sampai pindah selesai: **jangan menambah tabel atau kolom D1 untuk Drive**, dan fitur Drive baru di roadmap dibekukan sampai R3
+  selesai (keputusan pemilik; fitur S3 boleh jalan).
 
 ## Mesin ini
 - HP Android (PRoot, aarch64). **workerd tidak bisa jalan** → jangan pakai `wrangler dev`,

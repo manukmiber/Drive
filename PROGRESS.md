@@ -10,7 +10,8 @@ etag; format super ringan karena ditarik paling awal; Drive tidak memakai D1 (ak
 Semua yang di bawah ini yang menyimpan data Drive di D1 (pohon file, share, sesi, token A1–A3, dekorasi D5, dll.) pindah
 lewat fase R di `docs/ROADMAP.md`.
 - [x] Keputusan dan peta pindah ditulis: ADR-064, SPEC §2–§4, `CLAUDE.md`, ROADMAP (fase R), `PLAN.md`, `peta-file.md`.
-- [ ] R0: pemilik menjawab pertanyaan terbuka (ROADMAP bagian R0).
+- [x] R0: pemilik menjawab (2026-10-26): share/token/sesi ke D1 khusus akses; data operator ke relay; salinan kuota
+  dari relay; `index.txt` JSON ringkas ter-gzip; fitur Drive baru dibekukan sampai R3. **Belum:** no. 3 (notifikasi).
 - [ ] R1 format + pustaka index · R2 baca dari index · R3 tulis ke index · R4 index keluarga · R5 share tanpa D1 ·
   R6 sesi/token/OAuth tanpa D1 · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
