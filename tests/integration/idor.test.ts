@@ -149,7 +149,9 @@ describe('IDOR (SPEC §14.1)', () => {
           .all(a.userId),
         rt.d1.sqlite.prepare('SELECT node_id FROM node_stars WHERE user_id = ?').all(b.userId),
         rt.d1.sqlite.prepare('SELECT id, revoked_at FROM s3_keys ORDER BY id').all(),
-        rt.d1.sqlite.prepare('SELECT name, user_id, public FROM s3_buckets ORDER BY name').all(),
+        rt.d1.sqlite
+          .prepare('SELECT name, user_id, public, cors_json FROM s3_buckets ORDER BY name')
+          .all(),
       ]);
     const before = snapshot();
     const body = (bytes: Uint8Array) => ({
@@ -205,6 +207,8 @@ describe('IDOR (SPEC §14.1)', () => {
       ['GET', `/api/compress/standalone/${job.jobId}/result`],
       ['POST', '/api/archives', { nodeIds: [folder.id] }],
       ['POST', '/api/archives/estimate', { nodeIds: [folder.id] }],
+      ['POST', '/api/files/download-plan', { nodeIds: [folder.id] }],
+      ['POST', '/api/files/download-plan', { nodeIds: [file.id] }],
       ['GET', `/api/advertiser/creatives/${creative.id}/image`],
       ['POST', `/api/admin/ads/campaigns/${campaign.id}/send-payment`, {}],
       ['GET', `/api/admin/ads/advertiser?email=korban@example.com`],
@@ -214,6 +218,18 @@ describe('IDOR (SPEC §14.1)', () => {
       ['PATCH', '/api/s3/buckets/milik-a', { public: true }],
       ['DELETE', '/api/s3/buckets/milik-a'],
       ['POST', '/api/s3/buckets', { name: 'milik-a' }],
+      // ADR-055: A's bucket from the /s3 page.
+      ['GET', '/api/s3/buckets/milik-a/objects'],
+      ['POST', '/api/s3/buckets/milik-a/objects/link', { key: 'x.txt' }],
+      ['POST', '/api/s3/buckets/milik-a/objects/delete', { keys: ['x.txt'] }],
+      ['PUT', '/api/s3/buckets/milik-a/objects?key=x.txt', undefined, body(new Uint8Array(3))],
+      ['GET', '/api/s3/buckets/milik-a/cors'],
+      [
+        'PUT',
+        '/api/s3/buckets/milik-a/cors',
+        { rules: [{ allowedOrigins: ['*'], allowedMethods: ['GET'] }] },
+      ],
+      ['DELETE', '/api/s3/buckets/milik-a/cors'],
     ];
 
     const leaks: string[] = [];

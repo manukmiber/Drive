@@ -1191,3 +1191,47 @@ gambar (SPEC §6.2 minta unduh PNG/SVG, salin, layar penuh), dan Dibagikan hanya
 **Konsekuensi:** test `tests/integration/shares.test.ts` (daftar, unduh per file + hitungan, node di luar share,
 ZIP `?all=1`, mati → ZIP lagi, password di depan file, satu file tidak pernah didaftar, buat ulang menyimpan
 pengaturan).
+
+## ADR-055 — Zeiko S3: CORS per bucket dan isi bucket di halaman /s3
+
+**Status:** diterima (pemilik, 2026-10-26, permintaan yang sama dengan ADR-053: "S3 … lebih robust dan punya banyak
+fitur"). **Konteks:** CORS menjawab `NotImplemented` (ADR-044), jadi aplikasi web di situs lain tidak bisa memakai
+bucket (presigned URL dari browser butuh CORS). Halaman `/s3` hanya mengatur key dan bucket; melihat, mengunggah,
+atau membagikan satu objek harus lewat aws-cli/rclone.
+
+**Keputusan:**
+- **CORS sungguhan** (`services/s3-cors.ts`, kolom `s3_buckets.cors_json`, migrasi `0010`): PutBucketCors (XML
+  `CORSConfiguration`, maks 100 aturan, metode GET/PUT/POST/DELETE/HEAD, satu `*` per origin/header,
+  `MaxAgeSeconds` ≥ 0; salah = `MalformedXML`/`InvalidRequest`), GetBucketCors (`NoSuchCORSConfiguration` 404 kalau
+  belum ada), DeleteBucketCors. Hanya pemilik bucket. `cors` tidak lagi di daftar sub-resource `NotImplemented`.
+- **Preflight** `OPTIONS` (tanpa tanda tangan, seperti Amazon): aturan pertama yang cocok dengan Origin, metode, dan
+  semua `Access-Control-Request-Headers` (header tanpa beda huruf besar/kecil; origin persis) → 200 dengan
+  `Allow-Origin` (origin itu, atau `*` kalau aturannya `*`, tanpa credentials), `Allow-Methods`, `Allow-Headers`,
+  `Max-Age`, `Vary`. Tidak ada aturan/tidak cocok → 403 `CORSResponse`. Request biasa yang membawa Origin mendapat
+  header CORS dari aturan yang cocok (origin + metode), **termasuk respons error**, supaya aplikasi bisa membaca
+  pesan error-nya. Di alamat sendiri (ADR-048) hanya bucket pemilik alamat itu.
+- **Isi bucket di `/s3`** (`S3Browser.tsx`, API sesi Drive `/api/s3/buckets/:name/…`, `services/s3-browse.ts`):
+  - `GET objects?prefix&cursor`: satu tingkat folder (delimiter `/`), 200 per halaman, "Muat lagi".
+  - `PUT objects?key` (body = file, `x-object-content-type`): satu request per file lewat app, maks
+    `s3_web_upload_max_bytes` (95 MiB, di bawah batas body Workers 100 MB); lebih besar → pakai aws-cli/rclone
+    (multipart). Upload berjalan sebanyak "upload bersamaan" perangkat itu (ADR-053). Folder baru = objek 0 byte
+    berakhiran `/` (tidak ditampilkan sebagai file).
+  - `POST objects/link {key, expiresInSeconds, download}`: **presigned URL biasa** (`presignUrl`, SigV4 query, host
+    ditandatangani, `UNSIGNED-PAYLOAD`), ditandatangani dengan access key terbaru akun itu yang belum dicabut, maks
+    `s3_link_max_seconds` (7 hari, batas S3). Mencabut key itu mematikan link-nya, dan halaman mengatakannya. Tanpa
+    key → 409 `s3_no_key` dengan pesan "buat access key dulu". Ini bukan presigned URL **R2** (larangan CLAUDE.md
+    tetap): URL-nya ke host Zeiko S3 dan dicek Worker seperti request S3 lain (egress dihitung, objek yang belum
+    lolos scan tetap hanya untuk pemilik).
+  - `POST objects/delete {keys ≤ 1000}`.
+  - `GET|PUT|DELETE cors`: editor satu aturan (origin per baris, metode, header, expose, max age); aturan lebih dari
+    satu tetap bisa lewat S3 API, dan halaman memberi tahu kalau menyimpan akan menggantinya.
+  - Unduh banyak objek: link presigned per objek diserahkan ke unduhan browser satu per satu lewat antrean unduhan
+    (ADR-053, tanpa OPFS karena host S3 beda origin dan tidak memberi app CORS diam-diam).
+  - Tagihan (ADR-047): `locked` menolak semuanya, `readonly` menolak upload. Semua di-scope ke pemilik bucket dan
+    masuk suite IDOR.
+
+**Konsekuensi:** satu baca D1 tambahan untuk request S3 yang membawa header Origin (hanya browser). Test:
+`tests/integration/s3-cors-browse.test.ts` (AWS SDK Put/Get/DeleteBucketCors, preflight cocok/tidak, wildcard,
+header CORS di error, aturan salah, bucket orang lain; daftar per folder, upload lewat app + dibaca SDK, folder kosong,
+link presigned yang jalan tanpa sesi, hapus, tanpa key, batas ukuran; presign dicek `verifySignature` + kedaluwarsa),
+`tests/integration/idor.test.ts`.

@@ -19,7 +19,10 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | EN/ID | `src/shared/strings.{id,en}.ts`, `src/web/lib/i18n.ts`, `src/worker/lib/lang.ts`, `src/worker/routes/me.ts` (`locale`), `migrations/0004_*` | — | `public/js/main.js` (cookie `zk_lang`), `public/id/drive.html` |
 | Harga di website | `src/worker/routes/catalog.ts` (`/api/public/catalog`) | — | `src/drive.js` (`renderPlans`), `public/drive.html` |
 | Upload | `src/web/upload/*`, `src/worker/routes/uploads.ts`, `src/worker/services/uploads.ts` | — | — |
-| Download / share | `src/worker/routes/{download,share-public,shares,archive-download}.ts`, `src/worker/services/{download,shares,share-send}.ts` | — | link share diteruskan oleh `src/worker.js` |
+| Batas transfer per perangkat (ADR-053) | `src/web/lib/{transfer,transfer-rules,transfer-guard}.ts`, `components/TransferSettings.tsx`, panel `components/UploadPanel.tsx` | — | — |
+| Unduh file terpisah (ADR-053) | `src/web/download/{manager,sinks,names,browser,useDownloads}.ts`, `components/explorer/ArchiveDialog.tsx`, `POST /api/files/download-plan` (`routes/nodes.ts`, `services/download.ts`, `collectFiles` di `services/archive.ts`) | — | — |
+| Download / share | `src/worker/routes/{download,share-public,shares,archive-download}.ts`, `src/worker/services/{download,shares,share-send}.ts`, `components/explorer/{ShareDialog,ShareSettings,ShareQr}.tsx` (ADR-054) | — | link share diteruskan oleh `src/worker.js` |
+| Zeiko S3: CORS dan isi bucket (ADR-055) | `services/{s3-cors,s3-browse}.ts`, `routes/s3-api.ts` (`corsOp`, `preflight`), `routes/s3.ts`, `lib/s3-sigv4.ts` (`presignUrl`), `pages/{S3,S3Browser}.tsx` | — | — |
 | Editor foto/video/PDF (ADR-050, di browser) | `src/web/editors/*`, `src/web/pages/Tools.tsx` (`/alat`), menu di `components/explorer/useNodeActions.tsx`, tombol Edit + pdf.js di `Preview.tsx`, aset pdf.js di `vite.config.ts` | — | — |
 | Editor teks/kode, dokumen, file baru (ADR-051) | `src/web/editors/{text,doc}/*`, `editors/sanitize.ts`, `editors/prose.css`, Baru → Dokumen / File teks di `components/NewMenu.tsx`, pratinjau `.docx` di `Preview.tsx` | — | — |
 

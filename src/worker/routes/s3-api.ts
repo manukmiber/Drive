@@ -38,6 +38,15 @@ import { meterS3Egress } from '../services/s3-billing';
 import { getFromAnyCopy } from '../services/s3-replicas';
 import { s3UrlOwner } from '../services/s3-urls';
 import {
+  bucketCors,
+  corsHeaders,
+  corsXml,
+  matchCors,
+  parseCorsXml,
+  requestedHeaders,
+  setBucketCors,
+} from '../services/s3-cors';
+import {
   createBucket,
   getAccount,
   getBucket,
@@ -99,7 +108,6 @@ const UNSUPPORTED_SUB = [
   'accelerate',
   'analytics',
   'attributes',
-  'cors',
   'encryption',
   'intelligent-tiering',
   'inventory',
@@ -504,7 +512,7 @@ async function bucketOp(r: Req): Promise<Response> {
   const q = r.query;
   const sub = UNSUPPORTED_SUB.find((s) => q.has(s));
   const auth = needAuth(r);
-  if (r.method === 'PUT' && !q.has('acl')) {
+  if (r.method === 'PUT' && !q.has('acl') && !q.has('cors')) {
     if (sub)
       throw new S3Error('NotImplemented', `The ${sub} configuration is not supported by Zeiko S3.`);
     r.op = 'CreateBucket';
@@ -520,6 +528,7 @@ async function bucketOp(r: Req): Promise<Response> {
   const bucket = await ownBucket(r.ctx, auth.userId, name);
   if (sub)
     throw new S3Error('NotImplemented', `The ${sub} sub-resource is not supported by Zeiko S3.`);
+  if (q.has('cors')) return corsOp(r, bucket);
   switch (r.method) {
     case 'HEAD':
       r.op = 'HeadBucket';
@@ -570,6 +579,69 @@ async function bucketOp(r: Req): Promise<Response> {
         'The specified method is not allowed against this resource.',
       );
   }
+}
+
+/** Get/Put/DeleteBucketCors (ADR-055). */
+async function corsOp(r: Req, bucket: BucketRow): Promise<Response> {
+  const auth = needAuth(r);
+  switch (r.method) {
+    case 'GET': {
+      r.op = 'GetBucketCors';
+      const rules = bucketCors(bucket);
+      if (!rules)
+        throw new S3Error('NoSuchCORSConfiguration', 'The CORS configuration does not exist', {
+          BucketName: bucket.name,
+        });
+      return xmlResponse(corsXml(rules));
+    }
+    case 'PUT':
+      r.op = 'PutBucketCors';
+      await setBucketCors(r.ctx, auth.userId, bucket.name, parseCorsXml(await readSmallBody(r)));
+      return new Response(null, { status: 200 });
+    case 'DELETE':
+      r.op = 'DeleteBucketCors';
+      await setBucketCors(r.ctx, auth.userId, bucket.name, null);
+      return new Response(null, { status: 204 });
+    default:
+      throw new S3Error(
+        'MethodNotAllowed',
+        'The specified method is not allowed against this resource.',
+      );
+  }
+}
+
+/** A bucket as a browser on another site sees it: on an own address, only its owner's. */
+async function corsBucket(r: Req): Promise<BucketRow | null> {
+  if (!r.bucket) return null;
+  const b = await getBucket(r.ctx, r.bucket);
+  if (!b || (r.hostOwner !== null && b.user_id !== r.hostOwner)) return null;
+  return b;
+}
+
+const CORS_DENIED =
+  "This CORS request is not allowed. This is usually because the evalution of Origin, request method / Access-Control-Request-Method or Access-Control-Request-Headers are not whitelisted by the resource's CORS spec.";
+
+/** The browser's preflight (OPTIONS): unsigned, answered from the bucket's rules alone. */
+async function preflight(r: Req): Promise<Response> {
+  r.op = 'PreflightRequest';
+  const h = r.raw.headers;
+  const origin = h.get('origin');
+  const method = h.get('access-control-request-method');
+  if (!origin || !method)
+    throw new S3Error(
+      'InvalidRequest',
+      'Insufficient information. Origin and Access-Control-Request-Method are needed.',
+    );
+  const bucket = await corsBucket(r);
+  const rules = bucket ? bucketCors(bucket) : null;
+  if (!rules) throw new S3Error('CORSResponse', 'CORS is not enabled for this bucket.');
+  const asked = requestedHeaders(h.get('access-control-request-headers'));
+  const rule = matchCors(rules, origin, method, asked);
+  if (!rule) throw new S3Error('CORSResponse', CORS_DENIED);
+  return new Response(null, {
+    status: 200,
+    headers: corsHeaders(rule, origin, { method, headers: asked }),
+  });
 }
 
 async function deleteMany(r: Req, bucket: BucketRow): Promise<Response> {
@@ -1051,8 +1123,11 @@ export async function handleS3(
     const pairs = parseQuery(url.search);
     r.query = new Map(pairs);
     Object.assign(r, locate(url, ctx.env, hostOwner !== null));
-    r.auth = await authenticate(ctx, raw, url, pairs);
-    res = await dispatch(r);
+    if (raw.method === 'OPTIONS') res = await preflight(r);
+    else {
+      r.auth = await authenticate(ctx, raw, url, pairs);
+      res = await dispatch(r);
+    }
   } catch (e) {
     let err: S3Error;
     if (isS3Error(e)) err = e;
@@ -1067,6 +1142,13 @@ export async function handleS3(
   const out = new Response(res.body, res);
   out.headers.set('x-amz-request-id', requestId);
   out.headers.set('Server', 'ZeikoS3');
+  // A browser on another site (ADR-055): the bucket's first matching rule, errors included.
+  const origin = raw.headers.get('origin');
+  if (origin && raw.method !== 'OPTIONS' && r.bucket) {
+    const bucket = await corsBucket(r).catch(() => null);
+    const rule = bucket ? matchCors(bucketCors(bucket), origin, raw.method) : null;
+    if (rule) for (const [k, v] of corsHeaders(rule, origin, null)) out.headers.set(k, v);
+  }
   track(ctx.env.ANALYTICS, 's3_request', {
     index: r.auth?.userId ?? 'anonymous',
     blobs: [r.op, String(out.status), r.bucket ?? ''],

@@ -1,8 +1,20 @@
 // Zeiko S3 (ADR-044): buying a plan (ADR-047), the endpoint, this account's storage and plan, its
-// access keys and buckets. Objects themselves are handled through the S3 API with any S3 tool.
+// access keys and buckets. A bucket's objects can be browsed, uploaded (one request each), linked
+// and deleted here, and its CORS rules set (ADR-055); everything else goes through any S3 tool.
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Copy, Database, Globe, KeyRound, Lock, Plus, Receipt, Trash2 } from 'lucide-react';
+import {
+  Copy,
+  Database,
+  FolderOpen,
+  Globe,
+  KeyRound,
+  Lock,
+  Plus,
+  Receipt,
+  Share2,
+  Trash2,
+} from 'lucide-react';
 import type { CheckoutItem } from '../lib/types';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { OPERATOR_EMAIL } from '../../shared/constants';
@@ -16,6 +28,7 @@ import { cn } from '../lib/cn';
 import { useCatalog } from '../lib/catalog';
 import { useCheckout } from './Billing';
 import { NotFound } from './NotFound';
+import { S3Browser } from './S3Browser';
 
 interface S3Key {
   id: string;
@@ -24,11 +37,156 @@ interface S3Key {
   lastUsedAt: number | null;
 }
 
+interface CorsRule {
+  allowedOrigins: string[];
+  allowedMethods: string[];
+  allowedHeaders: string[];
+  exposeHeaders: string[];
+  maxAgeSeconds?: number;
+}
+
 interface S3Bucket {
   name: string;
   public: boolean;
   blocked: boolean;
   createdAt: number;
+  cors: CorsRule[] | null;
+}
+
+const CORS_METHODS = ['GET', 'HEAD', 'PUT', 'POST', 'DELETE'];
+const csv = (v: string) =>
+  v
+    .split(/[\s,]+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
+/** One CORS rule, the common case (ADR-055); more rules are for the S3 API. */
+function CorsDialog({
+  bucket,
+  onClose,
+  onSaved,
+}: {
+  bucket: S3Bucket;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const first = bucket.cors?.[0];
+  const [origins, setOrigins] = useState(first?.allowedOrigins.join('\n') ?? '');
+  const [methods, setMethods] = useState<string[]>(first?.allowedMethods ?? ['GET', 'HEAD']);
+  const [headers, setHeaders] = useState(first?.allowedHeaders.join(', ') ?? '*');
+  const [expose, setExpose] = useState(first?.exposeHeaders.join(', ') ?? 'ETag');
+  const [maxAge, setMaxAge] = useState(String(first?.maxAgeSeconds ?? 3000));
+  const [busy, setBusy] = useState(false);
+  const path = `/api/s3/buckets/${encodeURIComponent(bucket.name)}/cors`;
+  async function act(fn: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    try {
+      await fn();
+      toast(done);
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast(errorText(e), { tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+  const field =
+    'mt-1 w-full rounded-xl border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg)]';
+  return (
+    <Dialog
+      open
+      title={t.s3.corsTitle(bucket.name)}
+      onClose={onClose}
+      footer={
+        <>
+          {bucket.cors && (
+            <Button
+              variant="ghost"
+              className="text-red-600"
+              disabled={busy}
+              onClick={() => void act(() => sendJson('DELETE', path), t.s3.corsRemoved)}
+            >
+              {t.s3.corsRemove}
+            </Button>
+          )}
+          <Button
+            disabled={busy || !csv(origins).length || !methods.length}
+            onClick={() =>
+              void act(
+                () =>
+                  sendJson('PUT', path, {
+                    rules: [
+                      {
+                        allowedOrigins: csv(origins),
+                        allowedMethods: methods,
+                        allowedHeaders: csv(headers),
+                        exposeHeaders: csv(expose),
+                        ...(maxAge ? { maxAgeSeconds: Number(maxAge) } : {}),
+                      },
+                    ],
+                  }),
+                t.s3.corsSaved,
+              )
+            }
+          >
+            {t.s3.corsSave}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[var(--fg-muted)]">{t.s3.corsBody}</p>
+      {(bucket.cors?.length ?? 0) > 1 && (
+        <p className="mt-2 text-xs text-amber-700">{t.s3.corsManyRules(bucket.cors!.length)}</p>
+      )}
+      <label className="mt-3 block text-xs text-[var(--fg-muted)]">
+        {t.s3.corsOrigins}
+        <textarea
+          rows={3}
+          value={origins}
+          onChange={(e) => setOrigins(e.target.value)}
+          spellCheck={false}
+          autoCapitalize="none"
+          className={field}
+          placeholder="https://app.contoh.com"
+        />
+      </label>
+      <fieldset className="mt-3">
+        <legend className="text-xs text-[var(--fg-muted)]">{t.s3.corsMethods}</legend>
+        <div className="mt-1 flex flex-wrap gap-3">
+          {CORS_METHODS.map((m) => (
+            <label key={m} className="flex items-center gap-1 text-sm">
+              <input
+                type="checkbox"
+                checked={methods.includes(m)}
+                onChange={(e) =>
+                  setMethods((cur) => (e.target.checked ? [...cur, m] : cur.filter((x) => x !== m)))
+                }
+              />
+              {m}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <label className="mt-3 block text-xs text-[var(--fg-muted)]">
+        {t.s3.corsHeaders}
+        <input value={headers} onChange={(e) => setHeaders(e.target.value)} className={field} />
+      </label>
+      <label className="mt-3 block text-xs text-[var(--fg-muted)]">
+        {t.s3.corsExpose}
+        <input value={expose} onChange={(e) => setExpose(e.target.value)} className={field} />
+      </label>
+      <label className="mt-3 block text-xs text-[var(--fg-muted)]">
+        {t.s3.corsMaxAge}
+        <input
+          value={maxAge}
+          onChange={(e) => setMaxAge(e.target.value.replace(/\D/g, '').slice(0, 8))}
+          inputMode="numeric"
+          className={field}
+        />
+      </label>
+    </Dialog>
+  );
 }
 
 interface S3Plan {
@@ -614,6 +772,8 @@ function S3Page() {
   const [created, setCreated] = useState<{ id: string; secret: string } | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [browsing, setBrowsing] = useState<string | null>(null);
+  const [corsFor, setCorsFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: QUERY });
 
@@ -837,6 +997,11 @@ function S3Page() {
                     <span className="rounded-full bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] text-[var(--fg-muted)]">
                       {b.blocked ? t.s3.blocked : b.public ? t.s3.public : t.s3.private}
                     </span>
+                    {b.cors && (
+                      <span className="rounded-full bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] text-[var(--fg-muted)]">
+                        {t.s3.corsOn}
+                      </span>
+                    )}
                   </p>
                   {b.public && (
                     <p className="mt-0.5 truncate text-xs text-[var(--fg-muted)]">
@@ -844,6 +1009,24 @@ function S3Page() {
                     </p>
                   )}
                 </div>
+                <Button
+                  variant={browsing === b.name ? 'primary' : 'secondary'}
+                  className="h-9 px-3"
+                  disabled={suspended || acc.billingState === 'locked'}
+                  onClick={() => setBrowsing(browsing === b.name ? null : b.name)}
+                >
+                  <FolderOpen className="h-4 w-4" aria-hidden="true" /> {t.s3.browse}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="h-9 px-3"
+                  disabled={busy || suspended}
+                  onClick={() => setCorsFor(b.name)}
+                  aria-label={`${t.s3.cors} ${b.name}`}
+                  title={t.s3.cors}
+                >
+                  <Share2 className="h-4 w-4" aria-hidden="true" /> {t.s3.cors}
+                </Button>
                 {!b.blocked && (
                   <Button
                     variant="secondary"
@@ -909,6 +1092,16 @@ function S3Page() {
           </label>
         </form>
       </Section>
+
+      {browsing && d.buckets.some((b) => b.name === browsing) && (
+        <S3Browser
+          key={browsing}
+          bucket={browsing}
+          canWrite={!suspended && acc.billingState === 'ok'}
+          hasKey={d.keys.length > 0}
+          onClose={() => setBrowsing(null)}
+        />
+      )}
 
       <Section
         id="s3-howto"
@@ -1009,6 +1202,13 @@ force_path_style = true`}
       >
         {deleting && <p>{t.s3.deleteBody(deleting)}</p>}
       </Dialog>
+      {corsFor && d.buckets.some((b) => b.name === corsFor) && (
+        <CorsDialog
+          bucket={d.buckets.find((b) => b.name === corsFor)!}
+          onClose={() => setCorsFor(null)}
+          onSaved={() => void refresh()}
+        />
+      )}
     </div>
   );
 }

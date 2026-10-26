@@ -11,6 +11,8 @@ const STATUS = {
   BucketAlreadyExists: 409,
   BucketAlreadyOwnedByYou: 409,
   BucketNotEmpty: 409,
+  /** A browser's CORS preflight that no rule allows (or no CORS on the bucket). */
+  CORSResponse: 403,
   EntityTooLarge: 400,
   EntityTooSmall: 400,
   IncompleteBody: 400,
@@ -32,6 +34,7 @@ const STATUS = {
   MissingContentLength: 411,
   MissingSecurityHeader: 400,
   NoSuchBucket: 404,
+  NoSuchCORSConfiguration: 404,
   NoSuchKey: 404,
   NoSuchUpload: 404,
   NotImplemented: 501,

@@ -65,6 +65,13 @@ karena CSP, jadi cek spreadsheet di build production, bukan dev), ZIP dibaca sen
 dicek, path dibersihkan), HTML dari file orang selalu lewat `editors/sanitize.ts`. Baru → Dokumen / Spreadsheet / File teks membuka editor dengan file kosong (`EditRequest.blank`)
 yang disimpan ke folder yang sedang dibuka. `EditorFrame` dirender ke `document.body` (portal).
 
+**Transfer** (ADR-053): berapa upload/unduhan berjalan bersamaan dipilih per perangkat (`src/web/lib/transfer.ts`,
+maks 20 file tiap arah, batas dari config `*_cap`); "Unduh → File terpisah" lewat antrean unduhan
+(`src/web/download/`, `POST /api/files/download-plan`). **Share** (ADR-054): link folder/bundle bisa "tampilkan daftar
+file dulu" (`shares.show_listing`; per file `/{r64}/{s32}/f/{nodeId}/…`, lewat gerbang yang sama). **S3** (ADR-055):
+CORS per bucket (`services/s3-cors.ts`) dan isi bucket di `/s3` (`services/s3-browse.ts`, link = presigned URL Zeiko S3
+dengan key terbaru akun, upload lewat app ≤ `s3_web_upload_max_bytes`).
+
 Data dev ada di `.dev/` (di-ignore git). Mailbox mock: `GET http://localhost:8790/__dev/mail`.
 Picu cron lokal: `POST http://localhost:8790/__dev/cron?cron=0%20*%20*%20*%20*`.
 

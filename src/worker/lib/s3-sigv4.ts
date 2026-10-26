@@ -330,3 +330,49 @@ export function chunkSignature(
     `AWS4-HMAC-SHA256-PAYLOAD\n${v.amzDate}\n${v.scope}\n${previous}\n${EMPTY_SHA256}\n${chunkSha256}`,
   );
 }
+
+/** 20261026T053000Z */
+export function amzDateOf(ms: number): string {
+  return new Date(ms)
+    .toISOString()
+    .replace(/[-:]/g, '')
+    .replace(/\.\d{3}/, '');
+}
+
+/**
+ * A presigned URL (query-string SigV4, host signed, unsigned payload), the same thing the AWS SDK's
+ * getSignedUrl makes: for the /s3 page's "copy link" and in-app downloads (ADR-055). `url` may
+ * carry other query parameters (response-content-disposition…); they are signed too.
+ */
+export async function presignUrl(opts: {
+  method: 'GET' | 'HEAD' | 'PUT';
+  url: URL;
+  accessKeyId: string;
+  secret: string;
+  region: string;
+  now: number;
+  expiresSeconds: number;
+}): Promise<string> {
+  const amzDate = amzDateOf(opts.now);
+  const date = amzDate.slice(0, 8);
+  const scope = `${date}/${opts.region}/s3/aws4_request`;
+  const params: Array<[string, string]> = [
+    ...parseQuery(opts.url.search),
+    ['X-Amz-Algorithm', ALGORITHM],
+    ['X-Amz-Credential', `${opts.accessKeyId}/${scope}`],
+    ['X-Amz-Date', amzDate],
+    ['X-Amz-Expires', String(Math.max(1, Math.min(MAX_PRESIGN_SECONDS, opts.expiresSeconds)))],
+    ['X-Amz-SignedHeaders', 'host'],
+  ];
+  const creq = [
+    opts.method,
+    canonicalUri(opts.url.pathname),
+    canonicalQuery(params),
+    `host:${opts.url.host}\n`,
+    'host',
+    UNSIGNED_PAYLOAD,
+  ].join('\n');
+  const toSign = `${ALGORITHM}\n${amzDate}\n${scope}\n${await sha256HexOf(creq)}`;
+  const signature = await hmacHex(await signingKey(opts.secret, date, opts.region), toSign);
+  return `${opts.url.origin}${opts.url.pathname}?${canonicalQuery(params)}&X-Amz-Signature=${signature}`;
+}

@@ -166,6 +166,15 @@ export const configSchema = z.object({
   s3_multipart_ttl_hours: int().min(1).max(167).default(144),
   /** D1 queries one listing may spend skipping folders (Workers Free allows 50 per request). */
   s3_list_max_queries: int().min(2).max(40).default(10),
+  /** Uploads from the /s3 page go through the app in one request (ADR-055): under Workers' 100 MB body cap. */
+  s3_web_upload_max_bytes: nonNeg()
+    .max(100 * 1000 * 1000)
+    .default(95 * MIB),
+  /** Longest a "copy link" from the /s3 page lasts (S3's own limit is 7 days). */
+  s3_link_max_seconds: int()
+    .min(60)
+    .max(7 * 24 * 3600)
+    .default(7 * 24 * 3600),
   // Paid upfront (ADR-047): a size in whole GB, 1 copy or 3 (in three R2 buckets), for a month.
   s3_price_idr_per_gb_month: nonNeg().default(500),
   s3_price_idr_per_gb_month_3x: nonNeg().default(1_500),
@@ -377,4 +386,6 @@ export const PUBLIC_CONFIG_KEYS = [
   's3_egress_block_idr',
   's3_url_zeiko_idr',
   's3_url_custom_idr',
+  's3_web_upload_max_bytes',
+  's3_link_max_seconds',
 ] as const satisfies readonly ConfigKey[];

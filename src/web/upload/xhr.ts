@@ -15,6 +15,7 @@ export function putWithProgress(
   url: string,
   body: Blob,
   onProgress: (loaded: number) => void,
+  headers: Record<string, string> = {},
 ): PutHandle {
   const xhr = new XMLHttpRequest();
   const promise = new Promise<unknown>((resolve, reject) => {
@@ -23,6 +24,7 @@ export function putWithProgress(
     xhr.setRequestHeader('content-type', 'application/octet-stream');
     const token = csrf();
     if (token) xhr.setRequestHeader('x-csrf-token', token);
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => onProgress(e.loaded);
     xhr.onload = () => {
       let data: unknown;

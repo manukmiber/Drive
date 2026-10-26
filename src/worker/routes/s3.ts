@@ -16,6 +16,10 @@ import {
   setBucketPublic,
 } from '../services/s3';
 import { deleteBucket } from '../services/s3-objects';
+import { browseObjects, deleteKeys, objectLink, uploadObject } from '../services/s3-browse';
+import { CORS_METHODS, getBucketCors, MAX_CORS_RULES, setBucketCors } from '../services/s3-cors';
+import { contentLength } from '../lib/http';
+import { rateLimit } from '../middleware/ratelimit';
 import { checkS3Url, releaseS3Url } from '../services/s3-urls';
 import type { Ctx } from '../context';
 import type { AppBindings } from '../types';
@@ -31,7 +35,17 @@ function asAppError(e: S3Error): AppError {
     case 'InvalidBucketName':
       return new AppError('VALIDATION', e.message, { field: 'name', reason: e.code });
     case 'NoSuchBucket':
-      return new AppError('NOT_FOUND', e.message);
+    case 'NoSuchKey':
+      return new AppError('NOT_FOUND', e.message, { reason: e.code });
+    case 'MalformedXML':
+    case 'InvalidRequest':
+    case 'KeyTooLongError':
+    case 'InvalidArgument':
+      return new AppError('VALIDATION', e.message, { reason: e.code });
+    case 'QuotaExceeded':
+      return new AppError('QUOTA_FULL', e.message, { reason: e.code });
+    case 'EntityTooLarge':
+      return new AppError('PAYLOAD_TOO_LARGE', e.message, { reason: e.code });
     case 'AccessDenied':
     case 'AccountProblem':
       return new AppError('FORBIDDEN', e.message, { reason: e.code });
@@ -62,6 +76,15 @@ async function activeAccount(ctx: Ctx, userId: string) {
 }
 
 const bucketName = z.string().min(3).max(63);
+const objectKey = z.string().min(1).max(1024);
+const corsRule = z.object({
+  id: z.string().max(255).optional(),
+  allowedOrigins: z.array(z.string().max(1024)).min(1).max(100),
+  allowedMethods: z.array(z.enum(CORS_METHODS)).min(1),
+  allowedHeaders: z.array(z.string().max(1024)).max(100).default([]),
+  exposeHeaders: z.array(z.string().max(1024)).max(100).default([]),
+  maxAgeSeconds: z.number().int().min(0).max(31_536_000).optional(),
+});
 
 export const s3 = new Hono<AppBindings>()
   .use('*', requireUser)
@@ -119,6 +142,111 @@ export const s3 = new Hono<AppBindings>()
   )
   .delete('/url', async (c) => {
     await releaseS3Url(c.get('ctx'), c.get('user')!.id, 'removed');
+    return c.body(null, 204);
+  })
+  // The bucket's objects on the page (ADR-055).
+  .get(
+    '/buckets/:name/objects',
+    validate(
+      'query',
+      z.object({
+        prefix: z.string().max(1024).default(''),
+        cursor: z.string().max(4096).optional(),
+      }),
+    ),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      const q = c.req.valid('query');
+      return c.json(
+        await s3Call(() =>
+          browseObjects(ctx, acc, c.req.param('name'), q.prefix, q.cursor ?? null),
+        ),
+      );
+    },
+  )
+  .post(
+    '/buckets/:name/objects/link',
+    validate(
+      'json',
+      z.object({
+        key: objectKey,
+        expiresInSeconds: z
+          .number()
+          .int()
+          .min(60)
+          .max(7 * 24 * 3600)
+          .default(3600),
+        download: z.boolean().default(true),
+      }),
+    ),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      const b = c.req.valid('json');
+      return c.json(
+        await s3Call(() =>
+          objectLink(ctx, acc, c.req.param('name'), b.key, b.expiresInSeconds, b.download),
+        ),
+      );
+    },
+  )
+  .post(
+    '/buckets/:name/objects/delete',
+    validate('json', z.object({ keys: z.array(objectKey).min(1).max(1000) })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      const n = await s3Call(() =>
+        deleteKeys(ctx, acc, c.req.param('name'), c.req.valid('json').keys),
+      );
+      return c.json({ deleted: n });
+    },
+  )
+  .put(
+    '/buckets/:name/objects',
+    rateLimit('RL_UPLOAD', 's3-web-upload'),
+    validate('query', z.object({ key: objectKey })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      const object = await s3Call(() =>
+        uploadObject(
+          ctx,
+          acc,
+          c.req.param('name'),
+          c.req.valid('query').key,
+          contentLength(c.req.header('content-length')),
+          c.req.header('x-object-content-type') ?? null,
+          c.req.raw.body,
+        ),
+      );
+      return c.json({ object }, 201);
+    },
+  )
+  .get('/buckets/:name/cors', async (c) => {
+    const ctx = c.get('ctx');
+    await activeAccount(ctx, c.get('user')!.id);
+    return c.json({
+      rules: await s3Call(() => getBucketCors(ctx, c.get('user')!.id, c.req.param('name'))),
+    });
+  })
+  .put(
+    '/buckets/:name/cors',
+    validate('json', z.object({ rules: z.array(corsRule).min(1).max(MAX_CORS_RULES) })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      await activeAccount(ctx, c.get('user')!.id);
+      const rules = await s3Call(() =>
+        setBucketCors(ctx, c.get('user')!.id, c.req.param('name'), c.req.valid('json').rules),
+      );
+      return c.json({ rules });
+    },
+  )
+  .delete('/buckets/:name/cors', async (c) => {
+    const ctx = c.get('ctx');
+    await activeAccount(ctx, c.get('user')!.id);
+    await s3Call(() => setBucketCors(ctx, c.get('user')!.id, c.req.param('name'), null));
     return c.body(null, 204);
   })
   .delete('/buckets/:name', async (c) => {

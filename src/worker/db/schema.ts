@@ -738,6 +738,7 @@ export const s3Buckets = sqliteTable('s3_buckets', {
   public: bool('public').notNull(),
   blockedAt: ms('blocked_at'),
   createdAt: ms('created_at').notNull(),
+  corsJson: text('cors_json'),
 });
 
 export const s3Subscriptions = sqliteTable('s3_subscriptions', {
