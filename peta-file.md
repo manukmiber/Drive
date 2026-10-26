@@ -1,5 +1,8 @@
 # Peta file — Zeiko Drive, relay, dan website (per 2026-10-22)
 
+> **ADR-064 (pemilik, 2026-10-26):** Drive pindah dari D1 ke satu index per user/keluarga di R2; akun, paket, dan
+> pembayaran ke relay; D1 tinggal untuk Zeiko S3. Peta di bawah = kode sekarang; pindahnya lewat fase R di `docs/ROADMAP.md`.
+
 Pendamping `handover.md`. Tanda **★** berarti baru atau berubah besar karena ADR-036: login lewat Akun Zeiko,
 pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan komponen web juga pindah import string ke
 `src/web/lib/i18n.ts`. Itu tidak ditandai satu per satu.

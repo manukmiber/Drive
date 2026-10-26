@@ -6,14 +6,20 @@ Dibuat 2026-10-26 dari pemeriksaan kode `main` (`d213155`). Isinya fitur yang **
 = satu fitur = satu ADR, dengan satu atau beberapa commit. Prompt di tiap bagian juga bisa disalin utuh ke sesi
 lain. Setelah selesai, sesi itu mengisi kolom Status di tabel.
 
+> **Prioritas pertama: fase R (ADR-064, pemilik 2026-10-26).** Drive pindah dari D1 ke satu index per user (dan per
+> keluarga) di R2; akun, paket, dan pembayaran ke relay; D1 tinggal untuk Zeiko S3. Fitur Drive (D…) dan bagian API yang
+> menyimpan data Drive menunggu fase R yang dibutuhkannya (kolom "Butuh dulu"). Fitur S3 (S…) tidak terpengaruh.
+
 ## Aturan umum (berlaku untuk setiap prompt)
 
 1. Baca `CLAUDE.md`, `docs/SPEC.md`, ADR yang terkait di `DECISIONS.md`, dan bagian item ini sebelum mulai.
 2. Mengirim prompt berarti pemilik setuju fitur itu dibangun. Sebelum menulis kode, tulis ADR baru (nomor
    berikutnya, tanggal hari itu): apa yang dibangun, apa yang tidak, dan keputusan teknisnya. Kalau prompt
    bilang "tanya pemilik dulu", tanyakan dan tunggu jawabannya.
-3. Migrasi D1 utama: file baru berikutnya di `migrations/` (append-only). Index S3 per akun: tambah langkah di
-   `MIGRATIONS` (`src/worker/services/s3-index.ts`).
+3. **Drive tidak boleh menambah tabel atau kolom D1** (ADR-064): data Drive masuk index R2 user/keluarga atau
+   tempat lain sesuai tabel di ADR-064. Migrasi D1 (`migrations/`, append-only) hanya untuk Zeiko S3 dan untuk
+   memindahkan/menghapus tabel lama Drive selama fase R. Index S3 per akun: tambah langkah di `MIGRATIONS`
+   (`src/worker/services/s3-index.ts`).
 4. Teks UI di `strings.id.ts` + `strings.en.ts`. Angka bisnis di `config-defaults.ts` lewat `services/config.ts`.
    Fitur yang butuh secret, binding, atau DNS dari pemilik didaftarkan di `services/readiness.ts` dan
    disembunyikan sampai siap.
@@ -49,45 +55,93 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 | S8  | Tagging, GetObject `partNumber`, checksum, PostObject              | Niche       | M      | –          | belum             |
 | S9  | Statistik per bucket dan log akses                                 | Niche       | M      | –          | selesai (ADR-060) |
 
+### Fase R — Drive tanpa D1 (ADR-064)
+
+| ID  | Langkah                                                                                      | Ukuran | Butuh dulu | Status |
+| --- | -------------------------------------------------------------------------------------------- | ------ | ---------- | ------ |
+| R0  | Pemilik menjawab pertanyaan terbuka (lihat bagian R di bawah)                                | –      | –          | belum  |
+| R1  | Format index + pustaka baca/tulis (gzip, ETag, tulis bersyarat etag + ulang), benchmark      | M      | R0         | belum  |
+| R2  | Baca dari index: explorer, detail, breadcrumb, cari, bintang, Sampah; klien tarik index dulu | L      | R1         | belum  |
+| R3  | Tulis ke index: upload + kuota, hasil pindai, ganti nama/pindah/salin/Sampah/hapus, dekorasi | L      | R2         | belum  |
+| R4  | Index keluarga `f/{familyId}/index.txt` (kepemilikan, anggota, izin)                         | M      | R3         | belum  |
+| R5  | Link share dan unduhan publik tanpa D1                                                       | M      | R3         | belum  |
+| R6  | Sesi, token API, OAuth, idempotency tanpa D1                                                 | M      | R0         | belum  |
+| R7  | Akun, paket, pembayaran, katalog, data operator ke relay (repo Relay + ops API dibalik)      | L      | R0         | belum  |
+| R8  | Pindahkan data production, hapus tabel Drive dari D1 (D1 utama tinggal untuk S3)             | M      | R2–R7      | belum  |
+
 ### Zeiko Drive
 
-| ID  | Fitur                                            | Jenis   | Ukuran | Butuh dulu | Status            |
-| --- | ------------------------------------------------ | ------- | ------ | ---------- | ----------------- |
-| D1  | Riwayat versi file                               | Wajib   | L      | –          | belum             |
-| D2  | Share ke akun tertentu + "Dibagikan dengan saya" | Wajib   | L      | –          | belum             |
-| D3  | Link minta file (orang lain hanya upload)        | Wajib   | M      | –          | belum             |
-| D4  | Panel Aktivitas (SPEC §8.1, belum dibuat)        | Wajib   | M      | –          | belum             |
-| D5  | Dekorasi folder: warna, ikon, gambar             | Diminta | M      | –          | selesai (ADR-058) |
-| D6  | Pencarian lanjutan + cari isi file               | Diminta | L      | –          | belum             |
-| D7  | OCR PDF dan foto dokumen                         | Diminta | M      | D6         | belum             |
-| D8  | Galeri foto/video, bisa dicari                   | Diminta | L      | (D6)       | belum             |
-| D9  | WebDAV (backup galeri HP, mount di PC)           | Wajib   | L      | A1         | belum             |
-| D10 | Album di Galeri                                  | Niche   | M      | D8         | belum             |
-| D11 | Cari file kembar                                 | Niche   | S      | –          | belum             |
-| D12 | Tanggal hapus otomatis                           | Niche   | S      | –          | belum             |
-| D13 | Subtitle di pratinjau video                      | Niche   | S      | –          | belum             |
-| D14 | Email dua bahasa                                 | Sisa    | S      | –          | belum             |
-| D15 | Logo di tengah QR                                | Sisa    | S      | –          | selesai (ADR-059) |
-| D16 | Brankas end-to-end: analisis saja                | Niche   | S      | –          | belum             |
+Fitur di bawah dibangun di atas index R2 (fase R), bukan D1.
+
+| ID  | Fitur                                            | Jenis   | Ukuran | Butuh dulu | Status                                   |
+| --- | ------------------------------------------------ | ------- | ------ | ---------- | ---------------------------------------- |
+| D1  | Riwayat versi file                               | Wajib   | L      | R3         | belum                                    |
+| D2  | Share ke akun tertentu + "Dibagikan dengan saya" | Wajib   | L      | R4, R5     | belum                                    |
+| D3  | Link minta file (orang lain hanya upload)        | Wajib   | M      | R3, R5     | belum                                    |
+| D4  | Panel Aktivitas (SPEC §8.1, belum dibuat)        | Wajib   | M      | R3         | belum                                    |
+| D5  | Dekorasi folder: warna, ikon, gambar             | Diminta | M      | –          | selesai (ADR-058); pindah ke index di R3 |
+| D6  | Pencarian lanjutan + cari isi file               | Diminta | L      | R2         | belum                                    |
+| D7  | OCR PDF dan foto dokumen                         | Diminta | M      | D6, R3     | belum                                    |
+| D8  | Galeri foto/video, bisa dicari                   | Diminta | L      | R3, (D6)   | belum                                    |
+| D9  | WebDAV (backup galeri HP, mount di PC)           | Wajib   | L      | R3, R6     | belum                                    |
+| D10 | Album di Galeri                                  | Niche   | M      | D8         | belum                                    |
+| D11 | Cari file kembar                                 | Niche   | S      | R2         | belum                                    |
+| D12 | Tanggal hapus otomatis                           | Niche   | S      | R3         | belum                                    |
+| D13 | Subtitle di pratinjau video                      | Niche   | S      | –          | belum                                    |
+| D14 | Email dua bahasa                                 | Sisa    | S      | (R7)       | belum                                    |
+| D15 | Logo di tengah QR                                | Sisa    | S      | –          | selesai (ADR-059)                        |
+| D16 | Brankas end-to-end: analisis saja                | Niche   | S      | –          | belum                                    |
 
 ### API & SDK
 
-| ID  | Fitur                                               | Jenis             | Ukuran | Butuh dulu | Status            |
-| --- | --------------------------------------------------- | ----------------- | ------ | ---------- | ----------------- |
-| A1  | Token akses + auth Bearer                           | Diminta (fondasi) | M      | –          | selesai (ADR-061) |
-| A2  | API publik v1 + OpenAPI (Drive + kelola S3)         | Diminta           | L      | A1         | selesai (ADR-062) |
-| A3  | Login aplikasi (OAuth 2.0 + PKCE) untuk APK/desktop | Diminta           | M      | A1, A2     | selesai (ADR-063) |
-| A4  | SDK TypeScript (Drive + S3)                         | Diminta           | M      | A2 (A3)    | belum             |
-| A5  | SDK untuk APK (Kotlin/Flutter)                      | Diminta, nanti    | M      | A2, A3     | belum             |
-| A6  | Webhook Drive + S3                                  | Niche             | M      | A1, D4     | belum             |
+| ID  | Fitur                                               | Jenis             | Ukuran | Butuh dulu | Status                                    |
+| --- | --------------------------------------------------- | ----------------- | ------ | ---------- | ----------------------------------------- |
+| A1  | Token akses + auth Bearer                           | Diminta (fondasi) | M      | –          | selesai (ADR-061); simpanan pindah di R6  |
+| A2  | API publik v1 + OpenAPI (Drive + kelola S3)         | Diminta           | L      | A1         | selesai (ADR-062); route Drive ikut R2/R3 |
+| A3  | Login aplikasi (OAuth 2.0 + PKCE) untuk APK/desktop | Diminta           | M      | A1, A2     | selesai (ADR-063); simpanan pindah di R6  |
+| A4  | SDK TypeScript (Drive + S3)                         | Diminta           | M      | A2 (A3)    | belum                                     |
+| A5  | SDK untuk APK (Kotlin/Flutter)                      | Diminta, nanti    | M      | A2, A3     | belum                                     |
+| A6  | Webhook Drive + S3                                  | Niche             | M      | R6, D4     | belum                                     |
 
 ### Urutan yang disarankan
 
-1. **Risiko dan cepat:** S2 → S1 → S3 → D5 → D4.
+0. **Fase R dulu** (ADR-064): R0 → R1 → R2 → R3 → R4/R5/R6 → R7 → R8. Fitur S3 boleh jalan bersamaan.
+1. **Risiko dan cepat:** S2 → S1 → S3 → D4.
 2. **Cari dan lihat:** D6 → D8 → D7 → D1.
 3. **Platform:** A1 → A2 → A3 → A4 → D9.
 4. **Kolaborasi:** D3 → D2 → S4.
 5. Sisanya sesuai kebutuhan. A5 dikerjakan saat APK mulai dibuat.
+
+---
+
+## Fase R — Drive tanpa D1 (ADR-064)
+
+Keputusan pemilik (2026-10-26) ada di ADR-064: satu user = satu folder R2 dengan satu index (nama file, struktur
+folder); keluarga satu folder satu index (plus kepemilikan); tulis bersyarat etag; index ditarik paling awal oleh semua
+klien, jadi harus super ringan; Drive tidak memakai D1, akun/paket/pembayaran di relay; S3 tetap.
+
+### R0 — Pertanyaan terbuka untuk pemilik (jawab sebelum R1)
+
+1. **Link share, token API (A1–A3), dan sesi login**: tetap di Cloudflare sebagai objek R2 (link publik dan API tetap
+   jalan walau relay di HP sedang mati), atau pindah ke database relay? Usul: R2.
+2. **Data operator** (laporan & takedown, legal hold, blocklist hash, audit, iklan): pindah ke database relay? Usul: ya,
+   relay sudah jadi tempat kerja operator (ADR-057).
+3. **Notifikasi, preferensi email, tautan Telegram**: relay atau R2 per user? Usul: relay.
+4. **Batas kuota dan paket** dibaca Drive dari mana saat upload? Usul: relay sumber kebenarannya, lalu menulis salinan
+   kecil ke `u/{userId}/` setiap kali berubah, supaya upload tetap jalan saat relay mati.
+5. **Nama dan format index**: `index.txt` berisi JSON tabel ringkas ter-gzip (usul ADR-064), atau format lain?
+6. **Fitur Drive baru** dibekukan sampai R3 selesai? Usul: ya (kecuali yang murni di browser).
+
+### R1–R8
+
+Setiap langkah: ADR kecil kalau ada keputusan baru, test (termasuk dua penulis bersamaan dan IDOR), `npm run check`,
+uji Chrome dev, commit, push. Langkah yang menyentuh relay dikerjakan juga di repo `Relay` (cek `cargo fmt`, `clippy`,
+test). Deploy dan memindahkan data production (R8) hanya dengan izin pemilik.
+
+```text
+Kerjakan R<n> dari docs/ROADMAP.md (ikuti "Aturan umum" dan ADR-064). Baca bagian fase R dan jawaban pemilik untuk R0
+di ADR-064 dulu. Jangan menambah tabel atau kolom D1 untuk Drive.
+```
 
 ---
 
@@ -316,6 +370,11 @@ bucket akun lain.
 ---
 
 ## Zeiko Drive
+
+> **Catatan ADR-064.** Prompt D1–D16 dan A4–A6 di bawah ditulis sebelum Drive pindah dari D1. Di mana pun tertulis tabel,
+> kolom, migrasi D1, atau FTS5 untuk data Drive, artinya sekarang: entri/kolom di index R2 user/keluarga, atau objek R2
+> kecil di folder user (`u/{userId}/…`). Contoh: indeks isi file D6 = objek teks per user di R2, bukan tabel FTS5; tanggal
+> diambil D8 = kolom di index; aktivitas D4 = log per user di R2. Kerjakan setelah fase R yang disebut di kolom "Butuh dulu".
 
 ### D1 — Riwayat versi file
 
@@ -644,6 +703,8 @@ beserta untung-ruginya, lalu tanyakan ke pemilik.
 ---
 
 ## API & SDK
+
+> **Catatan ADR-064.** Lihat catatan di bagian Zeiko Drive. Token, OAuth, dan idempotency (A1–A3) pindah dari D1 di R6.
 
 ### A1 — Token akses
 

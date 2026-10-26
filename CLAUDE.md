@@ -2,6 +2,19 @@
 
 Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIONS.md`.
 
+## Arah arsitektur: Drive tanpa D1 (ADR-064, pemilik 2026-10-26). Baca sebelum menyentuh Drive.
+- **Satu user = satu folder R2** (`u/{userId}/`) dengan **satu index** (`u/{userId}/index.txt`): nama file dan struktur
+  folder. Paket keluarga: satu folder, satu index (`f/{familyId}/index.txt`) dengan nama file, struktur folder, dan
+  kepemilikan. Index = sumber kebenaran pohon file dan hal pertama yang ditarik web, aplikasi, dan software, jadi
+  formatnya harus seringan mungkin (usul: JSON tabel ringkas ter-gzip + ETag). Ditulis dengan syarat etag R2: bentrok →
+  baca ulang, ulangi.
+- **Drive tidak memakai D1.** Akun, paket, dan pembayaran di relay. D1 hanya untuk Zeiko S3 (tidak berubah: 1 user, 1 D1
+  pengganti index.txt, ADR-044).
+- **Kode sekarang belum begitu:** Drive masih memakai D1 (`nodes`, `blobs`, `shares`, sesi, token, dll.). Pindahnya
+  bertahap lewat **fase R di `docs/ROADMAP.md`**, dimulai setelah pemilik menjawab pertanyaan terbuka di ADR-064.
+  Sampai itu: **jangan menambah tabel atau kolom D1 untuk Drive**, dan fitur Drive baru di roadmap menunggu fase R
+  (kecuali yang murni berjalan di browser).
+
 ## Mesin ini
 - HP Android (PRoot, aarch64). **workerd tidak bisa jalan** → jangan pakai `wrangler dev`,
   Miniflare, atau `vitest-pool-workers` lokal (ADR-001).

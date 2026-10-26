@@ -23,6 +23,7 @@ Docs Cloudflare dicek 2026-10-21 lewat MCP dokumentasi Cloudflare.
   layanan lain di mesin ini).
 
 ## ADR-002 — Index D1 sebagai sumber kebenaran (bukan index.txt)
+**Digantikan ADR-064** (pemilik, 2026-10-26): Drive kembali ke diagram, satu index per user/keluarga di R2, tanpa D1.
 - **Konteks:** Diagram meminta index.txt per folder user di R2. Rawan race condition dan lambat.
 - **Keputusan:** Index = tabel `nodes` + `blobs` di D1. Manifest `u/{userId}/index.json` dibuat ulang
   otomatis (debounce ≤ 1×/jam per user yang berubah) dan saat ekspor data. (Sesuai Bagian 3 spec.)
@@ -1489,3 +1490,68 @@ tidak bisa ditambahkan tanpa akses ke relay. Test: `tests/integration/takedown.t
 
 **Konsekuensi:** test `tests/integration/oauth.test.ts` (alur PKCE, redirect/klien/scope salah, code dua kali,
 kedaluwarsa, rotasi + deteksi pemakaian ulang, revoke, putuskan dari Pengaturan, assetlinks).
+
+## ADR-064 — Drive tanpa D1: satu index per user (dan per keluarga) di R2
+**Tanggal:** 2026-10-26 · **Status:** diterima sebagai arah (pemilik); **implementasi belum dimulai**. Menggantikan
+ADR-002 ("Index D1 sebagai sumber kebenaran"). Bagian bertanda *usul* menunggu konfirmasi pemilik.
+
+**Konteks.** Diagram pemilik (`Zeiko drive x Zeiko S3`): Drive = "1 folder, 1 index.txt di satu R2"; S3 = "1 user, 1 D1
+pengganti index.txt". Sejak ADR-002 Drive justru menyimpan pohon file di D1 bersama (`nodes`, `blobs`, …), dan cadangan
+`u/{userId}/index.json` yang dijanjikan SPEC tidak pernah dibuat (hanya penanda `manifest_dirty` yang ditulis). Pemilik
+(2026-10-26): D1 bersama mahal dan membengkak kalau user banyak; Drive harus seperti diagram.
+
+**Keputusan pemilik:**
+1. Satu user = satu folder R2 (`u/{userId}/`), berisi file-filenya dan **satu index** untuk akun itu: nama file dan
+   struktur folder. Tidak lebih.
+2. Satu index per user/akun (seluruh pohon dalam satu objek).
+3. Paket keluarga: satu folder keluarga, satu index (`f/{familyId}/`): nama file, struktur folder, dan kepemilikan.
+4. Dua penulisan bersamaan tidak boleh saling menimpa: tulis index dengan syarat versi R2 (etag); kalau bentrok, baca
+   ulang dan ulangi.
+5. Index adalah hal pertama yang ditarik web, aplikasi, dan software sebelum apa pun dimuat: formatnya harus seringan dan
+   secepat mungkin.
+6. **Drive tidak memakai D1.** D1 hanya untuk Zeiko S3 (yang tetap seperti ADR-044: 1 user, 1 D1 pengganti index.txt).
+   Akun, paket, dan pembayaran ditangani relay.
+7. S3 tidak berubah.
+
+**Format index (usul, diuji di fase R1):** objek `u/{userId}/index.txt` (dan `f/{familyId}/index.txt`), isinya JSON
+ringkas berbentuk tabel (array of arrays, bukan objek per file: nama kolom sekali di header), disimpan ter-gzip dengan
+`Content-Encoding: gzip`, sehingga browser/app mengurai dengan `JSON.parse` bawaan (lebih cepat daripada decoder
+MessagePack/CBOR/protobuf di JavaScript). Kira-kira 60–80 byte per entri sebelum gzip: 10.000 file ≈ 0,7 MB → ±150–250 KB
+terkirim, diurai beberapa milidetik di HP. Klien menyimpan salinan (IndexedDB/berkas) dan meminta ulang dengan
+`If-None-Match`, jadi biasanya hanya 304. Header index memuat versi format, total byte terpakai, dan (keluarga) daftar
+anggota. Akun yang sangat besar (ratusan ribu file) dipecah belakangan (index + jurnal perubahan); dicatat, belum dibuat.
+
+**Konsekuensi untuk pencarian:** cari nama/struktur di index milik user sendiri (di klien, atau di Worker untuk API).
+D6 dan D8 dibangun di atas index ini, bukan di atas FTS5.
+
+**Peta pindah data D1 Drive** (semua tabel non-S3 di `migrations/`):
+
+| Data sekarang (D1) | Tujuan |
+|---|---|
+| `nodes`, `nodes_fts`, `blobs` (status pindai, ukuran, sha256, thumbnail, refcount), dekorasi folder (ADR-058), `storage_pools.used/reserved` | **Index R2** user/keluarga (keputusan 1–3) |
+| `node_stars`, `node_recent` | *usul:* index user sendiri (bintang) dan klien saja (terbaru) |
+| `uploads`, `upload_parts` | *usul:* objek kecil `u/{userId}/uploads/{id}` selama upload berjalan, lalu entri di index |
+| `users`, `accounts`, `sessions`, `verifications` (Better Auth) | **Relay** (Akun Zeiko). *usul:* sesi Drive jadi cookie bertanda tangan tanpa tabel, ikut pintu (ADR-039) |
+| `passkeys`, `two_factors` | dibuang (tidak dipakai sejak ADR-057) |
+| `plans`, `addons`, `compress_packs`, `app_config`, `subscriptions`, `subscription_addons`, `storage_pools.limit`, `payments`, `invoices`, `wallets`, `wallet_ledger`, `credit_ledger` | **Relay** (paket dan pembayaran). *usul:* relay menulis salinan batas kuota/paket ke `u/{userId}/` saat berubah, supaya upload tetap jalan walau relay sedang mati |
+| `families`, `family_members`, `family_invites` | *usul:* anggota di header index keluarga; undangan di relay |
+| `shares`, `share_items`, `share_sends` | *usul:* objek `s/{r64}` di R2 (link publik tetap jalan tanpa relay); daftar link di index pemilik |
+| `api_tokens`, `oauth_grants`, `oauth_codes`, `api_idempotency` (A1–A3) | *usul:* objek R2 per token (`t/{prefix}`), supaya API tidak bergantung relay |
+| `abuse_reports`, `legal_holds`, `blocked_hashes`, `audit_logs`, `ad_*`, `advertisers` | *usul:* relay (data operator) |
+| `notifications`, `notification_prefs`, `email_suppressions`, `telegram_links`, `contacts` | *usul:* relay |
+| `archive_jobs`, `compress_jobs`, `vt_verdicts`, `vt_budget`, `usage_counters`, `counters` | *usul:* objek R2/KV sementara atau Analytics Engine |
+| `manifest_dirty`, `batch_guards` | dibuang |
+
+**Yang perlu diputuskan pemilik sebelum kode** (daftar yang sama ada di `docs/ROADMAP.md` bagian R):
+link share, token API, dan sesi tetap di Cloudflare (R2) supaya tidak mati saat relay mati, atau pindah ke relay; data
+operator (laporan, iklan, audit) ke database relay; nama dan format akhir objek index; urutan fase dan apakah fitur Drive
+baru dibekukan sampai fase R3.
+
+**Fase (rinci di ROADMAP bagian R):** R1 format + pustaka index (CAS etag, benchmark) → R2 baca dari index (explorer,
+detail, breadcrumb, cari, bintang, Sampah) → R3 tulis ke index (upload/kuota, pindai, ganti nama/pindah/salin/Sampah/hapus,
+dekorasi) → R4 index keluarga → R5 link share di R2 → R6 sesi, token API, OAuth tanpa D1 → R7 akun/paket/pembayaran/data
+operator di relay (repo Relay) → R8 pindahkan data production, hapus tabel Drive dari D1 (D1 utama tinggal untuk S3).
+
+**Dampak ke yang sudah ada:** ADR-002, ADR-058 (kolom dekorasi), ADR-061–063 (tabel token/OAuth) dan sebagian besar
+`services/` Drive dibangun di atas D1 dan akan dipindah lewat fase di atas. Sampai fase itu selesai, kode yang ada tetap
+jalan apa adanya (production saat ini: 6 node). Fitur Drive baru tidak boleh menambah tabel atau kolom D1.

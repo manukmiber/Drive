@@ -58,7 +58,7 @@ Sumber harga: spreadsheet "Zeiko cloud storage" (https://docs.google.com/spreads
 | Runtime | Cloudflare Workers (TypeScript). Satu Worker utama dengan handler `fetch`, `queue`, `scheduled`. Frontend dilayani lewat Workers Static Assets. Boleh dipecah nanti via service bindings. |
 | API | Hono + Zod |
 | Frontend | React + Vite (`@cloudflare/vite-plugin`), TanStack Router + Query, Tailwind + shadcn/ui, TanStack Virtual, PWA |
-| Database | D1 + Drizzle ORM, migrasi via wrangler, location hint APAC, FTS5 untuk pencarian nama |
+| Database | **Target (ADR-064, pemilik 2026-10-26): Drive tidak memakai D1.** Pohon file = satu index per user (`u/{userId}/index.txt`) dan per keluarga (`f/{familyId}/index.txt`) di R2; akun, paket, dan pembayaran di relay; D1 hanya untuk Zeiko S3. *Sekarang (sebelum migrasi fase R):* D1 + Drizzle, FTS5 untuk nama. |
 | Objek | R2 bucket privat (public access dan r2.dev mati), location hint APAC |
 | Async | Queues: `scan`, `archive`, `compress`, `notify`, `cleanup` |
 | Terjadwal | Cron Triggers (13.4) |
@@ -125,17 +125,21 @@ Pemetaan node → implementasi:
 | Jika sudah, jalankan check | Setelah upload complete → pesan ke Queue `scan` |
 | virustotal | **Diganti** rantai adapter `Scanner` (14.2). Isi file user TIDAK BOLEH dikirim ke VirusTotal. **Diubah pemilik 2026-10-25 (ADR-046):** VirusTotal dipakai, lihat 14.2. |
 | Berbahaya → Hapus | Hapus objek R2, status `infected`, reservasi kuota dilepas, notifikasi ke user, hash masuk blocklist |
-| Aman → Update index.txt dan storage info | Blob `clean`, node `ready`, reservasi berubah jadi pemakaian, storage info diperbarui |
+| Aman → Update index.txt dan storage info | Entri file di index user jadi `ready`, reservasi berubah jadi pemakaian (total di header index). *Sekarang:* blob `clean`, node `ready` di D1. |
 | 1 folder 1 user | Semua blob user di prefix `u/{uploaderId}/` |
-| Inside folder must have index.txt | **Disesuaikan**: index sumber kebenaran = tabel D1 (`nodes`, `blobs`). index.txt di R2 rawan race condition (dua upload selesai bersamaan saling menimpa) dan lambat untuk listing/pencarian. Konsepnya tetap ada: manifest `u/{userId}/index.json` dibuat ulang otomatis (debounce, maks 1×/jam per user yang berubah) dan saat ekspor data, sebagai cadangan dan portabilitas. |
+| Inside folder must have index.txt | **Sesuai diagram (ADR-064, menggantikan ADR-002):** satu index per user di `u/{userId}/index.txt` (keluarga: `f/{familyId}/index.txt`) berisi nama file dan struktur folder (keluarga: juga kepemilikan). Index adalah sumber kebenaran pohon file dan hal pertama yang ditarik klien. Ditulis dengan syarat etag R2 (bentrok → baca ulang, ulangi), jadi dua upload bersamaan tidak saling menimpa. Format: JSON tabel ringkas ter-gzip (ADR-064). *Sekarang:* masih tabel D1 sampai fase R selesai. |
 | Ambil data dan link download | Link share (6.1) |
 | Auth dan billing → Hapus | Siklus tunggakan bertahap (12.5). Hapus permanen hanya setelah masa tenggang dan notifikasi berlapis. |
 
-**Key objek opaque.** Nama file dan struktur folder hanya hidup di D1. Key R2 selalu `u/{uploaderId}/{blobId}`, jadi ganti nama, pindah folder, atau pindah Pribadi ⇄ Keluarga cukup update D1, tanpa copy di R2. Prefix per user hanya untuk keteraturan. Penghapusan selalu digerakkan oleh D1 (refcount blob), **bukan** "hapus seluruh prefix".
+**Key objek opaque.** Nama file dan struktur folder hanya hidup di index (ADR-064; *sekarang* di D1). Key R2 selalu `u/{uploaderId}/{blobId}`, jadi ganti nama, pindah folder, atau pindah Pribadi ⇄ Keluarga cukup update index, tanpa copy di R2. Penghapusan selalu digerakkan oleh index (refcount blob), **bukan** "hapus seluruh prefix".
 
 ---
 
 ## 4. Model data D1 (draf)
+
+> **Keadaan sekarang, bukan target.** Sejak ADR-064 (pemilik, 2026-10-26) Drive tidak boleh memakai D1: pohon file pindah
+> ke index R2 per user/keluarga, akun/paket/pembayaran ke relay, sisanya sesuai tabel di ADR-064. Model di bawah tetap
+> menggambarkan kode sampai fase R di `docs/ROADMAP.md` selesai. Jangan menambah tabel atau kolom Drive di sini.
 
 Boleh disempurnakan. Perubahan besar dicatat di `DECISIONS.md`.
 
@@ -405,7 +409,7 @@ Tampilkan total ukuran, jumlah file, dan catatan bahwa media yang sudah terkompr
 - Optimistic update + snackbar undo ("Dipindahkan ke Sampah · Urungkan").
 - Sinkron antar anggota keluarga: refetch saat tab fokus + polling 30 detik. WebSocket via Durable Objects bisa menyusul.
 
-### 8.3 Operasi (semua cukup update D1, tanpa copy di R2)
+### 8.3 Operasi (semua cukup update index, tanpa copy di R2; *sekarang* update D1)
 - Folder baru, ganti nama, pindah (tolak pemindahan folder ke dalam turunannya sendiri), buat salinan (blob dipakai bersama, refcount+1, kuota tetap dihitung), Sampah (pulihkan; hapus permanen otomatis setelah 30 hari, config), kosongkan Sampah.
 - Konflik nama → otomatis "nama (1).ext" atau dialog, sesuai konteks.
 - Pencarian: FTS5 prefix match pada nama, filter jenis/tanggal/pemilik. Hasil mencakup Drive Saya + Drive Keluarga (sesuai izin).
@@ -679,6 +683,9 @@ Setiap fase selesai = DoD terpenuhi + test hijau + `PROGRESS.md` diperbarui + co
 ---
 
 ## 16. Keputusan terbuka
+
+- **Drive tanpa D1 (ADR-064):** tempat link share, token API, sesi, data operator, notifikasi, dan salinan batas kuota;
+  format akhir index. Daftar lengkap di `docs/ROADMAP.md` bagian R0.
 
 Pakai default ini sampai pemilik menjawab. Semua dibuat sebagai config supaya mudah diubah.
 
