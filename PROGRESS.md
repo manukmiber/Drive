@@ -210,8 +210,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
   laporan memulihkan.
 - [x] Redirect `/dashboard//…` hanya ke app sendiri; undangan keluarga tidak bisa direbut/melewati batas (guard batch).
 - [x] Label "Dicek dasar" tanpa ClamAV; kesiapan `antivirus` dan `captcha` di tab Features relay.
-- [ ] Pemilik: Turnstile (site key di `deploy/production.json` → `turnstileSiteKey`, secret `TURNSTILE_SECRET_KEY`),
-  migrasi `0011` di D1 remote, deploy.
+- [ ] Pemilik: Turnstile (site key di `deploy/production.json` → `turnstileSiteKey`, secret `TURNSTILE_SECRET_KEY`).
 
 ## Admin pindah ke relay (ADR-057, 2026-10-26)
 - [x] Ops API: laporan (daftar, detail, aksi, pratinjau 5 menit), pemindai (statistik, ulang), iklan (antrean cek,
@@ -219,13 +218,15 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Dihapus: `/api/admin`, halaman `/admin`, role staf, passkey/TOTP (plugin, paket, UI), `staff_second_factor_hours`.
 - [x] `legal_holds.created_by` tanpa FK (`relay-operator`/`auto`); token review membawa ID laporan.
 - [ ] Relay: tab Reports, Ads, Scanner, Audit di layar Zeiko Drive (repo `Relay`) dan batas body forwarder ≥ 1 MiB
-  untuk gambar iklan. **Jangan deploy Drive ini sebelum tab Reports ada di relay**: tanpa itu takedown hanya bisa lewat
-  `curl` ke ops API.
-- [ ] Pemilik: migrasi `0011` + deploy Drive, lalu update relay (`bash install.sh` atau tombol update).
+  untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
+  `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
 ## Dekorasi folder (D5, ADR-058, 2026-10-26)
 - [x] Warna (12), ikon (24 atau satu emoji), gambar sampul dari space yang sama; banyak folder sekaligus; hapus.
 - [x] Tampil di explorer, breadcrumb, Pindahkan, cari, banner folder, share publik (tanpa sampul).
 - [x] Dicek di Chrome dev: 360 px terang (EN) dan desktop gelap (ID).
-- [ ] Pemilik: migrasi `0011` + `0012` di D1 remote, deploy.
+- [x] Di production (izin pemilik, 2026-10-26): migrasi `0011` dan `0012` di D1 production (saat itu 0 legal hold,
+  0 laporan terbuka, 0 staf), Worker `zeiko-production` versi `b0e53643-c224-4fef-b42d-4adeea162a16` (ADR-057 + ADR-058).
+  Dicek dari luar: app, health, katalog 200; `/api/admin/*` 404; ops tanpa token 404; `/api/nodes/decor` tanpa sesi
+  401; link share palsu 404.
 
