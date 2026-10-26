@@ -17,6 +17,12 @@ lewat fase R di `docs/ROADMAP.md`.
   20 kali ulang, cron `move_notices_to_relay` dan `prune_notices`, migrasi `0017` buang `telegram_links` + `contacts`;
   relay `ab49789` (`/apps/v1/notices*`). **Relay live perlu di-update pemilik** (dashboard → update, atau
   `bash install.sh`); sampai itu notifikasi menunggu di antrean.
+- [x] Di production (izin pemilik, 2026-10-26): migrasi `0013`–`0017` di D1 production (sebelumnya `telegram_links` 0
+  baris, `contacts` 0, `notifications` 1; bookmark Time Travel sebelum migrasi
+  `000000d4-00000000-00005110-76c5c1b9cb4d02ae717bb50e53cb4625`), Worker `zeiko-production` versi
+  `1c5bdd7a-d2db-4d97-b9ee-d4534fc36009` (D15, S9, A1–A3, R1, ADR-065). Dicek dari luar: app, health,
+  `/api/v1/openapi.json`, `/developer` 200; `/api/notifications` dan `/api/v1/me` tanpa sesi 401; `/api/admin/*` 404;
+  `assetlinks.json` 404 (paket Android belum diisi).
 - [x] R1 format + pustaka index (2026-10-26): `shared/drive-index.ts` (format v1: header + satu baris JSON per entri,
   polos di R2), `services/drive-index.ts` (`IndexDoc`, `readIndex`, `changeIndex` bersyarat etag + ulang + tunggu 429),
   shim R2 (put atomik per key, `limitWritesPerKey`), `npm run bench:index`, 17 test. Angka di ADR-064.
