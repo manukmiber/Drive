@@ -17,6 +17,9 @@ lewat fase R di `docs/ROADMAP.md`.
   20 kali ulang, cron `move_notices_to_relay` dan `prune_notices`, migrasi `0017` buang `telegram_links` + `contacts`;
   relay `ab49789` (`/apps/v1/notices*`). **Relay live perlu di-update pemilik** (dashboard → update, atau
   `bash install.sh`); sampai itu notifikasi menunggu di antrean.
+- [x] Di production (pemilik, 2026-10-27): Worker `zeiko-production` versi `83a1f11b-6071-4356-a485-42448c7e7d91`
+  (harga S3 3 salinan Rp1.250/GB, `e311d43`; tanpa migrasi baru, container tidak di-roll). Dicek dari luar:
+  `/api/public/catalog` memberi `s3_price_idr_per_gb_month_3x` 1250.
 - [x] Di production (izin pemilik, 2026-10-26): migrasi `0013`–`0017` di D1 production (sebelumnya `telegram_links` 0
   baris, `contacts` 0, `notifications` 1; bookmark Time Travel sebelum migrasi
   `000000d4-00000000-00005110-76c5c1b9cb4d02ae717bb50e53cb4625`), Worker `zeiko-production` versi
