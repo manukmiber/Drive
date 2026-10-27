@@ -43,7 +43,7 @@ describe('feature readiness', () => {
     const { config } = (await res.json()) as { config: Record<string, unknown> };
     expect(config).toMatchObject({
       s3_price_idr_per_gb_month: 500,
-      s3_price_idr_per_gb_month_3x: 1500,
+      s3_price_idr_per_gb_month_3x: 1250,
       s3_min_gb: 3,
       s3_egress_block_idr: 5000,
       s3_url_zeiko_idr: 3000,

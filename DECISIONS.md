@@ -885,6 +885,9 @@ jadi `0008` diubah langsung.
   (`s3_purge`), hanya bila `dunning_delete_mode = live` dan tidak ada pembayaran yang sedang berjalan. Memperpanjang
   langsung mengembalikan `billing_state`. Email + lonceng `s3_reminder` dan `s3_dunning` wajib.
 - Biaya R2 untuk 3 salinan ±3 × $0,015/GB-bulan (±Rp750–810/GB), jadi harga Rp1.500 masih menutupnya.
+- **Diubah 2026-10-27** (pemilik: "S3 3 salinan 1250/Gb"): `s3_price_idr_per_gb_month_3x` default Rp1.250/GB/bulan,
+  masih di atas biaya R2 tiga salinan. Database yang sudah punya baris `app_config` untuk kunci ini tetap memakai
+  nilainya sampai diganti lewat ops.
 
 ## ADR-048 — Alamat Zeiko S3 sendiri: subdomain Zeiko Rp3.000, domain sendiri Rp5.000
 

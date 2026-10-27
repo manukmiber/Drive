@@ -143,7 +143,7 @@ describe('Zeiko S3 plans (ADR-047)', () => {
       plan: { prices: { minGb: number; perGbMonthIdr: number; perGbMonth3xIdr: number } };
     };
     expect(page.enabled).toBe(false);
-    expect(page.plan.prices).toMatchObject({ minGb: 3, perGbMonthIdr: 500, perGbMonth3xIdr: 1500 });
+    expect(page.plan.prices).toMatchObject({ minGb: 3, perGbMonthIdr: 500, perGbMonth3xIdr: 1250 });
 
     expect((await checkout(user, { kind: 's3_plan', gb: 2, replicas: 1 })).status).toBe(400);
     expect((await checkout(user, { kind: 's3_plan', gb: 3.5, replicas: 1 })).status).toBe(400);
@@ -167,7 +167,7 @@ describe('Zeiko S3 plans (ADR-047)', () => {
 
   it('three copies: every object is in both replica buckets, a lost copy is read from another', async () => {
     const { rt, user } = await runtime();
-    expect(await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 3 })).toBe(4_500);
+    expect(await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 3 })).toBe(3_750);
     const client = s3Client(rt, await newKey(user));
     await client.send(new CreateBucketCommand({ Bucket: 'tiga-salinan' }));
     await client.send(
@@ -245,8 +245,8 @@ describe('Zeiko S3 plans (ADR-047)', () => {
     expect(await read.Body!.transformToString()).toBe('isi');
 
     // Back to 3 copies now: what is there is copied again. The renewed month has not started yet,
-    // so the difference is for all of it (Rp4.500 − Rp1.500), never more.
-    expect(await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 3 })).toBe(3_000);
+    // so the difference is for all of it (Rp3.750 − Rp1.500), never more.
+    expect(await buy(rt, user, { kind: 's3_plan', gb: 3, replicas: 3 })).toBe(2_250);
     await rt.settle();
     expect(await rt.env.S3_REPLICA_B!.head(r2)).not.toBeNull();
   });

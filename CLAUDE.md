@@ -64,7 +64,7 @@ API (`/api/ops/s3/*`); key dan bucket di halaman `/s3`. Index objek per akun di 
 `migrations/`. Coba lokal: `curl http://s3.localhost:8790/` atau `aws --endpoint-url http://s3.localhost:8790 s3 ls`
 (key dari `/s3` setelah membeli paket). ToS dan Kebijakan Privasi pemilik ada di `src/web/legal/` (ADR-045): teks
 Indonesia kata per kata, jangan diubah tanpa pemilik; kontak di `contacts.ts`. **Paket S3 dibayar di awal**
-(ADR-047, `services/s3-billing.ts`): minimal 3 GB, 1 salinan Rp500/GB atau 3 salinan Rp1.500/GB per bulan, egress
+(ADR-047, `services/s3-billing.ts`): minimal 3 GB, 1 salinan Rp500/GB atau 3 salinan Rp1.250/GB per bulan, egress
 lebih ditagih saat perpanjangan. 3 salinan = salinan sungguhan di `S3_REPLICA_A/B` (`services/s3-replicas.ts`);
 jangan pernah menjual atau menyebut jumlah salinan yang tidak benar-benar disimpan. **Alamat sendiri** (ADR-048,
 `services/s3-urls.ts`, adapter `hostnames`): `s3.<nama>.zeiko.biz.id` Rp3.000 atau domain sendiri Rp5.000, sekali bayar,

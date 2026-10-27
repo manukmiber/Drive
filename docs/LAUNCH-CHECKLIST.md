@@ -14,7 +14,7 @@ Centang sebelum production dibuka untuk umum (SPEC §14.6).
       Public API dipakai di layanan komersial, dan key gratis hanya 500 request/hari. Cukup ganti secret
       `VIRUSTOTAL_API_KEY` lalu naikkan `virustotal.per_minute`/`per_day` di config.
 - [ ] Hive dan Thorn (Kebijakan Privasi §4, rencana pemilik): belum ada perjanjian/kode; teksnya menyebut keduanya.
-- [x] Zeiko S3: paket dibayar di awal, minimal 3 GB, Rp500/GB (1 salinan) atau Rp1.500/GB (3 salinan sungguhan) per
+- [x] Zeiko S3: paket dibayar di awal, minimal 3 GB, Rp500/GB (1 salinan) atau Rp1.250/GB (3 salinan sungguhan) per
       bulan, egress gratis 500 GB lalu Rp5.000/500 GB ditagih saat perpanjangan (ADR-047).
 - [x] Zeiko S3: alamat sendiri, subdomain Zeiko Rp3.000 atau domain sendiri Rp5.000, sekali bayar (ADR-048).
 - [ ] Zeiko S3: DNS `s3.zeiko.biz.id`, bucket replika lewat `cf-setup`, tombol relay, dan harga S3 di website.

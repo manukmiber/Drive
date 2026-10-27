@@ -194,7 +194,7 @@ export const configSchema = z.object({
   s3_log_buckets_per_run: int().min(1).max(50).default(10),
   // Paid upfront (ADR-047): a size in whole GB, 1 copy or 3 (in three R2 buckets), for a month.
   s3_price_idr_per_gb_month: nonNeg().default(500),
-  s3_price_idr_per_gb_month_3x: nonNeg().default(1_500),
+  s3_price_idr_per_gb_month_3x: nonNeg().default(1_250),
   s3_min_gb: int().min(1).default(3),
   s3_max_gb: int().min(1).default(5_000),
   /** Free egress per period; past it, per started block, added to the next renewal. */
