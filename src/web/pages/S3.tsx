@@ -14,6 +14,7 @@ import {
   Plus,
   Receipt,
   Share2,
+  Timer,
   Trash2,
 } from 'lucide-react';
 import type { CheckoutItem } from '../lib/types';
@@ -248,6 +249,200 @@ interface S3Bucket {
   createdAt: number;
   cors: CorsRule[] | null;
   logging: LoggingConfig | null;
+  lifecycle: LifecycleRule[] | null;
+}
+
+/** ADR-072, as the API keeps it. */
+interface LifecycleRule {
+  id: string;
+  enabled: boolean;
+  prefix: string;
+  sizeGreaterThan?: number;
+  sizeLessThan?: number;
+  expirationDays?: number;
+  expirationDate?: number;
+  abortDays?: number;
+}
+
+/** A rule as the editor shows it: the simple ones are editable, API-only ones are kept as they are. */
+interface LifecycleRow {
+  rule: LifecycleRule;
+  simple: boolean;
+  expire: string;
+  abort: string;
+}
+
+function lifecycleRow(rule: LifecycleRule): LifecycleRow {
+  const simple =
+    rule.expirationDate === undefined &&
+    rule.sizeGreaterThan === undefined &&
+    rule.sizeLessThan === undefined;
+  return {
+    rule,
+    simple,
+    expire: rule.expirationDays ? String(rule.expirationDays) : '',
+    abort: rule.abortDays ? String(rule.abortDays) : '',
+  };
+}
+
+const blankRule = (n: number): LifecycleRow =>
+  lifecycleRow({ id: `aturan-${n}`, enabled: true, prefix: '', expirationDays: 30 });
+
+/** "Delete objects in X after N days", "abort uploads after N days" (ADR-072). */
+function LifecycleDialog({
+  bucket,
+  onClose,
+  onSaved,
+}: {
+  bucket: S3Bucket;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [rows, setRows] = useState<LifecycleRow[]>(
+    bucket.lifecycle?.length ? bucket.lifecycle.map(lifecycleRow) : [blankRule(1)],
+  );
+  const [busy, setBusy] = useState(false);
+  const path = `/api/s3/buckets/${encodeURIComponent(bucket.name)}/lifecycle`;
+  const digits = (v: string) => v.replace(/\D/g, '').slice(0, 5);
+  const patch = (i: number, p: Partial<LifecycleRow>) =>
+    setRows((cur) => cur.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  const rules = rows.map((r): LifecycleRule => {
+    if (!r.simple) return r.rule;
+    const { expirationDays: _e, abortDays: _a, ...rest } = r.rule;
+    return {
+      ...rest,
+      ...(Number(r.expire) > 0 ? { expirationDays: Number(r.expire) } : {}),
+      ...(Number(r.abort) > 0 ? { abortDays: Number(r.abort) } : {}),
+    };
+  });
+  const ok =
+    rules.length > 0 && rules.every((r) => r.expirationDays || r.expirationDate || r.abortDays);
+  async function act(fn: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    try {
+      await fn();
+      toast(done);
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast(errorText(e), { tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  }
+  const field =
+    'mt-1 w-full rounded-xl border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg)]';
+  return (
+    <Dialog
+      open
+      title={t.s3.lifecycleTitle(bucket.name)}
+      onClose={onClose}
+      footer={
+        <>
+          {bucket.lifecycle && (
+            <Button
+              variant="ghost"
+              className="text-red-600"
+              disabled={busy}
+              onClick={() => void act(() => sendJson('DELETE', path), t.s3.lifecycleRemoved)}
+            >
+              {t.s3.lifecycleRemove}
+            </Button>
+          )}
+          <Button
+            disabled={busy || !ok}
+            onClick={() => void act(() => sendJson('PUT', path, { rules }), t.s3.lifecycleSaved)}
+          >
+            {t.s3.lifecycleSave}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-[var(--fg-muted)]">{t.s3.lifecycleBody}</p>
+      <ul className="mt-3 space-y-3">
+        {rows.map((r, i) => (
+          <li key={i} className="rounded-xl border border-[var(--border)] p-3">
+            {r.simple ? (
+              <>
+                <label className="block text-xs text-[var(--fg-muted)]">
+                  {t.s3.lifecyclePrefix}
+                  <input
+                    value={r.rule.prefix}
+                    maxLength={1024}
+                    onChange={(e) =>
+                      patch(i, { rule: { ...r.rule, prefix: e.target.value.replace(/^\/+/, '') } })
+                    }
+                    spellCheck={false}
+                    autoCapitalize="none"
+                    placeholder="log/"
+                    className={field}
+                  />
+                </label>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <label className="block text-xs text-[var(--fg-muted)]">
+                    {t.s3.lifecycleExpireDays}
+                    <input
+                      value={r.expire}
+                      inputMode="numeric"
+                      onChange={(e) => patch(i, { expire: digits(e.target.value) })}
+                      className={field}
+                    />
+                  </label>
+                  <label className="block text-xs text-[var(--fg-muted)]">
+                    {t.s3.lifecycleAbortDays}
+                    <input
+                      value={r.abort}
+                      inputMode="numeric"
+                      onChange={(e) => patch(i, { abort: digits(e.target.value) })}
+                      className={field}
+                    />
+                  </label>
+                </div>
+                {!(Number(r.expire) > 0 || Number(r.abort) > 0) && (
+                  <p className="mt-1 text-xs text-amber-700">{t.s3.lifecycleNeedAction}</p>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-[var(--fg-muted)]">{t.s3.lifecycleApiRule(r.rule.id)}</p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <label className="flex items-center gap-1 text-sm">
+                <input
+                  type="checkbox"
+                  checked={r.rule.enabled}
+                  onChange={(e) => patch(i, { rule: { ...r.rule, enabled: e.target.checked } })}
+                />
+                {t.s3.lifecycleEnabled}
+              </label>
+              <Button
+                variant="ghost"
+                className="h-8 px-2 text-red-600"
+                disabled={busy}
+                onClick={() => setRows((cur) => cur.filter((_, j) => j !== i))}
+              >
+                {t.s3.lifecycleRemoveRule}
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <Button
+        variant="secondary"
+        className="mt-3 h-9 px-3"
+        disabled={busy}
+        onClick={() =>
+          setRows((cur) => {
+            const used = new Set(cur.map((r) => r.rule.id));
+            let n = cur.length + 1;
+            while (used.has(`aturan-${n}`)) n++;
+            return [...cur, blankRule(n)];
+          })
+        }
+      >
+        <Plus className="h-4 w-4" aria-hidden="true" /> {t.s3.lifecycleAddRule}
+      </Button>
+    </Dialog>
+  );
 }
 
 const CORS_METHODS = ['GET', 'HEAD', 'PUT', 'POST', 'DELETE'];
@@ -971,6 +1166,7 @@ function S3Page() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [browsing, setBrowsing] = useState<string | null>(null);
   const [corsFor, setCorsFor] = useState<string | null>(null);
+  const [lifecycleFor, setLifecycleFor] = useState<string | null>(null);
   const [statsFor, setStatsFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = () => qc.invalidateQueries({ queryKey: QUERY });
@@ -1206,6 +1402,11 @@ function S3Page() {
                         {t.s3.loggingOn}
                       </span>
                     )}
+                    {b.lifecycle && (
+                      <span className="rounded-full bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] text-[var(--fg-muted)]">
+                        {t.s3.lifecycleOn}
+                      </span>
+                    )}
                   </p>
                   {b.public && (
                     <p className="mt-0.5 truncate text-xs text-[var(--fg-muted)]">
@@ -1240,6 +1441,16 @@ function S3Page() {
                   title={t.s3.cors}
                 >
                   <Share2 className="h-4 w-4" aria-hidden="true" /> {t.s3.cors}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="h-9 px-3"
+                  disabled={busy || suspended}
+                  onClick={() => setLifecycleFor(b.name)}
+                  aria-label={`${t.s3.lifecycle} ${b.name}`}
+                  title={t.s3.lifecycle}
+                >
+                  <Timer className="h-4 w-4" aria-hidden="true" /> {t.s3.lifecycle}
                 </Button>
                 {!b.blocked && (
                   <Button
@@ -1419,6 +1630,13 @@ force_path_style = true`}
           bucket={statsFor}
           buckets={d.buckets.map((b) => b.name)}
           onClose={() => setStatsFor(null)}
+          onSaved={() => void refresh()}
+        />
+      )}
+      {lifecycleFor && d.buckets.some((b) => b.name === lifecycleFor) && (
+        <LifecycleDialog
+          bucket={d.buckets.find((b) => b.name === lifecycleFor)!}
+          onClose={() => setLifecycleFor(null)}
           onSaved={() => void refresh()}
         />
       )}

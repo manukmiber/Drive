@@ -1844,3 +1844,39 @@ cocok → 409 `s3_no_key`. Tidak dibuat key internal tersembunyi.
 (cabut lalu buat baru).
 
 Test: `tests/integration/s3-key-scope.test.ts`.
+
+## ADR-072 — Zeiko S3: lifecycle bucket (S3)
+
+Tanggal: 2026-10-28. Status: diterima.
+
+**Yang dibangun.** `Put/Get/DeleteBucketLifecycleConfiguration` (`?lifecycle` keluar dari `UNSUPPORTED_SUB`),
+`services/s3-lifecycle.ts`, dan editor "Hapus otomatis" per bucket di `/s3` (`PUT/DELETE /api/s3/buckets/:name/lifecycle`).
+Aturan disimpan di `s3_buckets.lifecycle_json` (migrasi `0019_s3_lifecycle.sql`, plus `lifecycle_cursor` dan
+`lifecycle_at`), seperti `cors_json`.
+
+- **Yang didukung:** Rule dengan `ID` (dibuatkan `rule-n` kalau kosong; harus unik), `Status`, `Filter` berisi `Prefix`,
+  `ObjectSizeGreaterThan`, `ObjectSizeLessThan` (sendiri atau dalam `And`), atau `Prefix` gaya lama langsung di Rule;
+  aksi `Expiration` (`Days` atau `Date` tengah malam UTC) dan `AbortIncompleteMultipartUpload` (`DaysAfterInitiation`).
+- **Ditolak dengan jelas, tidak diabaikan:** `Transition`, `NoncurrentVersion*`, `ExpiredObjectDeleteMarker`, dan filter
+  `Tag` → `NotImplemented` (menunggu S5/S6/S8); elemen tak dikenal → `MalformedXML`; abort bersama filter ukuran,
+  rule tanpa aksi, dan lebih dari `s3_lifecycle_max_rules` (100) → `InvalidRequest`; angka/tanggal salah →
+  `InvalidArgument`. Konfigurasi kosong → `NoSuchLifecycleConfiguration` (404).
+- **Izin (ADR-071):** Get butuh `read`, Put/Delete butuh key tanpa batas (`manage`).
+- **Hitungan hari seperti Amazon:** objek yang ditulis pada `t` dengan `Days = n` kedaluwarsa di tengah malam UTC pertama
+  setelah `t + n hari` (`expiryCutoff`). Dasarnya `modified_at` (menimpa = objek baru). `Date`: semua objek yang cocok
+  sejak tanggal itu.
+- **Pelaksana:** cron jam-an `s3_lifecycle` (`runS3Lifecycle`). Tiap jalan mengambil `s3_lifecycle_buckets_per_run` (2)
+  bucket: yang sedang di tengah putaran dulu, lalu yang putaran terakhirnya selesai sebelum hari ini (UTC). Satu giliran
+  bucket: (awal putaran) batalkan upload menggantung yang jatuh tempo, lalu lihat paling banyak `s3_lifecycle_scan_rows`
+  (200) objek satu rule dari cursor dan hapus yang jatuh tempo lewat `deleteObjects` (jadi `used_bytes`, replika, dan
+  index tetap benar). Cursor `{rule, after}` disimpan; satu putaran penuh per bucket per hari. Sekitar 6 query D1 per
+  bucket, aman untuk Workers Free.
+- **Dunning (ADR-047):** akun `readonly` tetap diproses (hapus boleh di readonly); akun `locked` dan akun yang tidak aktif
+  dilewati sampai putaran berikutnya.
+- **Mengganti aturan** mengulang putaran dari awal (`lifecycle_cursor = NULL`, `lifecycle_at = 0`).
+
+**Tidak dibangun:** notifikasi saat objek dihapus lifecycle; header `x-amz-expiration` di GetObject/HeadObject.
+
+Test: `tests/integration/s3-lifecycle.test.ts` (parse/serialize XML termasuk bentuk aws-cli, SDK Put/Get/Delete, editor
+app, key terbatas, cron dengan jam palsu menghapus tepat yang jatuh tempo dan membatalkan upload, halaman demi halaman
+dengan cursor, akun locked dilewati).

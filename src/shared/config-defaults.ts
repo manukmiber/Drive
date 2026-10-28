@@ -192,6 +192,13 @@ export const configSchema = z.object({
   s3_log_lines_per_object: int().min(100).max(20_000).default(5_000),
   /** Buckets whose logs one hourly run delivers. */
   s3_log_buckets_per_run: int().min(1).max(50).default(10),
+  // Lifecycle rules (ADR-072): expire objects, abort forgotten multipart uploads.
+  /** Rules one bucket may have (Amazon allows 1,000). */
+  s3_lifecycle_max_rules: int().min(1).max(1000).default(100),
+  /** Buckets one hourly run works on (Workers Free: about 6 D1 queries each). */
+  s3_lifecycle_buckets_per_run: int().min(1).max(10).default(2),
+  /** Objects one bucket's turn looks at; the rest waits for the next run (a cursor). */
+  s3_lifecycle_scan_rows: int().min(10).max(1000).default(200),
   // Paid upfront (ADR-047): a size in whole GB, 1 copy or 3 (in three R2 buckets), for a month.
   s3_price_idr_per_gb_month: nonNeg().default(500),
   s3_price_idr_per_gb_month_3x: nonNeg().default(1_250),

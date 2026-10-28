@@ -257,6 +257,11 @@ lewat fase R di `docs/ROADMAP.md`.
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Lifecycle bucket S3 (S3, ADR-072, 2026-10-28)
+- [x] `Put/Get/DeleteBucketLifecycleConfiguration`: Expiration (Days/Date) dan AbortIncompleteMultipartUpload, filter
+  prefix + ukuran; Tag/Transition/versi → 501. Cron jam-an bertahap dengan cursor; editor "Hapus otomatis" di `/s3`.
+- [ ] Pemilik: migrasi `0019` di D1 remote, deploy.
+
 ## Key S3 dengan izin terbatas (S1, ADR-071, 2026-10-28)
 - [x] Bucket tertentu, prefix, baca/tulis/baca saja/tulis saja, kedaluwarsa; key lama tetap akses penuh. Kelola bucket
   hanya dengan key tanpa batas; ListBuckets terfilter; presigned URL ikut aturan; link `/s3` pakai key yang boleh baca.

@@ -8,6 +8,7 @@ import { createBucket, createKey, revokeKey, s3Overview, setBucketPublic } from 
 import { deleteBucket } from '../services/s3-objects';
 import { browseObjects, deleteKeys, objectLink, uploadObject } from '../services/s3-browse';
 import { CORS_METHODS, getBucketCors, MAX_CORS_RULES, setBucketCors } from '../services/s3-cors';
+import { setBucketLifecycle } from '../services/s3-lifecycle';
 import { contentLength } from '../lib/http';
 import { rateLimit } from '../middleware/ratelimit';
 import { checkS3Url, releaseS3Url } from '../services/s3-urls';
@@ -18,6 +19,17 @@ import { S3KeyCreate } from './v1-schemas';
 
 const bucketName = z.string().min(3).max(63);
 const objectKey = z.string().min(1).max(1024);
+const days = z.number().int().min(1).max(36_500);
+const lifecycleRule = z.object({
+  id: z.string().max(255).default(''),
+  enabled: z.boolean().default(true),
+  prefix: z.string().max(1024).default(''),
+  sizeGreaterThan: z.number().int().min(0).optional(),
+  sizeLessThan: z.number().int().min(1).optional(),
+  expirationDays: days.optional(),
+  expirationDate: z.number().int().optional(),
+  abortDays: days.optional(),
+});
 const corsRule = z.object({
   id: z.string().max(255).optional(),
   allowedOrigins: z.array(z.string().max(1024)).min(1).max(100),
@@ -182,6 +194,25 @@ export const s3 = new Hono<AppBindings>()
     const ctx = c.get('ctx');
     await activeAccount(ctx, c.get('user')!.id);
     await s3Call(() => setBucketCors(ctx, c.get('user')!.id, c.req.param('name'), null));
+    return c.body(null, 204);
+  })
+  // Lifecycle rules (ADR-072): the editor sends the whole list; validated like the S3 API's XML.
+  .put(
+    '/buckets/:name/lifecycle',
+    validate('json', z.object({ rules: z.array(lifecycleRule).min(1).max(1000) })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      await activeAccount(ctx, c.get('user')!.id);
+      const rules = await s3Call(() =>
+        setBucketLifecycle(ctx, c.get('user')!.id, c.req.param('name'), c.req.valid('json').rules),
+      );
+      return c.json({ rules });
+    },
+  )
+  .delete('/buckets/:name/lifecycle', async (c) => {
+    const ctx = c.get('ctx');
+    await activeAccount(ctx, c.get('user')!.id);
+    await s3Call(() => setBucketLifecycle(ctx, c.get('user')!.id, c.req.param('name'), null));
     return c.body(null, 204);
   })
   // Statistics and access logging per bucket (ADR-060).

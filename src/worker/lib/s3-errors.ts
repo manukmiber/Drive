@@ -39,6 +39,7 @@ const STATUS = {
   NoSuchBucket: 404,
   NoSuchCORSConfiguration: 404,
   NoSuchKey: 404,
+  NoSuchLifecycleConfiguration: 404,
   NoSuchUpload: 404,
   NotImplemented: 501,
   NotModified: 304,

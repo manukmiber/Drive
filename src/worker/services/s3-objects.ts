@@ -991,7 +991,8 @@ export async function abortUpload(
   await dropUpload(ctx, db, up);
 }
 
-async function dropUpload(ctx: Ctx, db: D1Database, up: UploadRow): Promise<void> {
+/** Aborts an unfinished multipart upload in R2 and gives its reserved storage back. */
+export async function dropUpload(ctx: Ctx, db: D1Database, up: UploadRow): Promise<void> {
   try {
     await ctx.env.BUCKET.resumeMultipartUpload(
       s3BlobKey(up.user_id, up.blob_id),

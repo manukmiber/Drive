@@ -19,6 +19,7 @@ import { expireS3Uploads, reconcileS3 } from '../services/s3-objects';
 import { remindS3Renewals, renewS3FromCredit, runS3Dunning } from '../services/s3-billing';
 import { sweepReplication } from '../services/s3-replicas';
 import { deliverS3Logs } from '../services/s3-stats';
+import { runS3Lifecycle } from '../services/s3-lifecycle';
 import { refreshPendingUrls, releaseLapsedUrls } from '../services/s3-urls';
 import { cleanupVirusTotal } from '../services/virustotal';
 import { moveNoticesToRelay } from '../services/notify';
@@ -33,6 +34,15 @@ registerCronTask(CRON.hourly, {
 registerCronTask(CRON.hourly, {
   name: 's3_expire_uploads',
   run: async (ctx) => void (await expireS3Uploads(ctx)),
+});
+
+// Bucket lifecycle rules (ADR-072): expired objects and forgotten uploads, a few buckets an hour.
+registerCronTask(CRON.hourly, {
+  name: 's3_lifecycle',
+  async run(ctx) {
+    const r = await runS3Lifecycle(ctx);
+    if (r.deleted || r.aborted) log.info('s3_lifecycle', r);
+  },
 });
 
 // Bucket access logs (ADR-060): waiting lines become log objects in their target buckets.

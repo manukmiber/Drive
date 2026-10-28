@@ -54,6 +54,12 @@ import {
   setBucketCors,
 } from '../services/s3-cors';
 import {
+  bucketLifecycle,
+  lifecycleXml,
+  parseLifecycleXml,
+  setBucketLifecycle,
+} from '../services/s3-lifecycle';
+import {
   createBucket,
   getAccount,
   getBucket,
@@ -123,7 +129,6 @@ const UNSUPPORTED_SUB = [
   'intelligent-tiering',
   'inventory',
   'legal-hold',
-  'lifecycle',
   'metrics',
   'notification',
   'object-lock',
@@ -617,7 +622,13 @@ async function bucketOp(r: Req): Promise<Response> {
   const q = r.query;
   const sub = UNSUPPORTED_SUB.find((s) => q.has(s));
   const auth = needAuth(r);
-  if (r.method === 'PUT' && !q.has('acl') && !q.has('cors') && !q.has('logging')) {
+  if (
+    r.method === 'PUT' &&
+    !q.has('acl') &&
+    !q.has('cors') &&
+    !q.has('logging') &&
+    !q.has('lifecycle')
+  ) {
     if (sub)
       throw new S3Error('NotImplemented', `The ${sub} configuration is not supported by Zeiko S3.`);
     r.op = 'CreateBucket';
@@ -638,6 +649,7 @@ async function bucketOp(r: Req): Promise<Response> {
     throw new S3Error('NotImplemented', `The ${sub} sub-resource is not supported by Zeiko S3.`);
   if (q.has('cors')) return corsOp(r, bucket);
   if (q.has('logging')) return loggingOp(r, bucket);
+  if (q.has('lifecycle')) return lifecycleOp(r, bucket);
   switch (r.method) {
     case 'HEAD':
       r.op = 'HeadBucket';
@@ -717,6 +729,47 @@ async function corsOp(r: Req, bucket: BucketRow): Promise<Response> {
       r.op = 'DeleteBucketCors';
       permit(r, 'manage', bucket.name);
       await setBucketCors(r.ctx, auth.userId, bucket.name, null);
+      return new Response(null, { status: 204 });
+    default:
+      throw new S3Error(
+        'MethodNotAllowed',
+        'The specified method is not allowed against this resource.',
+      );
+  }
+}
+
+/** Get/Put/DeleteBucketLifecycleConfiguration (ADR-072). */
+async function lifecycleOp(r: Req, bucket: BucketRow): Promise<Response> {
+  const auth = needAuth(r);
+  switch (r.method) {
+    case 'GET': {
+      r.op = 'GetBucketLifecycleConfiguration';
+      permit(r, 'read', bucket.name);
+      const rules = bucketLifecycle(bucket);
+      if (!rules)
+        throw new S3Error(
+          'NoSuchLifecycleConfiguration',
+          'The lifecycle configuration does not exist',
+          { BucketName: bucket.name },
+        );
+      return xmlResponse(lifecycleXml(rules));
+    }
+    case 'PUT': {
+      r.op = 'PutBucketLifecycleConfiguration';
+      permit(r, 'manage', bucket.name);
+      const cfg = await r.ctx.config();
+      await setBucketLifecycle(
+        r.ctx,
+        auth.userId,
+        bucket.name,
+        parseLifecycleXml(await readSmallBody(r), cfg.s3_lifecycle_max_rules),
+      );
+      return new Response(null, { status: 200 });
+    }
+    case 'DELETE':
+      r.op = 'DeleteBucketLifecycle';
+      permit(r, 'manage', bucket.name);
+      await setBucketLifecycle(r.ctx, auth.userId, bucket.name, null);
       return new Response(null, { status: 204 });
     default:
       throw new S3Error(
