@@ -718,6 +718,11 @@ export const s3Keys = sqliteTable('s3_keys', {
   createdAt: ms('created_at').notNull(),
   lastUsedAt: ms('last_used_at'),
   revokedAt: ms('revoked_at'),
+  // ADR-071: what the key may touch; NULL / 'rw' = no limit.
+  bucketsJson: text('buckets_json'),
+  prefix: text('prefix'),
+  access: text('access').notNull(),
+  expiresAt: ms('expires_at'),
 });
 
 export const s3Buckets = sqliteTable('s3_buckets', {
@@ -729,6 +734,10 @@ export const s3Buckets = sqliteTable('s3_buckets', {
   corsJson: text('cors_json'),
   loggingJson: text('logging_json'),
   logsAt: ms('logs_at'),
+  // ADR-072: lifecycle rules and how far the hourly run has got.
+  lifecycleJson: text('lifecycle_json'),
+  lifecycleCursor: text('lifecycle_cursor'),
+  lifecycleAt: ms('lifecycle_at').notNull(),
 });
 
 export const s3Subscriptions = sqliteTable('s3_subscriptions', {
