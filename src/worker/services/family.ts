@@ -26,6 +26,7 @@ import {
 } from './billing';
 import { consumeUsage } from './share-send';
 import { noticeEmail } from './email-templates';
+import { strings, type Lang } from '../lib/lang';
 import { notify } from './notify';
 import { appUrl } from '../lib/paths';
 
@@ -285,20 +286,20 @@ export async function emailInvite(ctx: Ctx, ownerId: string, to: string): Promis
     throw new AppError('RATE_LIMITED', 'daily invite limit reached');
   }
   const invite = await createInvite(ctx, ownerId, 'email');
-  const owner = await ctx.env.DB.prepare('SELECT name, email FROM users WHERE id = ?1')
+  const owner = await ctx.env.DB.prepare('SELECT name, email, locale FROM users WHERE id = ?1')
     .bind(ownerId)
-    .first<{ name: string; email: string }>();
+    .first<{ name: string; email: string; locale: Lang }>();
+  // The invitee may have no account yet: the invitation is in the owner's language.
+  const lang = owner?.locale ?? 'id';
+  const m = strings(lang).mail;
   await ctx.adapters.email.send({
     to: [to],
     tag: 'family_invite',
     replyTo: owner?.email,
-    ...noticeEmail({
-      title: `${owner?.name || owner?.email} mengajakmu bergabung di paket keluarga Zeiko`,
-      paragraphs: [
-        'Kamu akan dapat ruang penyimpanan bersama dan Drive Keluarga. File pribadimu tetap tidak terlihat oleh anggota lain.',
-        'Undangan berlaku 7 hari.',
-      ],
-      cta: { label: 'Lihat undangan', url: invite.url },
+    ...noticeEmail(lang, {
+      title: m.familyInviteTitle(owner?.name || owner?.email || ''),
+      paragraphs: [m.familyInviteBody, m.familyInviteValid],
+      cta: { label: m.ctaInvite, url: invite.url },
     }),
   });
   return { url: invite.url };

@@ -1839,6 +1839,130 @@ export const t = {
     downloadAllZip: 'Unduh semua (ZIP)',
     moreFiles: (n: number) => `Dan ${n} file lagi. Unduh semuanya sebagai ZIP.`,
   },
+  // Email and the bell (D14, ADR-069): every notice in the person's language.
+  mail: {
+    lang: 'id',
+    footer: 'Zeiko Drive · drive.zeiko.biz.id',
+    shareSubject: (sender: string) => `${sender} membagikan file lewat Zeiko`,
+    shareLead: (sender: string, title: string, size: string) =>
+      `${sender} membagikan ${title} (${size}) lewat Zeiko.`,
+    shareMessage: (m: string) => `Pesan: ${m}`,
+    shareDownload: 'Unduh',
+    shareUntil: (d: string) => `Berlaku sampai ${d}.`,
+    shareSentFor: (email: string) => `Dikirim atas nama ${email}`,
+    shareReport: 'Laporkan penyalahgunaan',
+    unsubscribe: 'Berhenti menerima email seperti ini',
+    ctaPlans: 'Buka Paket',
+    ctaRenewPlan: 'Perpanjang paket',
+    ctaRenew: 'Perpanjang',
+    ctaOpenS3: 'Buka Zeiko S3',
+    ctaAddSpace: 'Tambah ruang',
+    ctaSettings: 'Buka Pengaturan',
+    ctaDownloads: 'Buka Unduhan',
+    ctaAdStats: 'Lihat statistik iklan',
+    ctaPay: 'Bayar',
+    ctaResults: 'Lihat hasil',
+    ctaInvite: 'Lihat undangan',
+    rejectedTitle: 'File kamu ditolak pemindai keamanan',
+    rejectedBody: (name: string, reason: string) =>
+      `"${name}" terdeteksi berbahaya (${reason}) sehingga sudah dihapus dan kuotanya dikembalikan.`,
+    planEndsTitle: (days: number) =>
+      `Paketmu berakhir ${days === 1 ? 'besok' : `${days} hari lagi`}`,
+    planEndsOn: (plan: string, date: string) => `Paket ${plan} berakhir pada ${date}.`,
+    creditRenews:
+      'Kreditmu cukup untuk sebulan lagi, jadi paket diperpanjang otomatis. Tidak perlu melakukan apa-apa.',
+    renewByQris: (amount: string) =>
+      `Perpanjang sebulan lagi sebesar ${amount} dengan QRIS dari halaman Paket.`,
+    dunningGrace:
+      'Paketmu sudah berakhir dan belum diperpanjang. Semua fitur masih jalan normal untuk sementara.',
+    dunningReadonly:
+      'Akunmu sekarang mode baca saja: kamu tidak bisa upload atau membuat link share baru, dan link yang ada dinonaktifkan. Download dan hapus tetap bisa.',
+    dunningSuspended: 'Akses ke file kamu sekarang dikunci. Bayar kapan saja untuk memulihkan semuanya.',
+    dunningDeleteWarning:
+      'File kamu akan dihapus permanen sebentar lagi kalau pembayaran belum masuk.',
+    dunningLastTitle: 'Peringatan terakhir: file akan dihapus',
+    dunningTitle: 'Paketmu belum diperpanjang',
+    payBy: (date: string) => `Batas akhir pembayaran: ${date}.`,
+    s3EndsTitle: (days: number) =>
+      `Paket Zeiko S3 berakhir ${days === 1 ? 'besok' : `${days} hari lagi`}`,
+    s3EndsOn: (date: string) => `Paketmu berakhir pada ${date}.`,
+    s3RenewByQris: (amount: string) =>
+      `Perpanjang sebulan lagi sebesar ${amount} dengan QRIS dari halaman Zeiko S3.`,
+    s3UrlReleasedTitle: 'Alamat Zeiko S3 kamu dilepas',
+    s3UrlReleasedBody: (host: string) =>
+      `${host} dilepas karena paket Zeiko S3 tidak dibayar. Setelah memperpanjang, alamat sendiri bisa dibeli lagi dari halaman Zeiko S3.`,
+    s3DunningGrace:
+      'Paket Zeiko S3 kamu sudah berakhir dan belum diperpanjang. Semua masih jalan normal untuk sementara.',
+    s3DunningReadonly:
+      'Zeiko S3 kamu sekarang mode baca saja: upload dan bucket publik berhenti. Unduh dan hapus tetap bisa.',
+    s3DunningLocked:
+      'Akses ke Zeiko S3 kamu sekarang dikunci. Perpanjang kapan saja untuk membukanya lagi.',
+    s3DunningDeleteWarning:
+      'Isi Zeiko S3 kamu akan dihapus permanen sebentar lagi kalau paket belum diperpanjang.',
+    s3DunningLastTitle: 'Peringatan terakhir: isi Zeiko S3 akan dihapus',
+    s3DunningTitle: 'Paket Zeiko S3 belum diperpanjang',
+    s3DeleteBy: (date: string) => `Batas akhir sebelum dihapus: ${date}.`,
+    quotaFullTitle: 'Penyimpanan kamu penuh',
+    quotaTitle: (pct: number) => `Penyimpanan terpakai ${pct}%`,
+    quotaFullBody:
+      'Kamu tidak bisa upload lagi sampai ada ruang kosong. Hapus file yang tidak perlu (jangan lupa kosongkan Sampah) atau tambah ruang.',
+    quotaBody: (used: string, limit: string) => `Sudah terpakai ${used} dari ${limit}.`,
+    deleteTitle: 'Akun Zeiko kamu akan dihapus besok',
+    deleteBody: (date: string) =>
+      `Sesuai permintaanmu, akun dan semua file akan dihapus permanen pada ${date}.`,
+    deleteUndo: 'Berubah pikiran? Batalkan dari Pengaturan sebelum waktu itu.',
+    archiveTitle: 'Arsip siap diunduh',
+    archiveBody: (name: string, size: string) =>
+      `"${name}" (${size}) sudah jadi. Link unduhannya berlaku 24 jam.`,
+    adApproved: (title: string) => `Iklan "${title}" disetujui`,
+    adAwaiting: (title: string) => `Iklan "${title}" disetujui, tinggal dibayar`,
+    adPaid: (title: string) => `Iklan "${title}" disetujui dan sudah dibayar`,
+    adRejected: (title: string) => `Iklan "${title}" belum bisa tayang`,
+    adSuspended: (title: string) => `Iklan "${title}" dihentikan`,
+    adChanged: 'Status iklan berubah',
+    adPayQr: (amount: string, date: string) =>
+      `Iklanmu sudah kami cek dan aman untuk tayang. Scan QRIS di bawah ini dari aplikasi bank atau e-wallet dan bayar tepat ${amount}, paling lambat ${date}.`,
+    adPayCode:
+      'Nominalnya punya kode unik supaya pembayaranmu mudah kami kenali. Setelah kami terima, iklanmu tayang sesuai jadwal; tidak perlu membuka website.',
+    adCreditUsed: (amount: string) => `Kreditmu ${amount} sudah dipotong dari tagihan ini.`,
+    adPayLapse: 'Kalau belum dibayar sampai hari itu lewat, pesanan ini batal dengan sendirinya.',
+    adPayLater: (amount: string) =>
+      `Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya ${amount}; QRIS-nya kami kirim lewat email sebentar lagi.`,
+    adQuestions: (contact: string) => `Ada pertanyaan? Chat ${contact}.`,
+    adPaidBody:
+      'Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya sudah dibayar dari kreditmu, jadi iklanmu tayang sesuai jadwal.',
+    adApprovedBody: 'Materi iklanmu sudah kami cek dan aman untuk tayang.',
+    adReason: (reason: string) => `Alasan: ${reason}.`,
+    adDefaultReason: 'melanggar Kebijakan Iklan',
+    adRefund: (amount: string) =>
+      `Sisa hari tayang dikembalikan sebagai kredit ${amount}, dipotong otomatis dari pembayaran berikutnya.`,
+    adResend: (contact: string) => `Kirim ulang materi yang sudah diperbaiki lewat ${contact}.`,
+    adNoRefund: 'Sisa hari tayang tidak dikembalikan karena pelanggaran berat.',
+    compressDone: (n: number) => `${n} berhasil`,
+    compressSkipped: (n: number) => `${n} dilewati karena hasilnya tidak lebih kecil`,
+    compressFailed: (n: number) => `${n} gagal`,
+    compressTitleSaved: (size: string) => `Kompres selesai, hemat ${size}`,
+    compressTitle: 'Kompres selesai',
+    compressBody: (parts: string) =>
+      `${parts}. Kredit untuk file yang dilewati atau gagal sudah dikembalikan.`,
+    paidTitle: 'Pembayaran berhasil',
+    paidThanks: (amount: string) => `Terima kasih! Pembayaran ${amount} sudah kami terima.`,
+    paidFailed:
+      'Pembeliannya belum bisa dibuat, jadi uangmu kami simpan sebagai kredit dan kami sudah diberi tahu. Kredit dipotong otomatis dari pembayaran berikutnya.',
+    paidCredit: (amount: string) =>
+      `Sisa ${amount} jadi kredit, dipotong otomatis dari pembayaran berikutnya.`,
+    invoiceBody: (summary: string, total: string) => `Terima kasih! ${summary} Total ${total}.`,
+    planChangedTitle: 'Paket kamu berubah',
+    planNow: (plan: string, size: string) => `Paket sekarang: ${plan} (${size}).`,
+    familyInviteTitle: (name: string) => `${name} mengajakmu bergabung di paket keluarga Zeiko`,
+    familyInviteBody:
+      'Kamu akan dapat ruang penyimpanan bersama dan Drive Keluarga. File pribadimu tetap tidak terlihat oleh anggota lain.',
+    familyInviteValid: 'Undangan berlaku 7 hari.',
+    testTitle: 'Email uji dari Zeiko Drive',
+    testBody:
+      'Kalau email ini sampai, Zeiko Drive bisa mengirim email ke pengguna: notifikasi, undangan keluarga, dan berbagi lewat email.',
+    testVia: (adapter: string) => `Dikirim lewat: ${adapter}.`,
+  },
 } as const;
 
 /** The shape every language follows: the same keys, any wording. */

@@ -1813,4 +1813,125 @@ export const en: Strings = {
     moreFiles: (n: number) =>
       `And ${n} more ${n === 1 ? 'file' : 'files'}. Download everything as a ZIP.`,
   },
+  mail: {
+    lang: 'en',
+    footer: 'Zeiko Drive · drive.zeiko.biz.id',
+    shareSubject: (sender: string) => `${sender} shared a file with you on Zeiko`,
+    shareLead: (sender: string, title: string, size: string) =>
+      `${sender} shared ${title} (${size}) with you on Zeiko.`,
+    shareMessage: (m: string) => `Message: ${m}`,
+    shareDownload: 'Download',
+    shareUntil: (d: string) => `Available until ${d}.`,
+    shareSentFor: (email: string) => `Sent on behalf of ${email}`,
+    shareReport: 'Report abuse',
+    unsubscribe: 'Stop getting emails like this',
+    ctaPlans: 'Open Plans',
+    ctaRenewPlan: 'Renew your plan',
+    ctaRenew: 'Renew',
+    ctaOpenS3: 'Open Zeiko S3',
+    ctaAddSpace: 'Add space',
+    ctaSettings: 'Open Settings',
+    ctaDownloads: 'Open Downloads',
+    ctaAdStats: 'See your ad statistics',
+    ctaPay: 'Pay',
+    ctaResults: 'See the results',
+    ctaInvite: 'See the invitation',
+    rejectedTitle: 'Your file was blocked by the security scanner',
+    rejectedBody: (name: string, reason: string) =>
+      `"${name}" was found to be harmful (${reason}), so it has been deleted and its space given back.`,
+    planEndsTitle: (days: number) =>
+      `Your plan ends ${days === 1 ? 'tomorrow' : `in ${days} days`}`,
+    planEndsOn: (plan: string, date: string) => `Your ${plan} plan ends on ${date}.`,
+    creditRenews:
+      'Your credit covers another month, so the plan renews by itself. There is nothing you need to do.',
+    renewByQris: (amount: string) =>
+      `Renew for another month for ${amount} by QRIS from the Plans page.`,
+    dunningGrace:
+      'Your plan has ended and has not been renewed. Everything still works as usual for now.',
+    dunningReadonly:
+      'Your account is now read-only: you cannot upload or make new share links, and the links you have are turned off. You can still download and delete.',
+    dunningSuspended: 'Your files are now locked. Pay at any time to get everything back.',
+    dunningDeleteWarning: 'Your files will soon be deleted for good unless the payment arrives.',
+    dunningLastTitle: 'Last warning: your files will be deleted',
+    dunningTitle: 'Your plan has not been renewed',
+    payBy: (date: string) => `Pay by: ${date}.`,
+    s3EndsTitle: (days: number) =>
+      `Your Zeiko S3 plan ends ${days === 1 ? 'tomorrow' : `in ${days} days`}`,
+    s3EndsOn: (date: string) => `Your plan ends on ${date}.`,
+    s3RenewByQris: (amount: string) =>
+      `Renew for another month for ${amount} by QRIS from the Zeiko S3 page.`,
+    s3UrlReleasedTitle: 'Your Zeiko S3 address was released',
+    s3UrlReleasedBody: (host: string) =>
+      `${host} was released because your Zeiko S3 plan was not paid. Once you renew, you can buy an address of your own again from the Zeiko S3 page.`,
+    s3DunningGrace:
+      'Your Zeiko S3 plan has ended and has not been renewed. Everything still works as usual for now.',
+    s3DunningReadonly:
+      'Your Zeiko S3 is now read-only: uploads and public buckets have stopped. You can still download and delete.',
+    s3DunningLocked: 'Your Zeiko S3 is now locked. Renew at any time to open it again.',
+    s3DunningDeleteWarning:
+      'What is in your Zeiko S3 will soon be deleted for good unless the plan is renewed.',
+    s3DunningLastTitle: 'Last warning: your Zeiko S3 will be emptied',
+    s3DunningTitle: 'Your Zeiko S3 plan has not been renewed',
+    s3DeleteBy: (date: string) => `Deleted after: ${date}.`,
+    quotaFullTitle: 'Your storage is full',
+    quotaTitle: (pct: number) => `${pct}% of your storage is used`,
+    quotaFullBody:
+      'You cannot upload any more until there is free space. Delete files you do not need (and empty the Trash) or add space.',
+    quotaBody: (used: string, limit: string) => `${used} of ${limit} is used.`,
+    deleteTitle: 'Your Zeiko account will be deleted tomorrow',
+    deleteBody: (date: string) =>
+      `As you asked, your account and all your files will be deleted for good on ${date}.`,
+    deleteUndo: 'Changed your mind? Cancel it in Settings before then.',
+    archiveTitle: 'Your archive is ready to download',
+    archiveBody: (name: string, size: string) =>
+      `"${name}" (${size}) is ready. Its download link works for 24 hours.`,
+    adApproved: (title: string) => `Your ad "${title}" is approved`,
+    adAwaiting: (title: string) => `Your ad "${title}" is approved and waiting for payment`,
+    adPaid: (title: string) => `Your ad "${title}" is approved and paid`,
+    adRejected: (title: string) => `Your ad "${title}" cannot run yet`,
+    adSuspended: (title: string) => `Your ad "${title}" has been stopped`,
+    adChanged: 'Your ad’s status changed',
+    adPayQr: (amount: string, date: string) =>
+      `We have checked your ad and it is fine to run. Scan the QRIS below in your bank or e-wallet app and pay exactly ${amount}, by ${date} at the latest.`,
+    adPayCode:
+      'The amount carries a unique code so we can tell your payment apart. Once we have it, your ad runs as scheduled; there is no need to open the website.',
+    adCreditUsed: (amount: string) => `Your credit of ${amount} has been taken off this bill.`,
+    adPayLapse: 'If it is not paid by the end of that day, this order is cancelled by itself.',
+    adPayLater: (amount: string) =>
+      `We have checked your ad and it is fine to run. The bill is ${amount}; we will email you its QRIS shortly.`,
+    adQuestions: (contact: string) => `Questions? Chat ${contact}.`,
+    adPaidBody:
+      'We have checked your ad and it is fine to run. The bill was paid from your credit, so your ad runs as scheduled.',
+    adApprovedBody: 'We have checked your ad and it is fine to run.',
+    adReason: (reason: string) => `Reason: ${reason}.`,
+    adDefaultReason: 'it breaks the Advertising Policy',
+    adRefund: (amount: string) =>
+      `The days it had left come back as ${amount} of credit, taken off your next payment by itself.`,
+    adResend: (contact: string) => `Send the corrected material again through ${contact}.`,
+    adNoRefund: 'The days it had left are not given back, because the breach was serious.',
+    compressDone: (n: number) => `${n} done`,
+    compressSkipped: (n: number) => `${n} skipped because the result was not smaller`,
+    compressFailed: (n: number) => `${n} failed`,
+    compressTitleSaved: (size: string) => `Compression finished, ${size} saved`,
+    compressTitle: 'Compression finished',
+    compressBody: (parts: string) =>
+      `${parts}. The credit for files that were skipped or failed has been given back.`,
+    paidTitle: 'Payment received',
+    paidThanks: (amount: string) => `Thank you! We have received your payment of ${amount}.`,
+    paidFailed:
+      'The purchase could not be made yet, so we kept your money as credit and we have been told. The credit is taken off your next payment by itself.',
+    paidCredit: (amount: string) =>
+      `${amount} left over became credit, taken off your next payment by itself.`,
+    invoiceBody: (summary: string, total: string) => `Thank you! ${summary} Total ${total}.`,
+    planChangedTitle: 'Your plan changed',
+    planNow: (plan: string, size: string) => `Your plan now: ${plan} (${size}).`,
+    familyInviteTitle: (name: string) => `${name} invited you to join their Zeiko family plan`,
+    familyInviteBody:
+      'You will get shared storage and the Family Drive. Your private files stay hidden from the other members.',
+    familyInviteValid: 'The invitation works for 7 days.',
+    testTitle: 'Test email from Zeiko Drive',
+    testBody:
+      'If this email arrived, Zeiko Drive can send email to its users: notices, family invitations and sharing by email.',
+    testVia: (adapter: string) => `Sent through: ${adapter}.`,
+  },
 };

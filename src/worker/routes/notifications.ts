@@ -4,11 +4,14 @@ import { z } from 'zod';
 import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
 import { getPrefs, listNotifications, markRead, setPref } from '../services/notify';
+import { requestLang } from '../lib/lang';
 import type { AppBindings } from '../types';
 
 export const notifications = new Hono<AppBindings>()
   .use('*', requireUser)
-  .get('/', async (c) => c.json(await listNotifications(c.get('ctx'), c.get('user')!.id)))
+  .get('/', async (c) =>
+    c.json(await listNotifications(c.get('ctx'), c.get('user')!.id, requestLang(c.req.raw))),
+  )
   .post(
     '/read',
     validate(

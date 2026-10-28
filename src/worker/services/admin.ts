@@ -12,6 +12,7 @@ import { poolLimitStmt, wibAnchorDay } from './billing';
 import { getConfig, setConfig } from './config';
 import { setUserStatus } from './reports';
 import { noticeEmail } from './email-templates';
+import { strings } from '../lib/lang';
 
 async function audit(
   ctx: Ctx,
@@ -447,12 +448,10 @@ export async function sendTestEmail(ctx: Ctx, actorId: string, to: string) {
     const { id } = await ctx.adapters.email.send({
       to: [to],
       tag: 'test',
-      ...noticeEmail({
-        title: 'Email uji dari Zeiko Drive',
-        paragraphs: [
-          'Kalau email ini sampai, Zeiko Drive bisa mengirim email ke pengguna: notifikasi, undangan keluarga, dan berbagi lewat email.',
-          `Dikirim lewat: ${adapter}.`,
-        ],
+      // For the operator, who works in Indonesian.
+      ...noticeEmail('id', {
+        title: strings('id').mail.testTitle,
+        paragraphs: [strings('id').mail.testBody, strings('id').mail.testVia(adapter)],
       }),
     });
     await audit(ctx, actorId, 'email.test', 'email', to, { adapter, id });

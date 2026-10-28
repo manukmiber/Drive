@@ -1786,3 +1786,15 @@ Kode error baru `ConditionalRequestConflict` (409). Test: `tests/integration/s3-
 ditahan sampai keduanya lolos cek awal → tepat satu 200 dan satu 412; If-Match benar/salah/tidak ada; multipart 412
 lalu abort, 409 saat tulis lain masuk di tengah complete; copy tujuan dan sumber; syarat yang ditolak; `used_bytes`,
 jumlah blob R2, dan pesan scan tetap benar).
+
+## ADR-069 — Email dan lonceng dua bahasa (D14)
+
+Tanggal: 2026-10-28. Status: diterima.
+
+- Teks email (`email-templates.ts`) dan notifikasi (`notify.ts`, `renderNotice`) pindah ke bagian `mail` di
+  `strings.id.ts` + `strings.en.ts`. Email notifikasi memakai `users.locale` penerima; lonceng memakai bahasa app
+  (`requestLang`, cookie `zk_lang`); email share dan undangan keluarga memakai bahasa pengirim (penerima mungkin belum
+  punya akun); email uji operator tetap Indonesia.
+- Tidak ada tabel atau kolom D1 baru (ADR-064): `users.locale` sudah ada.
+- Footer email sekarang "Zeiko Drive · drive.zeiko.biz.id" (dulu nama lama). `otpEmail` dihapus: tidak dipakai sejak
+  login lewat Akun Zeiko.

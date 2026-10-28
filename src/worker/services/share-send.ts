@@ -214,9 +214,9 @@ async function loadSendContext(ctx: Ctx, sendId: string) {
   const share = await ctx.env.DB.prepare('SELECT * FROM shares WHERE id = ?1')
     .bind(send.share_id)
     .first<{ id: string; title: string; expires_at: number | null }>();
-  const sender = await ctx.env.DB.prepare('SELECT name, email FROM users WHERE id = ?1')
+  const sender = await ctx.env.DB.prepare('SELECT name, email, locale FROM users WHERE id = ?1')
     .bind(send.user_id)
-    .first<{ name: string; email: string }>();
+    .first<{ name: string; email: string; locale: string }>();
   const size = await ctx.env.DB.prepare(
     'SELECT COALESCE(SUM(n.size), 0) AS total FROM share_items i JOIN nodes n ON n.id = i.node_id WHERE i.share_id = ?1',
   )
@@ -260,7 +260,7 @@ export async function deliverShareEmail(ctx: Ctx, sendId: string, to: string): P
   const c = await loadSendContext(ctx, sendId);
   if (!c) return;
   const unsub = `${ctx.env.APP_ORIGIN}/berhenti/${await unsubscribeToken(ctx, to)}`;
-  const mail = shareEmail({
+  const mail = shareEmail(c.sender.locale === 'en' ? 'en' : 'id', {
     senderName: c.sender.name || c.sender.email,
     senderEmail: c.sender.email,
     title: c.share.title,

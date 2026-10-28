@@ -9,6 +9,7 @@ import { ulid } from '../lib/ids';
 import { AppError } from '../lib/errors';
 import { noticeEmail } from './email-templates';
 import { appUrl } from '../lib/paths';
+import { strings, type Lang } from '../lib/lang';
 
 export type NotificationType =
   | 'file_rejected'
@@ -54,134 +55,113 @@ type Rendered = {
   image?: { src: string; alt: string };
 };
 
-function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | null {
+/** A notice's words in one language (D14): the email and the bell draw from the same text. */
+export function renderNotice(
+  ctx: Ctx,
+  lang: Lang,
+  type: string,
+  p: Record<string, unknown>,
+): Rendered | null {
+  const m = strings(lang).mail;
   const app = appUrl(ctx.env, '');
-  const billing = { label: 'Buka Paket', url: `${app}/paket` };
+  const billing = { label: m.ctaPlans, url: `${app}/paket` };
   switch (type) {
     case 'file_rejected':
       return {
-        title: 'File kamu ditolak pemindai keamanan',
-        paragraphs: [
-          `"${String(p.name)}" terdeteksi berbahaya (${String(p.reason ?? 'malware')}) sehingga sudah dihapus dan kuotanya dikembalikan.`,
-        ],
+        title: m.rejectedTitle,
+        paragraphs: [m.rejectedBody(String(p.name), String(p.reason ?? 'malware'))],
       };
     case 'billing_reminder':
       return {
-        title: `Paketmu berakhir ${p.days === 1 ? 'besok' : `${String(p.days)} hari lagi`}`,
+        title: m.planEndsTitle(Number(p.days)),
         paragraphs: [
-          `Paket ${String(p.planName)} berakhir pada ${formatDateTime(Number(p.periodEnd))}.`,
+          m.planEndsOn(String(p.planName), formatDateTime(Number(p.periodEnd))),
           Number(p.creditIdr ?? 0) >= Number(p.amountIdr)
-            ? 'Kreditmu cukup untuk sebulan lagi, jadi paket diperpanjang otomatis. Tidak perlu melakukan apa-apa.'
-            : `Perpanjang sebulan lagi sebesar ${formatRupiah(Number(p.amountIdr))} dengan QRIS dari halaman Paket.`,
+            ? m.creditRenews
+            : m.renewByQris(formatRupiah(Number(p.amountIdr))),
         ],
-        cta: { label: 'Perpanjang paket', url: `${app}/paket` },
+        cta: { label: m.ctaRenewPlan, url: `${app}/paket` },
       };
     case 'renewal_failed':
     case 'dunning': {
       const stage = String(p.stage ?? 'grace');
       const text: Record<string, string> = {
-        grace:
-          'Paketmu sudah berakhir dan belum diperpanjang. Semua fitur masih jalan normal untuk sementara.',
-        readonly:
-          'Akunmu sekarang mode baca saja: kamu tidak bisa upload atau membuat link share baru, dan link yang ada dinonaktifkan. Download dan hapus tetap bisa.',
-        suspended:
-          'Akses ke file kamu sekarang dikunci. Bayar kapan saja untuk memulihkan semuanya.',
-        delete_warning:
-          'File kamu akan dihapus permanen sebentar lagi kalau pembayaran belum masuk.',
+        grace: m.dunningGrace,
+        readonly: m.dunningReadonly,
+        suspended: m.dunningSuspended,
+        delete_warning: m.dunningDeleteWarning,
       };
       return {
-        title:
-          stage === 'delete_warning'
-            ? 'Peringatan terakhir: file akan dihapus'
-            : 'Paketmu belum diperpanjang',
+        title: stage === 'delete_warning' ? m.dunningLastTitle : m.dunningTitle,
         paragraphs: [
           text[stage] ?? text.grace!,
-          p.deleteAt ? `Batas akhir pembayaran: ${formatDateTime(Number(p.deleteAt))}.` : '',
+          p.deleteAt ? m.payBy(formatDateTime(Number(p.deleteAt))) : '',
         ].filter(Boolean),
-        cta: { label: 'Perpanjang paket', url: `${app}/paket` },
+        cta: { label: m.ctaRenewPlan, url: `${app}/paket` },
       };
     }
     case 's3_reminder':
       return {
-        title: `Paket Zeiko S3 berakhir ${p.days === 1 ? 'besok' : `${String(p.days)} hari lagi`}`,
+        title: m.s3EndsTitle(Number(p.days)),
         paragraphs: [
-          `Paketmu berakhir pada ${formatDateTime(Number(p.periodEnd))}.`,
-          p.creditCovers
-            ? 'Kreditmu cukup untuk sebulan lagi, jadi paket diperpanjang otomatis. Tidak perlu melakukan apa-apa.'
-            : `Perpanjang sebulan lagi sebesar ${formatRupiah(Number(p.amountIdr))} dengan QRIS dari halaman Zeiko S3.`,
+          m.s3EndsOn(formatDateTime(Number(p.periodEnd))),
+          p.creditCovers ? m.creditRenews : m.s3RenewByQris(formatRupiah(Number(p.amountIdr))),
         ],
-        cta: { label: 'Perpanjang', url: `${app}/s3` },
+        cta: { label: m.ctaRenew, url: `${app}/s3` },
       };
     case 's3_url_released':
       return {
-        title: 'Alamat Zeiko S3 kamu dilepas',
-        paragraphs: [
-          `${String(p.hostname)} dilepas karena paket Zeiko S3 tidak dibayar. Setelah memperpanjang, alamat sendiri bisa dibeli lagi dari halaman Zeiko S3.`,
-        ],
-        cta: { label: 'Buka Zeiko S3', url: `${app}/s3` },
+        title: m.s3UrlReleasedTitle,
+        paragraphs: [m.s3UrlReleasedBody(String(p.hostname))],
+        cta: { label: m.ctaOpenS3, url: `${app}/s3` },
       };
     case 's3_dunning': {
       const stage = String(p.stage ?? 'grace');
       const text: Record<string, string> = {
-        grace:
-          'Paket Zeiko S3 kamu sudah berakhir dan belum diperpanjang. Semua masih jalan normal untuk sementara.',
-        readonly:
-          'Zeiko S3 kamu sekarang mode baca saja: upload dan bucket publik berhenti. Unduh dan hapus tetap bisa.',
-        locked:
-          'Akses ke Zeiko S3 kamu sekarang dikunci. Perpanjang kapan saja untuk membukanya lagi.',
-        delete_warning:
-          'Isi Zeiko S3 kamu akan dihapus permanen sebentar lagi kalau paket belum diperpanjang.',
+        grace: m.s3DunningGrace,
+        readonly: m.s3DunningReadonly,
+        locked: m.s3DunningLocked,
+        delete_warning: m.s3DunningDeleteWarning,
       };
       return {
-        title:
-          stage === 'delete_warning'
-            ? 'Peringatan terakhir: isi Zeiko S3 akan dihapus'
-            : 'Paket Zeiko S3 belum diperpanjang',
-        paragraphs: [
-          text[stage] ?? text.grace!,
-          `Batas akhir sebelum dihapus: ${formatDateTime(Number(p.deleteAt))}.`,
-        ],
-        cta: { label: 'Perpanjang', url: `${app}/s3` },
+        title: stage === 'delete_warning' ? m.s3DunningLastTitle : m.s3DunningTitle,
+        paragraphs: [text[stage] ?? text.grace!, m.s3DeleteBy(formatDateTime(Number(p.deleteAt)))],
+        cta: { label: m.ctaRenew, url: `${app}/s3` },
       };
     }
     case 'quota': {
       const pct = Number(p.pct);
       return {
-        title: pct >= 100 ? 'Penyimpanan kamu penuh' : `Penyimpanan terpakai ${pct}%`,
+        title: pct >= 100 ? m.quotaFullTitle : m.quotaTitle(pct),
         paragraphs: [
           pct >= 100
-            ? 'Kamu tidak bisa upload lagi sampai ada ruang kosong. Hapus file yang tidak perlu (jangan lupa kosongkan Sampah) atau tambah ruang.'
-            : `Sudah terpakai ${formatBytes(Number(p.usedBytes))} dari ${formatBytes(Number(p.limitBytes))}.`,
+            ? m.quotaFullBody
+            : m.quotaBody(formatBytes(Number(p.usedBytes)), formatBytes(Number(p.limitBytes))),
         ],
-        cta: { label: 'Tambah ruang', url: `${app}/paket` },
+        cta: { label: m.ctaAddSpace, url: `${app}/paket` },
       };
     }
     case 'account_delete':
       return {
-        title: 'Akun Zeiko kamu akan dihapus besok',
-        paragraphs: [
-          `Sesuai permintaanmu, akun dan semua file akan dihapus permanen pada ${formatDateTime(Number(p.deleteAt))}.`,
-          'Berubah pikiran? Batalkan dari Pengaturan sebelum waktu itu.',
-        ],
-        cta: { label: 'Buka Pengaturan', url: `${app}/pengaturan` },
+        title: m.deleteTitle,
+        paragraphs: [m.deleteBody(formatDateTime(Number(p.deleteAt))), m.deleteUndo],
+        cta: { label: m.ctaSettings, url: `${app}/pengaturan` },
       };
     case 'archive_ready':
       return {
-        title: 'Arsip siap diunduh',
-        paragraphs: [
-          `"${String(p.name)}" (${formatBytes(Number(p.bytes))}) sudah jadi. Link unduhannya berlaku 24 jam.`,
-        ],
-        cta: { label: 'Buka Unduhan', url: `${app}/unduhan` },
+        title: m.archiveTitle,
+        paragraphs: [m.archiveBody(String(p.name), formatBytes(Number(p.bytes)))],
+        cta: { label: m.ctaDownloads, url: `${app}/unduhan` },
       };
     case 'ad_status': {
       const status = String(p.status);
       const title = String(p.title);
       const titles: Record<string, string> = {
-        approved: `Iklan "${title}" disetujui`,
-        awaiting_payment: `Iklan "${title}" disetujui, tinggal dibayar`,
-        paid: `Iklan "${title}" disetujui dan sudah dibayar`,
-        rejected: `Iklan "${title}" belum bisa tayang`,
-        suspended: `Iklan "${title}" dihentikan`,
+        approved: m.adApproved(title),
+        awaiting_payment: m.adAwaiting(title),
+        paid: m.adPaid(title),
+        rejected: m.adRejected(title),
+        suspended: m.adSuspended(title),
       };
       // Paying is by email (ADR-043): the QRIS is in this message, nothing to open on the website.
       if (status === 'awaiting_payment') {
@@ -192,71 +172,58 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
           title: titles.awaiting_payment!,
           paragraphs: qr
             ? [
-                `Iklanmu sudah kami cek dan aman untuk tayang. Scan QRIS di bawah ini dari aplikasi bank atau e-wallet dan bayar tepat ${amount}, paling lambat ${String(p.startDate)}.`,
-                'Nominalnya punya kode unik supaya pembayaranmu mudah kami kenali. Setelah kami terima, iklanmu tayang sesuai jadwal; tidak perlu membuka website.',
+                m.adPayQr(amount, String(p.startDate)),
+                m.adPayCode,
                 ...(Number(p.creditUsedIdr) > 0
-                  ? [
-                      `Kreditmu ${formatRupiah(Number(p.creditUsedIdr))} sudah dipotong dari tagihan ini.`,
-                    ]
+                  ? [m.adCreditUsed(formatRupiah(Number(p.creditUsedIdr)))]
                   : []),
-                'Kalau belum dibayar sampai hari itu lewat, pesanan ini batal dengan sendirinya.',
+                m.adPayLapse,
               ]
-            : [
-                `Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya ${amount}; QRIS-nya kami kirim lewat email sebentar lagi.`,
-                `Ada pertanyaan? Chat ${AD_CONTACT}.`,
-              ],
+            : [m.adPayLater(amount), m.adQuestions(AD_CONTACT)],
           ...(qr ? { image: { src: qr, alt: `QRIS ${amount}` } } : {}),
-          ...(payUrl && !qr ? { cta: { label: 'Bayar', url: payUrl } } : {}),
+          ...(payUrl && !qr ? { cta: { label: m.ctaPay, url: payUrl } } : {}),
         };
       }
       const paragraphs =
         status === 'paid'
-          ? [
-              'Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya sudah dibayar dari kreditmu, jadi iklanmu tayang sesuai jadwal.',
-            ]
+          ? [m.adPaidBody]
           : status === 'approved'
-            ? ['Materi iklanmu sudah kami cek dan aman untuk tayang.']
+            ? [m.adApprovedBody]
             : [
-                `Alasan: ${String(p.reason || 'melanggar Kebijakan Iklan')}.`,
+                m.adReason(String(p.reason || m.adDefaultReason)),
                 Number(p.refundedIdr) > 0
-                  ? `Sisa hari tayang dikembalikan sebagai kredit ${formatRupiah(Number(p.refundedIdr))}, dipotong otomatis dari pembayaran berikutnya.`
+                  ? m.adRefund(formatRupiah(Number(p.refundedIdr)))
                   : status === 'rejected'
-                    ? `Kirim ulang materi yang sudah diperbaiki lewat ${AD_CONTACT}.`
-                    : 'Sisa hari tayang tidak dikembalikan karena pelanggaran berat.',
+                    ? m.adResend(AD_CONTACT)
+                    : m.adNoRefund,
               ];
       return {
-        title: titles[status] ?? 'Status iklan berubah',
+        title: titles[status] ?? m.adChanged,
         paragraphs,
-        cta: { label: 'Lihat statistik iklan', url: `${app}/iklan` },
+        cta: { label: m.ctaAdStats, url: `${app}/iklan` },
       };
     }
     case 'compress_done': {
       const done = Number(p.done ?? 0);
       const skipped = Number(p.skipped ?? 0);
       const failed = Number(p.failed ?? 0);
-      const parts = [`${done} berhasil`];
-      if (skipped) parts.push(`${skipped} dilewati karena hasilnya tidak lebih kecil`);
-      if (failed) parts.push(`${failed} gagal`);
+      const parts = [m.compressDone(done)];
+      if (skipped) parts.push(m.compressSkipped(skipped));
+      if (failed) parts.push(m.compressFailed(failed));
       return {
-        title: done
-          ? `Kompres selesai, hemat ${formatBytes(Number(p.savedBytes ?? 0))}`
-          : 'Kompres selesai',
-        paragraphs: [
-          `${parts.join(', ')}. Kredit untuk file yang dilewati atau gagal sudah dikembalikan.`,
-        ],
-        cta: { label: 'Lihat hasil', url: `${app}/kompres` },
+        title: done ? m.compressTitleSaved(formatBytes(Number(p.savedBytes ?? 0))) : m.compressTitle,
+        paragraphs: [m.compressBody(parts.join(', '))],
+        cta: { label: m.ctaResults, url: `${app}/kompres` },
       };
     }
     case 'payment_paid':
       return {
-        title: 'Pembayaran berhasil',
+        title: m.paidTitle,
         paragraphs: [
-          `Terima kasih! Pembayaran ${formatRupiah(Number(p.amountIdr))} sudah kami terima.`,
-          p.failed
-            ? 'Pembeliannya belum bisa dibuat, jadi uangmu kami simpan sebagai kredit dan kami sudah diberi tahu. Kredit dipotong otomatis dari pembayaran berikutnya.'
-            : String(p.summary ?? ''),
+          m.paidThanks(formatRupiah(Number(p.amountIdr))),
+          p.failed ? m.paidFailed : String(p.summary ?? ''),
           !p.failed && Number(p.creditIdr ?? 0) > 0
-            ? `Sisa ${formatRupiah(Number(p.creditIdr))} jadi kredit, dipotong otomatis dari pembayaran berikutnya.`
+            ? m.paidCredit(formatRupiah(Number(p.creditIdr)))
             : '',
         ].filter(Boolean),
         cta: billing,
@@ -264,18 +231,14 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
     case 'invoice':
       // Sent before ADR-041; invoices are not shown any more.
       return {
-        title: 'Pembayaran berhasil',
-        paragraphs: [
-          `Terima kasih! ${String(p.summary ?? '')} Total ${formatRupiah(Number(p.totalIdr))}.`,
-        ],
+        title: m.paidTitle,
+        paragraphs: [m.invoiceBody(String(p.summary ?? ''), formatRupiah(Number(p.totalIdr)))],
         cta: billing,
       };
     case 'plan_changed':
       return {
-        title: 'Paket kamu berubah',
-        paragraphs: [
-          `Paket sekarang: ${String(p.planName)} (${formatBytes(Number(p.storageBytes))}).`,
-        ],
+        title: m.planChangedTitle,
+        paragraphs: [m.planNow(String(p.planName), formatBytes(Number(p.storageBytes)))],
         cta: billing,
       };
     default:
@@ -303,12 +266,13 @@ export async function deliverNotice(
   // Queue delivery is at-least-once: remember what was mailed.
   const marker = `nd:${n.id}`;
   if (await ctx.env.CONFIG_KV.get(marker)) return;
-  const r = render(ctx, n.kind, n.payload);
-  const user = await ctx.env.DB.prepare('SELECT email FROM users WHERE id = ?1')
+  const user = await ctx.env.DB.prepare('SELECT email, locale FROM users WHERE id = ?1')
     .bind(n.userId)
-    .first<{ email: string }>();
+    .first<{ email: string; locale: Lang }>();
+  const lang = user?.locale ?? 'id';
+  const r = renderNotice(ctx, lang, n.kind, n.payload);
   if (r && user && (MANDATORY_EMAIL.includes(n.kind) || !emailOff))
-    await ctx.adapters.email.send({ to: [user.email], tag: n.kind, ...noticeEmail(r) });
+    await ctx.adapters.email.send({ to: [user.email], tag: n.kind, ...noticeEmail(lang, r) });
   await ctx.env.CONFIG_KV.put(marker, '1', { expirationTtl: 7 * 86_400 });
 }
 
@@ -381,12 +345,13 @@ export async function setPref(
   await ctx.adapters.notices.setPref(userId, { type, channel, enabled });
 }
 
-export async function listNotifications(ctx: Ctx, userId: string) {
+/** The bell, in the language the app is shown in. */
+export async function listNotifications(ctx: Ctx, userId: string, lang: Lang = 'id') {
   const { unread, items } = await ctx.adapters.notices.list(userId, 50);
   return {
     unread,
     items: items.map((n) => {
-      const r = render(ctx, n.type, n.payload);
+      const r = renderNotice(ctx, lang, n.type, n.payload);
       return {
         id: n.id,
         type: n.type,
