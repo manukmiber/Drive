@@ -1,6 +1,7 @@
 // Drawing the edited photo on a canvas: the same code for the preview (a smaller copy) and the
 // saved file (the full photo), so what is shown is what is saved (ADR-050, ADR-052).
 import { encodeImage, extForType, type ImageType } from '../codecs/image';
+import { drawDecor, type Place } from '../decor/draw';
 import { applyPipeline, pipeline, resolve } from './adjust';
 import {
   blurred,
@@ -10,78 +11,62 @@ import {
   heal,
   lensBlur,
   lensSigma,
+  redact,
   sharpen,
   structure,
   structureSigma,
   vignette,
 } from './effects';
 import { apply, matScale, outputSize, photoMatrix, type Mat, type Rect } from './geometry';
-import type { Frame, PhotoState, TextMark } from './state';
+import type { Frame, PhotoState, Stroke } from './state';
 
 export type OutType = ImageType;
 
-const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-
-let measurer: CanvasRenderingContext2D | null = null;
-
-/** Where a text sits on a canvas drawn with `m`: its middle, box and font size, in canvas pixels. */
-export function textLayout(t: TextMark, m: Mat, srcW: number, srcH: number) {
-  const [x, y] = apply(m, t.x * srcW, t.y * srcH);
-  const px = Math.max(1, t.size * Math.min(srcW, srcH) * matScale(m));
-  measurer ??= document.createElement('canvas').getContext('2d');
-  const font = `${t.style === 'plain' ? 500 : 800} ${px}px ${FONT}`;
-  const lines = t.text.split('\n');
-  let w = px;
-  if (measurer) {
-    measurer.font = font;
-    w = Math.max(...lines.map((l) => measurer!.measureText(l).width), px * 0.5);
-  }
-  const pad = t.style === 'box' ? px * 0.45 : px * 0.1;
-  return { x, y, px, font, lines, w: w + pad * 2, h: lines.length * px * 1.2 + pad * 1.2 };
+/** Where text, stickers and shapes go on a canvas drawn with `m` (ADR-067). */
+export function photoPlace(m: Mat, srcW: number, srcH: number): Place {
+  return {
+    at: (x, y) => apply(m, x * srcW, y * srcH),
+    unit: Math.min(srcW, srcH) * matScale(m),
+  };
 }
 
-/** Black or white, whichever reads on `hex`. */
-export function onColour(hex: string): string {
-  const n = parseInt(hex.slice(1), 16);
-  const lum = 0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255);
-  return lum > 150 ? '#111111' : '#ffffff';
-}
-
-function drawTexts(
-  ctx: CanvasRenderingContext2D,
-  st: PhotoState,
-  m: Mat,
-  srcW: number,
-  srcH: number,
-) {
-  for (const t of st.texts) {
-    if (!t.text.trim()) continue;
-    const l = textLayout(t, m, srcW, srcH);
+/** Lines drawn on the photo: smooth curves through the points, in photo fractions. */
+function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Stroke[], place: Place) {
+  for (const s of strokes) {
+    const pts: Array<[number, number]> = [];
+    for (let i = 0; i + 1 < s.points.length; i += 2)
+      pts.push(place.at(s.points[i]!, s.points[i + 1]!));
+    if (!pts.length) continue;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.font = l.font;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const lh = l.px * 1.2;
-    const top = l.y - (l.lines.length * lh) / 2 + lh / 2;
-    let ink = t.color;
-    if (t.style === 'box') {
-      ctx.fillStyle = t.color;
-      ctx.beginPath();
-      ctx.roundRect(l.x - l.w / 2, l.y - l.h / 2, l.w, l.h, l.px * 0.3);
-      ctx.fill();
-      ink = onColour(t.color);
-    } else if (t.style === 'outline') {
-      ctx.lineWidth = l.px * 0.14;
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = onColour(t.color);
-      l.lines.forEach((line, i) => ctx.strokeText(line, l.x, top + i * lh));
-    } else {
-      ctx.shadowColor = 'rgba(0,0,0,0.35)';
-      ctx.shadowBlur = l.px * 0.12;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = s.pen === 'neon' ? '#ffffff' : s.color;
+    ctx.lineWidth = Math.max(1, s.width * place.unit);
+    if (s.pen === 'marker') {
+      ctx.globalAlpha = 0.5;
+      ctx.globalCompositeOperation = 'multiply';
     }
-    ctx.fillStyle = ink;
-    l.lines.forEach((line, i) => ctx.fillText(line, l.x, top + i * lh));
+    if (s.pen === 'neon') {
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = ctx.lineWidth * 1.6;
+    }
+    ctx.beginPath();
+    ctx.moveTo(pts[0]![0], pts[0]![1]);
+    if (pts.length === 1) ctx.lineTo(pts[0]![0] + 0.01, pts[0]![1]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const mx = (pts[i]![0] + pts[i + 1]![0]) / 2;
+      const my = (pts[i]![1] + pts[i + 1]![1]) / 2;
+      ctx.quadraticCurveTo(pts[i]![0], pts[i]![1], mx, my);
+    }
+    if (pts.length > 1) ctx.lineTo(pts.at(-1)![0], pts.at(-1)![1]);
+    ctx.stroke();
+    if (s.pen === 'neon') {
+      // A second, thinner pass in the colour itself: the bright core of the tube.
+      ctx.shadowBlur = 0;
+      ctx.lineWidth *= 0.45;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 }
@@ -137,6 +122,7 @@ export function drawPhoto(
   const lens = st.lens.shape !== 'off' && st.lens.strength > 0;
   if (
     st.heal.length ||
+    st.redact.length ||
     p ||
     r.detail.structure ||
     r.detail.sharpen ||
@@ -152,6 +138,23 @@ export function drawPhoto(
       const [x, y] = apply(m, spot.x * img.width, spot.y * img.height);
       heal(im, x, y, spot.r * s);
     }
+    // Before the colours, so nothing of what is covered can be brought back by them.
+    for (const box of st.redact) {
+      const corners = [
+        apply(m, box.x * img.width, box.y * img.height),
+        apply(m, (box.x + box.w) * img.width, (box.y + box.h) * img.height),
+        apply(m, box.x * img.width, (box.y + box.h) * img.height),
+        apply(m, (box.x + box.w) * img.width, box.y * img.height),
+      ];
+      const xs = corners.map((c) => c[0]);
+      const ys = corners.map((c) => c[1]);
+      redact(
+        im,
+        { x0: Math.min(...xs), y0: Math.min(...ys), x1: Math.max(...xs), y1: Math.max(...ys) },
+        box.mode,
+        box.strength,
+      );
+    }
     if (p) applyPipeline(im.data, p);
     if (r.detail.structure) structure(im, blurred(im, structureSigma(W, H)), r.detail.structure);
     if (r.detail.sharpen) sharpen(im, r.detail.sharpen);
@@ -161,7 +164,9 @@ export function drawPhoto(
     if (r.effects.grain) grain(im, r.effects.grain);
     ctx.putImageData(data, 0, 0);
   }
-  drawTexts(ctx, st, m, img.width, img.height);
+  const place = photoPlace(m, img.width, img.height);
+  drawStrokes(ctx, st.strokes, place);
+  drawDecor(ctx, st.decor, place);
   drawFrame(ctx, st.frame, W, H);
 }
 

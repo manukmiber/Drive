@@ -362,3 +362,72 @@ export function heal(img: Img, cx: number, cy: number, r: number): void {
         d[i + c] = src[i + c]! + (src[j + c]! + shift[c]! - src[i + c]!) * k;
     }
 }
+
+export type RedactMode = 'pixelate' | 'blur' | 'black';
+
+/**
+ * Covers a box of the picture for good (ADR-067): blocks of their average colour, a heavy blur, or
+ * black. `strength` 0…100 sets the block or blur size against the box's short side.
+ */
+export function redact(
+  img: Img,
+  box: { x0: number; y0: number; x1: number; y1: number },
+  mode: RedactMode,
+  strength: number,
+): void {
+  const { width: w, height: h, data } = img;
+  const x0 = Math.max(0, Math.floor(Math.min(box.x0, box.x1)));
+  const y0 = Math.max(0, Math.floor(Math.min(box.y0, box.y1)));
+  const x1 = Math.min(w, Math.ceil(Math.max(box.x0, box.x1)));
+  const y1 = Math.min(h, Math.ceil(Math.max(box.y0, box.y1)));
+  const bw = x1 - x0;
+  const bh = y1 - y0;
+  if (bw <= 0 || bh <= 0) return;
+  if (mode === 'black') {
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) {
+        const i = (y * w + x) * 4;
+        data[i] = data[i + 1] = data[i + 2] = 0;
+      }
+    return;
+  }
+  const short = Math.min(bw, bh);
+  if (mode === 'pixelate') {
+    // At least 4 px a block and at most a third of the box: enough that nothing can be read.
+    const block = Math.max(4, Math.round(short * (0.06 + 0.27 * (strength / 100))));
+    for (let by = y0; by < y1; by += block)
+      for (let bx = x0; bx < x1; bx += block) {
+        const ex = Math.min(x1, bx + block);
+        const ey = Math.min(y1, by + block);
+        let r = 0;
+        let g = 0;
+        let b = 0;
+        let n = 0;
+        for (let y = by; y < ey; y++)
+          for (let x = bx; x < ex; x++) {
+            const i = (y * w + x) * 4;
+            r += data[i]!;
+            g += data[i + 1]!;
+            b += data[i + 2]!;
+            n++;
+          }
+        for (let y = by; y < ey; y++)
+          for (let x = bx; x < ex; x++) {
+            const i = (y * w + x) * 4;
+            data[i] = r / n;
+            data[i + 1] = g / n;
+            data[i + 2] = b / n;
+          }
+      }
+    return;
+  }
+  const part = new Uint8ClampedArray(bw * bh * 4);
+  for (let y = 0; y < bh; y++)
+    part.set(data.subarray(((y0 + y) * w + x0) * 4, ((y0 + y) * w + x1) * 4), y * bw * 4);
+  const soft = blurred(
+    { data: part, width: bw, height: bh },
+    Math.max(2, short * (0.05 + 0.2 * (strength / 100))),
+  );
+  for (let y = 0; y < bh; y++)
+    data.set(soft.subarray(y * bw * 4, (y + 1) * bw * 4), ((y0 + y) * w + x0) * 4);
+}

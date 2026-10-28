@@ -5,11 +5,15 @@
 import {
   Aperture,
   Bandage,
+  Brush,
   Check,
+  Contrast,
   Crop,
   Eye,
+  EyeOff,
   Focus,
   Frame,
+  Palette,
   Redo2,
   RotateCw,
   Scaling,
@@ -28,6 +32,11 @@ import { Button } from '../../components/Button';
 import { cn } from '../../lib/cn';
 import { t } from '../../lib/i18n';
 import { decodeImage } from '../codecs/image';
+import { GradePanel, HslPanel } from '../colour/panels';
+import { boxOf } from '../decor/draw';
+import { DecorLayer } from '../decor/DecorLayer';
+import { DecorPanel, type NewItem } from '../decor/DecorPanel';
+import { makeItem } from '../decor/items';
 import { resultName, type EditRequest } from '../files';
 import { Busy, EditorFrame, Failed, SaveDialog, ToolButton, useSources, type Result } from '../ui';
 import { LOOKS, autoTune, autoWhiteBalance, type LookId } from './adjust';
@@ -45,45 +54,50 @@ import {
 } from './geometry';
 import {
   CropBox,
+  DrawLayer,
   HealLayer,
   LensGuide,
+  RedactLayer,
   StraightenGrid,
-  TextLayer,
   VignetteGuide,
 } from './overlays';
 import {
   CropPanel,
   CurvesPanel,
   DetailPanel,
+  DrawPanel,
   EffectsPanel,
   FramePanel,
   HealPanel,
   LensPanel,
   RATIOS,
+  RedactPanel,
   RotatePanel,
   SizePanel,
   Slider,
-  TextPanel,
   TunePanel,
   VignettePanel,
   WbPanel,
 } from './panels';
+import type { RedactMode } from './effects';
 import {
   defaultType,
   drawPhoto,
   exportPhoto,
   extFor,
+  photoPlace,
   scaled,
-  textLayout,
   type OutType,
 } from './render';
-import { START, type PhotoState } from './state';
+import { START, type Pen, type PhotoState } from './state';
 
 type ToolId =
   | 'tune'
   | 'detail'
   | 'curves'
   | 'wb'
+  | 'hsl'
+  | 'grade'
   | 'crop'
   | 'rotate'
   | 'heal'
@@ -91,6 +105,8 @@ type ToolId =
   | 'vignette'
   | 'effects'
   | 'text'
+  | 'draw'
+  | 'redact'
   | 'frame'
   | 'size';
 
@@ -99,6 +115,8 @@ const TOOLS: Array<[ToolId, LucideIcon]> = [
   ['detail', Triangle],
   ['curves', Spline],
   ['wb', Thermometer],
+  ['hsl', Palette],
+  ['grade', Contrast],
   ['crop', Crop],
   ['rotate', RotateCw],
   ['heal', Bandage],
@@ -106,6 +124,8 @@ const TOOLS: Array<[ToolId, LucideIcon]> = [
   ['vignette', Aperture],
   ['effects', Sparkles],
   ['text', Type],
+  ['draw', Brush],
+  ['redact', EyeOff],
   ['frame', Frame],
   ['size', Scaling],
 ];
@@ -207,6 +227,11 @@ function Workspace({
   const [ratio, setRatio] = useState('free');
   const [brush, setBrush] = useState(6);
   const [chosenText, setChosenText] = useState<string | null>(null);
+  const [pen, setPen] = useState<Pen>('pen');
+  const [ink, setInk] = useState('#ef4444');
+  const [penWidth, setPenWidth] = useState(4);
+  const [redactMode, setRedactMode] = useState<RedactMode>('pixelate');
+  const [redactStrength, setRedactStrength] = useState(50);
   const [histogram, setHistogram] = useState<Uint32Array | null>(null);
   const [type, setType] = useState<OutType>(() => defaultType(source.blob.type, source.name));
   const [quality, setQuality] = useState(0.9);
@@ -321,20 +346,19 @@ function Workspace({
     if (r) edit({ crop: fitRatio(FULL, r, turned.w, turned.h) });
   };
 
-  function addText() {
+  /** A new text, sticker or shape in the middle of what is shown, 8% (text) of its short side. */
+  function addDecor(n: NewItem) {
     const [x, y] = toPhoto(fit.w / 2, fit.h / 2);
-    const mark = {
-      id: newId(),
-      text: t.editor.textDefault,
-      x,
-      y,
-      // 8% of what is shown, in short sides of the photo.
-      size: (0.08 * Math.min(fit.w, fit.h)) / (Math.min(small.width, small.height) * matScale(m)),
-      color: '#ffffff',
-      style: 'bold' as const,
-    };
-    edit({ texts: [...st.texts, mark] });
-    setChosenText(mark.id);
+    const shown = Math.min(fit.w, fit.h) / (Math.min(small.width, small.height) * matScale(m));
+    const id = newId();
+    const item =
+      n.kind === 'text'
+        ? makeItem(id, 'text', { text: t.overlay.defaultText, x, y, size: 0.08 * shown })
+        : n.kind === 'sticker'
+          ? makeItem(id, 'sticker', { emoji: n.emoji, x, y, size: 0.2 * shown })
+          : makeItem(id, 'shape', { shape: n.shape, aspect: n.aspect, x, y, size: 0.25 * shown });
+    edit({ decor: [...st.decor, item] });
+    setChosenText(id);
   }
 
   useEffect(() => {
@@ -412,23 +436,89 @@ function Workspace({
             }}
           />
         );
-      case 'text':
+      case 'text': {
+        const place = photoPlace(m, small.width, small.height);
         return (
-          <TextLayer
-            boxes={st.texts.map((tx) => {
-              const l = textLayout(tx, m, small.width, small.height);
-              return { id: tx.id, x: l.x, y: l.y, w: l.w, h: l.h };
-            })}
+          <DecorLayer
+            boxes={st.decor.map((it) => ({
+              ...boxOf(it, place),
+              id: it.id,
+              size: it.size,
+              rotation: it.rotation,
+            }))}
             chosen={chosenText}
             onChoose={setChosenText}
-            onDrag={(id, cx, cy) => {
+            onMove={(id, cx, cy) => {
               const [x, y] = toPhoto(cx, cy);
               edit({
-                texts: st.texts.map((tx) =>
-                  tx.id === id
-                    ? { ...tx, x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
-                    : tx,
+                decor: st.decor.map((it) =>
+                  it.id === id
+                    ? { ...it, x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) }
+                    : it,
                 ),
+              });
+            }}
+            onTransform={(id, size, rotation) =>
+              edit({ decor: st.decor.map((it) => (it.id === id ? { ...it, size, rotation } : it)) })
+            }
+            onRemove={(id) => {
+              edit({ decor: st.decor.filter((it) => it.id !== id) });
+              setChosenText(null);
+            }}
+          />
+        );
+      }
+      case 'draw':
+        return (
+          <DrawLayer
+            color={ink}
+            width={(penWidth / 400) * shortCss}
+            neon={pen === 'neon'}
+            onStroke={(pts) => {
+              const points: number[] = [];
+              for (let i = 0; i + 1 < pts.length; i += 2)
+                points.push(...toPhoto(pts[i]!, pts[i + 1]!));
+              edit({
+                strokes: [
+                  ...st.strokes,
+                  { id: newId(), points, color: ink, width: penWidth / 400, pen },
+                ],
+              });
+            }}
+          />
+        );
+      case 'redact':
+        return (
+          <RedactLayer
+            boxes={st.redact.map((b) => {
+              const [x0, y0] = apply(m, b.x * small.width, b.y * small.height);
+              const [x1, y1] = apply(m, (b.x + b.w) * small.width, (b.y + b.h) * small.height);
+              return {
+                id: b.id,
+                x: Math.min(x0, x1),
+                y: Math.min(y0, y1),
+                w: Math.abs(x1 - x0),
+                h: Math.abs(y1 - y0),
+              };
+            })}
+            onBox={(cx0, cy0, cx1, cy1) => {
+              const [ax, ay] = toPhoto(cx0, cy0);
+              const [bx, by] = toPhoto(cx1, cy1);
+              const x = Math.max(0, Math.min(ax, bx));
+              const y = Math.max(0, Math.min(ay, by));
+              edit({
+                redact: [
+                  ...st.redact,
+                  {
+                    id: newId(),
+                    x,
+                    y,
+                    w: Math.min(1, Math.max(ax, bx)) - x,
+                    h: Math.min(1, Math.max(ay, by)) - y,
+                    mode: redactMode,
+                    strength: redactStrength,
+                  },
+                ],
               });
             }}
           />
@@ -470,8 +560,55 @@ function Workspace({
             onClear={() => edit({ heal: [] })}
           />
         );
+      case 'hsl':
+        return <HslPanel hsl={st.hsl} onChange={(hsl) => edit({ hsl })} />;
+      case 'grade':
+        return <GradePanel grade={st.grade} onChange={(grade) => edit({ grade })} />;
       case 'text':
-        return <TextPanel {...p} chosen={chosenText} onAdd={addText} onChoose={setChosenText} />;
+        return (
+          <DecorPanel
+            items={st.decor}
+            chosen={chosenText}
+            onChange={(decor) => edit({ decor })}
+            onChoose={setChosenText}
+            onAdd={addDecor}
+          />
+        );
+      case 'draw':
+        return (
+          <DrawPanel
+            pen={pen}
+            onPen={setPen}
+            color={ink}
+            onColor={setInk}
+            width={penWidth}
+            onWidth={setPenWidth}
+            count={st.strokes.length}
+            onUndo={() => edit({ strokes: st.strokes.slice(0, -1) })}
+            onClear={() => edit({ strokes: [] })}
+          />
+        );
+      case 'redact':
+        return (
+          <RedactPanel
+            mode={redactMode}
+            onMode={(mode) => {
+              setRedactMode(mode);
+              // The last box follows the choice, so trying them out is one tap.
+              const last = st.redact.at(-1);
+              if (last) edit({ redact: [...st.redact.slice(0, -1), { ...last, mode }] });
+            }}
+            strength={redactStrength}
+            onStrength={(strength) => {
+              setRedactStrength(strength);
+              const last = st.redact.at(-1);
+              if (last) edit({ redact: [...st.redact.slice(0, -1), { ...last, strength }] });
+            }}
+            count={st.redact.length}
+            onUndo={() => edit({ redact: st.redact.slice(0, -1) })}
+            onClear={() => edit({ redact: [] })}
+          />
+        );
       case 'frame':
         return <FramePanel {...p} />;
       case 'size':
@@ -669,7 +806,7 @@ function Looks({
   const [thumbs, setThumbs] = useState<Partial<Record<LookId, string>>>({});
   // The thumbnails show the photo as edited, each with its look; redrawn when the edits change.
   const base = useMemo(() => ({ ...st, look: { id: 'none' as LookId, amount: 100 } }), [st]);
-  const key = JSON.stringify({ ...base, texts: base.texts.length });
+  const key = JSON.stringify({ ...base, decor: base.decor.length, strokes: base.strokes.length });
   useEffect(() => {
     let alive = true;
     const id = setTimeout(() => {

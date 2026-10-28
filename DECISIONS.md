@@ -1724,3 +1724,13 @@ route baru.
   `.jxl` tanpa tipe dikirim sebagai `image/jxl`). Pratinjau Drive menampilkan `<img>` dulu (Safari bisa sendiri) dan
   kalau gagal men-decode di WASM lalu menampilkan PNG-nya; thumbnail upload `.jxl` dibuat dengan cara yang sama. Editor
   foto bisa membuka dan menyimpan JXL dan AVIF. Kompres di server (ADR-031) tidak berubah.
+- **Teks, stiker, bentuk** (`editors/decor/`): satu model dan satu cara menggambar untuk editor foto, kolase, dan
+  video. Teks: 6 font sistem (tidak ada font yang diunduh, jadi tampilan = hasil), 6 gaya (biasa, tebal, kotak, garis
+  tepi, bayangan, neon), rata kiri/tengah/kanan, warna. Stiker: emoji dalam 8 kelompok (digambar font emoji perangkat).
+  Bentuk: 10 (kotak, kotak bulat, lingkaran, segitiga, bintang, hati, panah, garis, balon kata, ledakan), isi atau
+  garis tepi. Semua bisa digeser, diubah ukuran dan diputar lewat pegangan di sudut (menempel ke sudut siku), diatur
+  kepekatan, diduplikat, dan diatur urutan lapisannya. Posisi dalam pecahan gambar, ukuran dalam sisi pendek.
+- **Editor foto, alat baru:** Warna (HSL selektif, 8 rentang warna: rona, saturasi, terang; abu-abu tidak berubah),
+  Grading (tiga roda warna lift/gamma/gain + terang-gelap; per kanal, jadi masuk ke LUT yang sama), Teks & stiker
+  (menggantikan Teks), Gambar (pena, spidol *multiply*, neon), Sensor (kotak piksel, blur, atau hitam; diterapkan
+  sebelum warna supaya tidak bisa dimunculkan lagi).

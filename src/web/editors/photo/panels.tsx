@@ -1,6 +1,6 @@
 // The photo editor's tool panels (ADR-052): what shows under the photo while a tool is open. Each
 // changes a draft of the photo; the editor keeps it (✓) or drops it (✕).
-import { FlipHorizontal2, FlipVertical2, Plus, RotateCcw, RotateCw, X } from 'lucide-react';
+import { FlipHorizontal2, FlipVertical2, RotateCcw, RotateCw } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../../lib/cn';
 import { t } from '../../lib/i18n';
@@ -21,7 +21,8 @@ import {
 import { CurveEditor } from './CurveEditor';
 import { outputSize } from './geometry';
 import type { OutType } from './render';
-import type { FrameStyle, PhotoState, TextStyle } from './state';
+import type { RedactMode } from './effects';
+import type { FrameStyle, Pen, PhotoState } from './state';
 
 export { Chips, COLOURS, Slider, Swatches } from '../controls';
 
@@ -357,84 +358,100 @@ export function HealPanel({
   );
 }
 
-const TEXT_STYLES: TextStyle[] = ['plain', 'bold', 'box', 'outline'];
+const PENS: Pen[] = ['pen', 'marker', 'neon'];
 
-export function TextPanel({
-  st,
-  edit,
-  chosen,
-  onAdd,
-  onChoose,
-}: PanelProps & {
-  chosen: string | null;
-  onAdd: () => void;
-  onChoose: (id: string | null) => void;
+export function DrawPanel({
+  pen,
+  onPen,
+  color,
+  onColor,
+  width,
+  onWidth,
+  count,
+  onUndo,
+  onClear,
+}: {
+  pen: Pen;
+  onPen: (p: Pen) => void;
+  color: string;
+  onColor: (c: string) => void;
+  width: number;
+  onWidth: (w: number) => void;
+  count: number;
+  onUndo: () => void;
+  onClear: () => void;
 }) {
-  const mark = st.texts.find((m) => m.id === chosen) ?? null;
-  const change = (p: Partial<NonNullable<typeof mark>>) =>
-    mark && edit({ texts: st.texts.map((m) => (m.id === mark.id ? { ...m, ...p } : m)) });
-  if (!mark)
-    return (
-      <div className="space-y-2">
-        <button
-          type="button"
-          onClick={onAdd}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[var(--border)] py-3 text-sm hover:bg-[var(--bg-subtle)]"
-        >
-          <Plus className="h-4 w-4" />
-          {t.editor.textAdd}
-        </button>
-        {st.texts.length > 0 && (
-          <p className="text-center text-xs text-[var(--fg-muted)]">{t.editor.textHint}</p>
-        )}
-      </div>
-    );
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <input
-          value={mark.text}
-          onChange={(e) => change({ text: e.target.value })}
-          placeholder={t.editor.textPlaceholder}
-          aria-label={t.editor.textPlaceholder}
-          className="h-9 min-w-0 flex-1 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 text-sm"
-        />
-        <button
-          type="button"
-          onClick={() => {
-            edit({ texts: st.texts.filter((m) => m.id !== mark.id) });
-            onChoose(null);
-          }}
-          className="rounded-full p-2 text-red-600 hover:bg-[var(--bg-subtle)]"
-          aria-label={t.editor.textDelete}
-          title={t.editor.textDelete}
-        >
-          <X className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          onClick={onAdd}
-          className="rounded-full p-2 hover:bg-[var(--bg-subtle)]"
-          aria-label={t.editor.textAdd}
-          title={t.editor.textAdd}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      </div>
       <Chips
-        items={TEXT_STYLES.map((s) => [s, t.editor.textStyles[s]!] as const)}
-        value={mark.style}
-        onChange={(style) => change({ style })}
+        items={PENS.map((p) => [p, t.editor.drawPens[p]!] as const)}
+        value={pen}
+        onChange={onPen}
       />
-      <Swatches value={mark.color} onChange={(color) => change({ color })} />
+      <Swatches value={color} onChange={onColor} />
       <Slider
-        label={t.editor.adjustments.textSize!}
-        min={2}
-        max={30}
-        zero={8}
-        value={Math.round(mark.size * 100)}
-        onChange={(v) => change({ size: v / 100 })}
+        label={t.editor.adjustments.brush!}
+        min={1}
+        max={20}
+        zero={4}
+        value={width}
+        onChange={onWidth}
       />
+      <Row>
+        <span className="text-xs text-[var(--fg-muted)]">{t.editor.drawHint}</span>
+        {count > 0 && (
+          <span className="flex gap-1">
+            <LinkButton onClick={onUndo}>{t.editor.undoStroke}</LinkButton>
+            <LinkButton onClick={onClear}>{t.editor.clearAll}</LinkButton>
+          </span>
+        )}
+      </Row>
+    </div>
+  );
+}
+
+const REDACT_MODES: RedactMode[] = ['pixelate', 'blur', 'black'];
+
+export function RedactPanel({
+  mode,
+  onMode,
+  strength,
+  onStrength,
+  count,
+  onUndo,
+  onClear,
+}: {
+  mode: RedactMode;
+  onMode: (m: RedactMode) => void;
+  strength: number;
+  onStrength: (v: number) => void;
+  count: number;
+  onUndo: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-[var(--fg-muted)]">{t.editor.redactHint}</p>
+      <Chips
+        items={REDACT_MODES.map((m) => [m, t.editor.redactModes[m]!] as const)}
+        value={mode}
+        onChange={onMode}
+      />
+      {mode !== 'black' && (
+        <Slider
+          label={t.editor.adjustments.amount!}
+          min={0}
+          zero={50}
+          value={strength}
+          onChange={onStrength}
+        />
+      )}
+      {count > 0 && (
+        <Row>
+          <LinkButton onClick={onUndo}>{t.editor.undoRedact}</LinkButton>
+          <LinkButton onClick={onClear}>{t.editor.clearAll}</LinkButton>
+        </Row>
+      )}
     </div>
   );
 }

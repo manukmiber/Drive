@@ -1,7 +1,8 @@
-// What the photo editor draws over the photo while a tool is open (ADR-050, ADR-052): the crop box,
-// the straightening grid, the middle of the vignette and the lens blur, the healing taps and the
-// texts. Positions come in CSS pixels of the shown photo.
-import { useRef, type PointerEvent, type ReactNode } from 'react';
+// What the photo editor draws over the photo while a tool is open (ADR-050, ADR-052, ADR-067): the
+// crop box, the straightening grid, the middle of the vignette and the lens blur, the healing taps,
+// drawing, and the covered boxes (text and stickers use decor/DecorLayer). Positions come in CSS
+// pixels of the shown photo.
+import { useRef, useState, type PointerEvent, type ReactNode } from 'react';
 import { cn } from '../../lib/cn';
 import { t } from '../../lib/i18n';
 import type { LensBlur, Vignette } from './effects';
@@ -248,69 +249,128 @@ export function HealLayer({
   );
 }
 
-export interface TextBox {
-  id: string;
-  /** Middle and size, CSS pixels. */
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
-/** The texts' boxes: tap one to choose it, drag it to move it, tap elsewhere to choose none. */
-export function TextLayer({
-  boxes,
-  chosen,
-  onChoose,
-  onDrag,
+/**
+ * Drawing (ADR-067): a finger or the mouse draws a line, shown here while it is drawn and handed
+ * over (CSS pixels) when it ends; the canvas draws the ones already made.
+ */
+export function DrawLayer({
+  color,
+  width,
+  neon,
+  onStroke,
 }: {
-  boxes: TextBox[];
-  chosen: string | null;
-  onChoose: (id: string | null) => void;
-  /** Where the middle of the text goes, CSS pixels. */
-  onDrag: (id: string, x: number, y: number) => void;
+  color: string;
+  /** CSS pixels. */
+  width: number;
+  neon: boolean;
+  onStroke: (points: number[]) => void;
 }) {
-  const drag = useRef<{ id: string; dx: number; dy: number } | null>(null);
-  const layer = useRef<HTMLDivElement>(null);
-  const point = (e: PointerEvent) => {
-    const r = layer.current!.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top] as const;
+  const [points, setPoints] = useState<number[] | null>(null);
+  const at = (e: PointerEvent) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
   };
+  const path = points
+    ? points.reduce(
+        (d, v, i) => (i % 2 ? `${d},${v.toFixed(1)}` : `${d}${i ? ' L' : 'M'}${v.toFixed(1)}`),
+        '',
+      )
+    : '';
   return (
     <div
-      ref={layer}
-      className="absolute inset-0 touch-none"
-      onPointerDown={() => onChoose(null)}
-      onPointerMove={(e) => {
-        const d = drag.current;
-        if (!d) return;
-        const [x, y] = point(e);
-        onDrag(d.id, x - d.dx, y - d.dy);
+      className="absolute inset-0 cursor-crosshair touch-none overflow-hidden"
+      aria-label={t.editor.drawHint}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setPoints(at(e));
       }}
-      onPointerUp={() => (drag.current = null)}
+      onPointerMove={(e) => {
+        if (!points) return;
+        const [x, y] = at(e) as [number, number];
+        const lx = points[points.length - 2]!;
+        const ly = points[points.length - 1]!;
+        if (Math.hypot(x - lx, y - ly) >= 2) setPoints([...points, x, y]);
+      }}
+      onPointerUp={() => {
+        if (points) onStroke(points);
+        setPoints(null);
+      }}
+      onPointerCancel={() => setPoints(null)}
     >
-      {boxes.map((b) => (
-        <div
-          key={b.id}
-          role="button"
-          tabIndex={-1}
-          aria-label={t.editor.textHint}
-          className={cn(
-            'absolute cursor-move rounded',
-            chosen === b.id
-              ? 'outline-2 outline-white outline-dashed [box-shadow:0_0_0_3px_rgba(0,0,0,0.35)]'
-              : 'outline-1 outline-white/40 outline-dashed',
-          )}
-          style={{ left: b.x - b.w / 2, top: b.y - b.h / 2, width: b.w, height: b.h }}
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            layer.current!.setPointerCapture(e.pointerId);
-            const [x, y] = point(e);
-            drag.current = { id: b.id, dx: x - b.x, dy: y - b.y };
-            onChoose(b.id);
-          }}
-        />
-      ))}
+      {points && (
+        <svg className="pointer-events-none absolute inset-0 h-full w-full">
+          <path
+            d={path}
+            fill="none"
+            stroke={neon ? '#ffffff' : color}
+            strokeWidth={width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            style={neon ? { filter: `drop-shadow(0 0 ${width}px ${color})` } : undefined}
+          />
+        </svg>
+      )}
+    </div>
+  );
+}
+
+/** Covering parts of the photo (ADR-067): drag a box; the ones made are outlined. */
+export function RedactLayer({
+  boxes,
+  onBox,
+}: {
+  /** CSS pixels. */
+  boxes: Array<{ id: string; x: number; y: number; w: number; h: number }>;
+  onBox: (x0: number, y0: number, x1: number, y1: number) => void;
+}) {
+  const [drag, setDrag] = useState<[number, number, number, number] | null>(null);
+  const at = (e: PointerEvent) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top] as const;
+  };
+  const rect = (b: { x: number; y: number; w: number; h: number }, key: string, live = false) => (
+    <span
+      key={key}
+      className={cn(
+        'pointer-events-none absolute border-2',
+        live ? 'border-white bg-white/20' : 'border-dashed border-white/80',
+      )}
+      style={{ left: b.x, top: b.y, width: b.w, height: b.h }}
+    />
+  );
+  return (
+    <div
+      className="absolute inset-0 cursor-crosshair touch-none overflow-hidden"
+      aria-label={t.editor.redactHint}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture(e.pointerId);
+        const [x, y] = at(e);
+        setDrag([x, y, x, y]);
+      }}
+      onPointerMove={(e) => {
+        if (!drag) return;
+        const [x, y] = at(e);
+        setDrag([drag[0], drag[1], x, y]);
+      }}
+      onPointerUp={() => {
+        if (drag && Math.abs(drag[2] - drag[0]) > 6 && Math.abs(drag[3] - drag[1]) > 6)
+          onBox(...drag);
+        setDrag(null);
+      }}
+      onPointerCancel={() => setDrag(null)}
+    >
+      {boxes.map((b) => rect(b, b.id))}
+      {drag &&
+        rect(
+          {
+            x: Math.min(drag[0], drag[2]),
+            y: Math.min(drag[1], drag[3]),
+            w: Math.abs(drag[2] - drag[0]),
+            h: Math.abs(drag[3] - drag[1]),
+          },
+          'live',
+          true,
+        )}
     </div>
   );
 }
