@@ -1,5 +1,6 @@
-// Syarat & Ketentuan (Zeiko Drive dan Zeiko S3): the owner's text of 2026-10-25, word for word. The contacts
-// and the two blanks the owner left are filled from ./contacts.ts (ADR-045).
+// Syarat & Ketentuan (Zeiko Drive dan Zeiko S3): the owner's text of 2026-10-25, word for word, plus the
+// owner's clause of 2026-10-28 against hosting a website on S3 (ADR-070). The contacts and the two blanks the
+// owner left are filled from ./contacts.ts (ADR-045).
 import { LEGAL_CONTACTS_ID as C } from './contacts';
 
 export const title = 'Syarat & Ketentuan Layanan Zeiko Drive dan Zeiko S3';
@@ -52,6 +53,7 @@ Anda dilarang mengunggah, menyimpan, membagikan, atau menautkan Konten berikut m
 - Konten bajakan atau yang melanggar hak kekayaan intelektual, seperti film, anime, serial, musik, buku, game, atau software berbayar yang dibagikan tanpa izin pemegang hak.
 - Crack, keygen, atau alat untuk membobol perlindungan lisensi software.
 - Menggunakan Layanan untuk spam, hotlinking massal, atau sebagai CDN gratis bagi situs pihak ketiga yang melanggar ketentuan ini.
+- Menjadikan Bucket Zeiko S3 sebagai hosting website, yaitu menyajikan halaman HTML, CSS, atau JavaScript untuk dibuka pengunjung sebagai situs. Untuk website, gunakan Zeiko Hosting.
 - Upaya meretas, menguji celah keamanan tanpa izin, membebani sistem secara sengaja, atau mengakses akun dan data pengguna lain.
 
 Daftar di atas bukan daftar lengkap. Konten atau aktivitas lain yang melanggar hukum Republik Indonesia juga dilarang, dan Zeiko berhak menilai apakah suatu Konten termasuk pelanggaran.

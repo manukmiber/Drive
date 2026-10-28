@@ -51,6 +51,7 @@ You may not upload, store, share or link to the following Content through the Se
 - Pirated content or content that infringes intellectual property rights, such as films, anime, series, music, books, games or paid software shared without the rights holder's permission.
 - Cracks, keygens or tools for breaking software licence protection.
 - Using the Service for spam, mass hotlinking, or as a free CDN for third-party sites that break these terms.
+- Using a Zeiko S3 Bucket to host a website, that is, serving HTML, CSS or JavaScript pages for visitors to open as a site. For websites, use Zeiko Hosting.
 - Attempts to hack, test for security holes without permission, deliberately overload the system, or access other users' accounts and data.
 
 The list above is not complete. Other content or activity that breaks the laws of the Republic of Indonesia is also prohibited, and Zeiko may decide whether a given piece of Content is a violation.

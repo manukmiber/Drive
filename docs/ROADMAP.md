@@ -52,7 +52,7 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 | S4  | Upload multipart dari halaman `/s3`                                | Sisa        | S      | –          | belum             |
 | S5  | Versioning + Object Lock                                           | Niche       | L      | S3         | belum             |
 | S6  | Kelas Infrequent Access                                            | Niche       | M      | S3         | belum             |
-| S7  | Website statis di domain sendiri                                   | Niche       | M      | –          | belum             |
+| S7  | Website statis di domain sendiri                                   | Niche       | M      | –          | batal (ADR-070)   |
 | S8  | Tagging, GetObject `partNumber`, checksum, PostObject              | Niche       | M      | –          | belum             |
 | S9  | Statistik per bucket dan log akses                                 | Niche       | M      | –          | selesai (ADR-060) |
 
@@ -304,6 +304,9 @@ Test: kelas tersimpan dan dilaporkan, transisi oleh cron, hitungan tagihan denga
 ```
 
 ### S7 — Website statis di domain sendiri
+
+> **Dibatalkan (ADR-070, pemilik 2026-10-28):** S3 tidak boleh jadi website (ToS). Website dijual sebagai Zeiko Hosting
+> (situs statis, repo Relay).
 
 ```text
 Kerjakan S7 dari docs/ROADMAP.md (ikuti "Aturan umum" di file itu): website statis dari bucket Zeiko S3,

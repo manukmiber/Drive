@@ -1798,3 +1798,16 @@ Tanggal: 2026-10-28. Status: diterima.
 - Tidak ada tabel atau kolom D1 baru (ADR-064): `users.locale` sudah ada.
 - Footer email sekarang "Zeiko Drive · drive.zeiko.biz.id" (dulu nama lama). `otpEmail` dihapus: tidak dipakai sejak
   login lewat Akun Zeiko.
+
+## ADR-070 — Zeiko S3 bukan hosting website; S7 dibatalkan
+
+Tanggal: 2026-10-28. Status: diterima.
+
+- **Keputusan pemilik (2026-10-28):** "S3 jadi website melanggar ToS". Bucket Zeiko S3 tidak boleh dipakai untuk
+  menyajikan situs. Website dijual sebagai produk Zeiko Hosting (situs statis dan paket sekolah/UMKM di repo Relay),
+  bukan sebagai fitur S3.
+- **ToS** (`src/web/legal/syarat.id.ts` + `.en.ts`), Kategori C bertambah satu butir: menjadikan Bucket Zeiko S3 sebagai
+  hosting website (menyajikan halaman HTML, CSS, atau JavaScript untuk dibuka pengunjung sebagai situs), dengan arahan
+  ke Zeiko Hosting. Teks lain tetap kata per kata.
+- **S7 (website statis di domain sendiri) dibatalkan.** `website` tetap di `UNSUPPORTED_SUB` (`NotImplemented`), dan
+  objek tetap dilayani dengan `Content-Security-Policy: sandbox` (ADR-044).
