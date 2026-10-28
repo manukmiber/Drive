@@ -21,6 +21,7 @@ import {
   Palette,
   Pencil,
   Share2,
+  Shrink,
   Star,
   StarOff,
   Trash2,
@@ -45,6 +46,7 @@ import {
   editable,
   isDoc,
   isImage,
+  isMedia,
   isSheet,
   isPdf,
   isText,
@@ -255,6 +257,13 @@ export function useNodeActions(items: NodeDto[]) {
         label: files.length === 1 ? t.editor.editVideo : t.editor.mergeVideos(files.length),
         icon: Clapperboard,
         onSelect: () => setEditing({ tool: 'video', nodes: files, files: [] }),
+      });
+    // The local compressor (ADR-067): free, in this browser.
+    if (all(isMedia))
+      list.push({
+        label: t.localCompress.action,
+        icon: Shrink,
+        onSelect: () => setEditing({ tool: 'compress', nodes: files, files: [] }),
       });
     if (all(isPdf))
       list.push({

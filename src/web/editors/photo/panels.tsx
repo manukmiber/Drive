@@ -4,6 +4,8 @@ import { FlipHorizontal2, FlipVertical2, Plus, RotateCcw, RotateCw, X } from 'lu
 import { useState } from 'react';
 import { cn } from '../../lib/cn';
 import { t } from '../../lib/i18n';
+import { IMAGE_LABEL, IMAGE_TYPES } from '../codecs/image';
+import { Chips, Slider, Swatches, signed } from '../controls';
 import { ToolButton } from '../ui';
 import {
   CURVE_PRESETS,
@@ -21,137 +23,11 @@ import { outputSize } from './geometry';
 import type { OutType } from './render';
 import type { FrameStyle, PhotoState, TextStyle } from './state';
 
+export { Chips, COLOURS, Slider, Swatches } from '../controls';
+
 export interface PanelProps {
   st: PhotoState;
   edit: (p: Partial<PhotoState>) => void;
-}
-
-const signed = (v: number) => (v > 0 ? `+${v}` : String(v));
-
-export function Slider({
-  label,
-  value,
-  onChange,
-  min = -100,
-  max = 100,
-  step = 1,
-  zero = 0,
-  unit = '',
-}: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-  /** What a double-tap goes back to. */
-  zero?: number;
-  unit?: string;
-}) {
-  return (
-    <label className="flex items-center gap-3 text-xs">
-      <span className="w-24 shrink-0 text-[var(--fg-muted)]">{label}</span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        onDoubleClick={() => onChange(zero)}
-        className="h-6 min-w-0 flex-1 accent-brand-600"
-      />
-      <span className="w-11 shrink-0 text-right tabular-nums">
-        {min < 0 ? signed(value) : value}
-        {unit}
-      </span>
-    </label>
-  );
-}
-
-export function Chips<T extends string>({
-  items,
-  value,
-  onChange,
-  badge,
-}: {
-  items: ReadonlyArray<readonly [T, string]>;
-  value: T;
-  onChange: (v: T) => void;
-  badge?: (v: T) => string | null;
-}) {
-  return (
-    <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
-      {items.map(([id, label]) => {
-        const b = badge?.(id);
-        return (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onChange(id)}
-            aria-pressed={value === id}
-            className={cn(
-              'shrink-0 rounded-full border border-[var(--border)] px-3 py-1.5 text-xs',
-              value === id && 'border-brand-500 bg-[var(--accent-soft)] text-[var(--accent)]',
-            )}
-          >
-            {label}
-            {b && <span className="ml-1 tabular-nums opacity-70">{b}</span>}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export const COLOURS = [
-  '#ffffff',
-  '#111111',
-  '#ef4444',
-  '#f97316',
-  '#facc15',
-  '#22c55e',
-  '#3b82f6',
-  '#a855f7',
-  '#ec4899',
-];
-
-export function Swatches({
-  value,
-  colours = COLOURS,
-  onChange,
-}: {
-  value: string;
-  colours?: string[];
-  onChange: (c: string) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2 overflow-x-auto pb-1">
-      {colours.map((c) => (
-        <button
-          key={c}
-          type="button"
-          onClick={() => onChange(c)}
-          aria-pressed={value === c}
-          aria-label={`${t.editor.colour} ${c}`}
-          className={cn(
-            'h-7 w-7 shrink-0 rounded-full border border-black/15',
-            value === c && 'ring-2 ring-brand-500 ring-offset-2 ring-offset-[var(--card)]',
-          )}
-          style={{ background: c }}
-        />
-      ))}
-      <label className="relative h-7 w-7 shrink-0 overflow-hidden rounded-full border border-[var(--border)] bg-[conic-gradient(red,yellow,lime,cyan,blue,magenta,red)]">
-        <span className="sr-only">{t.editor.customColour}</span>
-        <input
-          type="color"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="absolute inset-0 cursor-pointer opacity-0"
-        />
-      </label>
-    </div>
-  );
 }
 
 function Row({ children }: { children: React.ReactNode }) {
@@ -670,9 +546,11 @@ export function SizePanel({
           onChange={(e) => onType(e.target.value as OutType)}
           className="h-9 rounded-xl border border-[var(--border)] bg-[var(--bg)] px-2"
         >
-          <option value="image/jpeg">JPEG</option>
-          <option value="image/png">PNG</option>
-          <option value="image/webp">WebP</option>
+          {IMAGE_TYPES.map((x) => (
+            <option key={x} value={x}>
+              {IMAGE_LABEL[x]}
+            </option>
+          ))}
         </select>
         {type !== 'image/png' && (
           <label className="flex min-w-40 flex-1 items-center gap-2 text-xs text-[var(--fg-muted)]">

@@ -27,6 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/Button';
 import { cn } from '../../lib/cn';
 import { t } from '../../lib/i18n';
+import { decodeImage } from '../codecs/image';
 import { resultName, type EditRequest } from '../files';
 import { Busy, EditorFrame, Failed, SaveDialog, ToolButton, useSources, type Result } from '../ui';
 import { LOOKS, autoTune, autoWhiteBalance, type LookId } from './adjust';
@@ -144,7 +145,7 @@ export function PhotoEditor({ request, onClose }: { request: EditRequest; onClos
     if (!source) return;
     let alive = true;
     (async () => {
-      const bmp = await createImageBitmap(source.blob, { imageOrientation: 'from-image' });
+      const bmp = await decodeImage(source.blob, source.name);
       const preview = await scaled(bmp, PREVIEW_MAX);
       if (!alive) return;
       setFull(bmp);

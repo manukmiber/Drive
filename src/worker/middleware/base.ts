@@ -56,7 +56,8 @@ export function appCsp(env: {
   const door = env.ZEIKO_DOOR_URL ? ` ${new URL(env.ZEIKO_DOOR_URL).origin}` : '';
   return [
     "default-src 'self'",
-    "script-src 'self' https://challenges.cloudflare.com",
+    // WebAssembly (not eval): the editors' codecs, JPEG XL, AVIF, MP3, AAC, FLAC (ADR-067).
+    "script-src 'self' 'wasm-unsafe-eval' https://challenges.cloudflare.com",
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' blob: data: ${uc}`,
     `media-src 'self' blob: ${uc}`,

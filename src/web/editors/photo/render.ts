@@ -1,5 +1,6 @@
 // Drawing the edited photo on a canvas: the same code for the preview (a smaller copy) and the
 // saved file (the full photo), so what is shown is what is saved (ADR-050, ADR-052).
+import { encodeImage, extForType, type ImageType } from '../codecs/image';
 import { applyPipeline, pipeline, resolve } from './adjust';
 import {
   blurred,
@@ -17,7 +18,7 @@ import {
 import { apply, matScale, outputSize, photoMatrix, type Mat, type Rect } from './geometry';
 import type { Frame, PhotoState, TextMark } from './state';
 
-export type OutType = 'image/jpeg' | 'image/png' | 'image/webp';
+export type OutType = ImageType;
 
 const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
@@ -164,13 +165,10 @@ export function drawPhoto(
   drawFrame(ctx, st.frame, W, H);
 }
 
-function toBlob(canvas: HTMLCanvasElement, type: OutType, quality: number): Promise<Blob> {
-  return new Promise((resolve, reject) =>
-    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('encode'))), type, quality),
-  );
-}
-
-/** The saved photo. Browsers that can't write WebP give PNG; that is kept and reported. */
+/**
+ * The saved photo. Browsers that can't write WebP give PNG; that is kept and reported. JPEG XL and
+ * AVIF come from WebAssembly encoders where the browser has none (ADR-067).
+ */
 export async function exportPhoto(
   img: ImageBitmap,
   st: PhotoState,
@@ -183,7 +181,7 @@ export async function exportPhoto(
   canvas.height = size.h;
   // JPEG has no transparency: white, not black, behind it.
   drawPhoto(canvas, img, st, st.crop, type === 'image/jpeg' ? '#ffffff' : null);
-  const blob = await toBlob(canvas, type, quality);
+  const blob = await encodeImage(canvas, type, { quality });
   canvas.width = canvas.height = 0;
   return blob;
 }
@@ -199,11 +197,12 @@ export async function scaled(img: ImageBitmap, max: number): Promise<ImageBitmap
   });
 }
 
-export const extFor = (type: string) =>
-  type === 'image/png' ? 'png' : type === 'image/webp' ? 'webp' : 'jpg';
+export const extFor = extForType;
 
 export function defaultType(mime: string, name: string): OutType {
   if (mime === 'image/png' || /\.png$/i.test(name)) return 'image/png';
   if (mime === 'image/webp' || /\.webp$/i.test(name)) return 'image/webp';
+  if (mime === 'image/avif' || /\.avif$/i.test(name)) return 'image/avif';
+  if (mime === 'image/jxl' || /\.jxl$/i.test(name)) return 'image/jxl';
   return 'image/jpeg';
 }

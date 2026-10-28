@@ -47,6 +47,44 @@ function DocxFrame({ url, node, onEdit }: { url: string; node: NodeDto; onEdit?:
 }
 
 /** No picture of the file; one an editor opens (a spreadsheet, a ZIP) can be opened there. */
+/**
+ * A picture; JPEG XL that this browser can't show is decoded in WebAssembly instead (ADR-067), the
+ * decoder loading only then.
+ */
+function PictureView({ url, node }: { url: string; node: NodeDto }) {
+  const [fallback, setFallback] = useState<{ for: string; src: string | null } | null>(null);
+  const decoding = fallback?.for === url && fallback.src === null;
+  useEffect(() => {
+    if (!decoding) return;
+    let alive = true;
+    (async () => {
+      const res = await fetch(url, { credentials: 'omit' });
+      const { displayable } = await import('../../editors/codecs/image');
+      const blob = new Blob([await res.arrayBuffer()], { type: 'image/jxl' });
+      const src = URL.createObjectURL(await displayable(blob, node.name));
+      if (alive) setFallback({ for: url, src });
+      else URL.revokeObjectURL(src);
+    })().catch(() => alive && setFallback({ for: url, src: '' }));
+    return () => {
+      alive = false;
+    };
+  }, [decoding, url, node.name]);
+  const made = fallback?.src;
+  useEffect(() => () => void (made && URL.revokeObjectURL(made)), [made]);
+  const jxl = node.mime === 'image/jxl' || /\.jxl$/i.test(node.name);
+  const src = fallback?.for === url ? fallback.src : url;
+  if (src === '') return <p className="text-sm text-red-300">{t.editor.cannotOpen}</p>;
+  if (src === null) return <p className="text-sm text-white/70">{t.common.loading}</p>;
+  return (
+    <img
+      src={src}
+      alt={node.name}
+      className="max-h-full max-w-full object-contain"
+      onError={() => jxl && fallback?.for !== url && setFallback({ for: url, src: null })}
+    />
+  );
+}
+
 function NoPreview({ node, onEdit }: { node: NodeDto; onEdit?: () => void }) {
   return (
     <div className="flex flex-col items-center gap-4 text-center">
@@ -181,9 +219,7 @@ export function Preview({
         )}
         {info.isPending && <p className="text-sm text-white/70">{t.common.loading}</p>}
         {info.isError && <p className="text-sm text-red-300">{t.errors.generic}</p>}
-        {d && d.kind === 'image' && (
-          <img src={d.url} alt={node.name} className="max-h-full max-w-full object-contain" />
-        )}
+        {d && d.kind === 'image' && <PictureView key={d.url} url={d.url} node={node} />}
         {d && d.kind === 'video' && (
           <video src={d.url} controls autoPlay className="max-h-full max-w-full" />
         )}

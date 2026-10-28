@@ -15,6 +15,12 @@ const SIGS: Array<{ mime: string; bytes: number[]; offset?: number }> = [
   { mime: 'audio/ogg', bytes: [0x4f, 0x67, 0x67, 0x53] },
   { mime: 'audio/flac', bytes: [0x66, 0x4c, 0x61, 0x43] },
   { mime: 'video/webm', bytes: [0x1a, 0x45, 0xdf, 0xa3] },
+  // JPEG XL: the ISOBMFF-style container, or a bare codestream (ADR-067).
+  {
+    mime: 'image/jxl',
+    bytes: [0x00, 0x00, 0x00, 0x0c, 0x4a, 0x58, 0x4c, 0x20, 0x0d, 0x0a, 0x87, 0x0a],
+  },
+  { mime: 'image/jxl', bytes: [0xff, 0x0a] },
 ];
 
 export function sniffMime(head: Uint8Array): string | null {

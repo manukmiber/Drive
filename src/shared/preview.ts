@@ -2,7 +2,7 @@
 // never rendered.
 export type PreviewKind = 'image' | 'video' | 'audio' | 'pdf' | 'text';
 
-const RASTER = /^image\/(jpeg|png|webp|avif|gif|bmp|heic|heif)$/;
+const RASTER = /^image\/(jpeg|png|webp|avif|gif|bmp|heic|heif|jxl)$/;
 /** Text kept as text: previewed as source, edited in the text editor (ADR-051). */
 export const TEXT_EXT = new Set([
   'txt',
@@ -53,6 +53,8 @@ export function previewKind(
   const m = (mime ?? '').toLowerCase();
   const ext = name.includes('.') ? name.split('.').pop()!.toLowerCase() : '';
   if (RASTER.test(m)) return 'image';
+  // JPEG XL often comes without a type (the OS doesn't know it); the app decodes it (ADR-067).
+  if (ext === 'jxl' && (!m || m === 'application/octet-stream')) return 'image';
   if (m.startsWith('video/')) return 'video';
   if (m.startsWith('audio/')) return 'audio';
   if (m === 'application/pdf' || ext === 'pdf') return 'pdf';
@@ -73,5 +75,6 @@ export function previewKind(
 export function previewContentType(kind: PreviewKind, mime: string | null): string {
   if (kind === 'text') return 'text/plain; charset=utf-8';
   if (kind === 'pdf') return 'application/pdf';
+  if (kind === 'image' && (!mime || mime === 'application/octet-stream')) return 'image/jxl';
   return mime ?? 'application/octet-stream';
 }

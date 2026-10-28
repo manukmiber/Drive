@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   FileType2,
   ImageIcon,
+  Shrink,
 } from 'lucide-react';
 import { useRef, useState, type ComponentType } from 'react';
 import { formatBytes } from '../../shared/format';
@@ -39,7 +40,7 @@ const CARDS: Card[] = [
     icon: ImageIcon,
     title: t.editor.photo,
     body: t.editor.photoDesc,
-    accept: 'image/*',
+    accept: 'image/*,.jxl',
     multiple: false,
   },
   {
@@ -48,7 +49,16 @@ const CARDS: Card[] = [
     icon: Clapperboard,
     title: t.editor.video,
     body: t.editor.videoDesc,
-    accept: 'video/*',
+    accept: 'video/*,audio/*',
+    multiple: true,
+  },
+  {
+    id: 'compress',
+    tool: 'compress',
+    icon: Shrink,
+    title: t.localCompress.title,
+    body: t.localCompress.desc,
+    accept: 'video/*,audio/*,image/*,.jxl,.mkv,.flac,.opus',
     multiple: true,
   },
   {

@@ -1685,3 +1685,42 @@ support, tanya langsung kesitu. Jam jawab 08.00 - 22.00."
 menggulir gridnya dari handler sentuhnya sendiri, jadi browser juga ikut menggeser halaman dan menarik untuk memuat
 ulang. Grid (`.zk-sheet .fortune-sheet-overlay`) diberi `touch-action: none`, dan selama editor apa pun terbuka
 `html`/`body` diberi `overscroll-behavior: none` (`EditorFrame` memasang kelas `editor-open`).
+
+## ADR-067 — Editor video lengkap, kompres lokal gratis, kolase, alat foto tambahan, dan JPEG XL
+
+**Status:** diterima (pemilik, 2026-10-28). **Konteks:** pemilik: "Buat agar editor video lebih lengkap, dengan efek,
+colour wheel, masukin musik, audio edit, dll … untuk export pastikan ada encode codec yang lengkap. … tools compressor
+video lokal yang lengkap kek handbrake tapi videonya di pull dari drive atau lokal. Sekalian editor fotonya … tambahkan
+fitur menambahkan teks, dekorasi dan lain lain, serta bikin tools kolase", lalu "Yang ada di plan sekarang itu cloud
+kompress ya, yang ini lokal kompress full free" dan "tambahkan jpegxl support baik untuk compress dan view". Pembekuan
+fitur Drive baru sampai R3 (ADR-064) dikecualikan pemilik untuk ini: semuanya jalan di browser, tanpa tabel, kolom, atau
+route baru.
+
+**Keputusan:**
+- Aturan ADR-050 tetap: isi file tidak dikirim ke mana pun, hasil lewat antrean upload biasa, library dimuat saat alat
+  dibuka. Library baru (versi dipatok): `@jsquash/jxl` 1.3.0 (libjxl, baca + tulis JPEG XL), `@jsquash/avif` 2.1.1
+  (tulis AVIF kalau browser tidak bisa), `@mediabunny/mp3-encoder`, `aac-encoder`, `flac-encoder` 1.61.3 (sama dengan
+  `mediabunny`; AAC/FLAC hanya dipakai kalau browser tidak punya encoder sendiri, MP3 selalu).
+- **CSP:** `script-src` ditambah `'wasm-unsafe-eval'`. Ini hanya mengizinkan kompilasi WebAssembly, bukan `eval` JS
+  (`new Function` tetap ditolak). Encoder audio jalan di worker `blob:` yang sudah diizinkan `worker-src`. Efek
+  samping baik: decoder WASM pdf.js (JBIG2, OpenJPEG) sekarang benar-benar dipakai, bukan cadangan JS-nya.
+- **Kompres lokal** (`editors/compress/`, alat `compress`, kartu di /alat, menu ⋮ "Kompres di perangkat (gratis)" untuk
+  video/audio/foto): terpisah dari Kompres di server (ADR-031, pakai kredit), tidak memakai kredit atau API. Antrean
+  banyak file diproses satu per satu dengan `mediabunny` `Conversion`. File Drive dibaca per rentang (Range) dari URL
+  pratinjau lewat `UrlSource` dengan `fetchFn` yang meminta URL baru kalau token hampir habis atau dijawab 410, jadi
+  file besar tidak perlu muat di memori; file perangkat dibaca dari disk. Batas `editor_*` tidak berlaku untuk video
+  (foto tetap `editor_image_max_bytes`).
+  - Pengaturan ala HandBrake: preset (Cepat 1080p, Kualitas tinggi 1080p, H.265 1080p, Cepat 720p, Kecil 480p, Kirim
+    ≤ 25 MB, Kirim kecil ≤ 10 MB, AV1 WebM, VP9 WebM, Ambil audio MP3/M4A, Atur sendiri); container MP4, MOV, WebM, MKV,
+    MPEG-TS, M4A, MP3, Ogg, Opus, FLAC, WAV, AAC; codec video H.264, H.265, VP9, AV1, VP8 atau salin; kontrol kualitas
+    RF (quantizer WebCodecs, dengan bitrate cadangan kalau encoder tidak mendukung), bitrate rata-rata, atau ukuran
+    target (bitrate dihitung dari durasi); resolusi (sisi pendek, tidak pernah diperbesar), frame rate, jarak
+    keyframe, preferensi hardware/software; audio AAC, Opus, MP3, FLAC, PCM atau salin/tanpa suara, bitrate, sample
+    rate, kanal; putar, cermin, dan potong durasi (satu file). Hanya codec yang bisa di-encode browser ini yang bisa
+    dipilih. Selama berjalan layar dijaga menyala (Wake Lock).
+  - Foto di antrean yang sama: JPEG, PNG, WebP, AVIF, JPEG XL; kualitas, lossless (JXL/WebP), usaha encoder, sisi
+    terpanjang; kalau hasilnya tidak lebih kecil file asli dipakai (bisa dimatikan).
+- **JPEG XL:** dikenali dari tanda tangan bytes (`sniff.ts`) dan ekstensi (OS sering tidak memberi tipe; upload
+  `.jxl` tanpa tipe dikirim sebagai `image/jxl`). Pratinjau Drive menampilkan `<img>` dulu (Safari bisa sendiri) dan
+  kalau gagal men-decode di WASM lalu menampilkan PNG-nya; thumbnail upload `.jxl` dibuat dengan cara yang sama. Editor
+  foto bisa membuka dan menyimpan JXL dan AVIF. Kompres di server (ADR-031) tidak berubah.

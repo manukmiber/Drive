@@ -7,7 +7,8 @@ import { nodeInfo, previewInfo, type NodeDto } from '../lib/files';
 import type { Catalog, Me } from '../lib/types';
 import { uploads } from '../upload/useUploads';
 
-export type Tool = 'photo' | 'video' | 'pdf' | 'text' | 'doc' | 'sheet' | 'zip';
+export type Tool =
+  'photo' | 'video' | 'pdf' | 'text' | 'doc' | 'sheet' | 'zip' | 'compress' | 'collage';
 
 /** What an editor opens: Drive files, files from this device, or both. */
 export interface EditRequest {
@@ -38,14 +39,20 @@ export class TooLargeError extends Error {
   }
 }
 
-const IMAGE = /^image\/(jpeg|png|webp|avif|gif|bmp|heic|heif)$/;
-const IMAGE_EXT = /\.(jpe?g|png|webp|avif|gif|bmp|heic|heif)$/i;
+const IMAGE = /^image\/(jpeg|png|webp|avif|gif|bmp|heic|heif|jxl)$/;
+const IMAGE_EXT = /\.(jpe?g|png|webp|avif|gif|bmp|heic|heif|jxl)$/i;
 const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp)$/i;
+const AUDIO_EXT = /\.(mp3|m4a|aac|wav|flac|ogg|oga|opus|weba)$/i;
 
 export const isImage = (mime: string | null, name: string) =>
   IMAGE.test(mime ?? '') || IMAGE_EXT.test(name);
 export const isVideo = (mime: string | null, name: string) =>
   (mime ?? '').startsWith('video/') || VIDEO_EXT.test(name);
+export const isAudio = (mime: string | null, name: string) =>
+  (mime ?? '').startsWith('audio/') || AUDIO_EXT.test(name);
+/** What the local compressor takes (ADR-067): video, audio and photos. */
+export const isMedia = (mime: string | null, name: string) =>
+  isVideo(mime, name) || isAudio(mime, name) || isImage(mime, name);
 export const isPdf = (mime: string | null, name: string) =>
   mime === 'application/pdf' || /\.pdf$/i.test(name);
 export const isDoc = (_mime: string | null, name: string) => /\.docx$/i.test(name);
@@ -82,6 +89,9 @@ export function maxBytes(c: Catalog['config'] | undefined, tool: Tool): number {
     doc: c.editor_doc_max_bytes,
     sheet: c.editor_sheet_max_bytes,
     zip: c.editor_zip_max_bytes,
+    // Read in ranges from Drive or from disk, never whole in memory (ADR-067).
+    compress: 0,
+    collage: c.editor_image_max_bytes,
   };
   return max[tool];
 }

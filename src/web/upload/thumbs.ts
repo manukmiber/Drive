@@ -60,10 +60,31 @@ function videoThumb(file: File): Promise<Blob | null> {
   });
 }
 
+/** JPEG XL, which browsers rarely decode themselves: libjxl in WebAssembly (ADR-067). */
+async function jxlThumb(file: File): Promise<Blob | null> {
+  const { decodeJxl } = await import('../editors/codecs/image');
+  const data = await decodeJxl(file);
+  const full = document.createElement('canvas');
+  full.width = data.width;
+  full.height = data.height;
+  full.getContext('2d')!.putImageData(data, 0, 0);
+  const scale = Math.min(1, MAX / Math.max(data.width, data.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(data.width * scale));
+  canvas.height = Math.max(1, Math.round(data.height * scale));
+  canvas.getContext('2d')!.drawImage(full, 0, 0, canvas.width, canvas.height);
+  full.width = full.height = 0;
+  return new Promise((resolve) =>
+    canvas.toBlob((b) => resolve(b && b.type === 'image/webp' ? b : null), 'image/webp', 0.75),
+  );
+}
+
 export async function makeAndUploadThumb(nodeId: string, file: File): Promise<void> {
   const type = file.type.toLowerCase();
   let blob: Blob | null = null;
-  if (IMAGE.test(type) && file.size < 60 * 1024 * 1024) blob = await imageThumb(file);
+  if ((type === 'image/jxl' || /\.jxl$/i.test(file.name)) && file.size < 60 * 1024 * 1024)
+    blob = await jxlThumb(file).catch(() => null);
+  else if (IMAGE.test(type) && file.size < 60 * 1024 * 1024) blob = await imageThumb(file);
   else if (type.startsWith('video/')) blob = await videoThumb(file);
   if (!blob || blob.size > 128 * 1024) return;
   const token = /(?:^|; )__Host-zk\.csrf=([^;]+)/.exec(document.cookie)?.[1];

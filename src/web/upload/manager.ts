@@ -397,7 +397,8 @@ export class UploadManager {
           parentId: t.parentId,
           name: t.name,
           size: t.size,
-          mime: t.file.type || null,
+          // The OS often has no type for JPEG XL (ADR-067).
+          mime: t.file.type || (/\.jxl$/i.test(t.name) ? 'image/jxl' : null),
           lastModified: t.file.lastModified,
           onConflict: t.onConflict,
         },
