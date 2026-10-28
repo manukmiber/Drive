@@ -13,6 +13,8 @@ const STATUS = {
   BucketNotEmpty: 409,
   /** A browser's CORS preflight that no rule allows (or no CORS on the bucket). */
   CORSResponse: 403,
+  /** A conditional write lost to another write after its bytes were stored (ADR-068). */
+  ConditionalRequestConflict: 409,
   EntityTooLarge: 400,
   EntityTooSmall: 400,
   IncompleteBody: 400,

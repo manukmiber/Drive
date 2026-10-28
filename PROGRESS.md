@@ -253,6 +253,12 @@ lewat fase R di `docs/ROADMAP.md`.
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Tulis bersyarat S3 (S2, ADR-068, 2026-10-28)
+- [x] `If-None-Match: *` dan `If-Match` di PutObject, CopyObject (tujuan), CompleteMultipartUpload; dicek di batch D1
+  yang sama dengan commit index (dua penulis: tepat satu menang). Multipart yang kalah di tengah complete → 409
+  `ConditionalRequestConflict`. Syarat tanggal sumber copy sekarang dihitung; syarat lain di operasi tulis → 501.
+- [ ] Pemilik: deploy (tanpa migrasi).
+
 ## Login aplikasi OAuth 2.0 + PKCE (A3, ADR-063, 2026-10-26)
 - [x] Klien pihak pertama (Android, desktop, CLI), halaman persetujuan `/oauth/authorize`, code + PKCE S256,
   `/api/v1/oauth/token` (code, refresh dengan rotasi + deteksi pemakaian ulang), `/api/v1/oauth/revoke`.

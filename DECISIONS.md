@@ -1742,3 +1742,47 @@ route baru.
   Supaya memori HP cukup, tiap foto disimpan paling besar 4096 px (1 foto) sampai 1800 px (5+ foto).
 - **Belum:** editor video lengkap (efek, roda warna, musik, edit audio, transisi, teks berwaktu, export dengan pilihan
   codec dari `codecs/EncodeForm`) menyusul; pemilik menghentikan sesi setelah foto dan kolase (2026-10-28).
+
+## ADR-068 — Zeiko S3: tulis bersyarat (If-None-Match / If-Match)
+**Tanggal:** 2026-10-28 · **Status:** diterima (pemilik: roadmap S2).
+
+**Konteks:** `writeObject` mengabaikan `If-None-Match`/`If-Match`. PutObject dengan `If-None-Match: *` menimpa objek
+yang sudah ada dan menjawab 200, jadi klien yang memakainya sebagai kunci (Terraform `use_lockfile`, tool data lake)
+mengira kuncinya aman padahal tidak.
+
+**Keputusan:**
+- **PutObject, CopyObject (tujuan), CompleteMultipartUpload:** `If-None-Match: *` → 412 `PreconditionFailed` kalau key
+  sudah ada; `If-Match: "<etag>"` → 412 kalau key tidak ada atau ETag-nya beda (roadmap S2; untuk key yang tidak ada
+  kami menjawab 412). Sama seperti Amazon, hanya `*` untuk If-None-Match dan satu ETag untuk If-Match. Nilai lain,
+  keduanya sekaligus, atau `If-Modified-Since`/`If-Unmodified-Since` di operasi tulis → `NotImplemented` (501), tidak
+  diabaikan.
+- **Dicek dua kali.** Cek awal (satu baca index) sebelum byte apa pun dipindah, supaya kunci yang sudah ada gagal cepat.
+  Cek yang menentukan ada **di batch D1 yang sama dengan commit index** (`replaceRow` di `services/s3-objects.ts`):
+  `If-None-Match` = `INSERT … ON CONFLICT (bucket, key) DO NOTHING RETURNING`; `If-Match` = `SELECT` baris lama lalu
+  `UPDATE … WHERE etag = ?` dalam satu transaksi (semua kolom diisi ulang, `replicated = 0`). Dari dua penulis
+  bersamaan hanya satu yang bisa lolos. Penulis yang kalah: blob barunya dihapus dari R2 dan reservasi byte dilepas
+  lewat jalur gagal yang sudah ada. Scan dan replika (ADR-047) hanya untuk pemenang, karena keduanya dimulai setelah
+  commit.
+- **PutObject/CopyObject yang kalah di commit → 412** (yang pertama selesai menang, seperti Amazon).
+- **CompleteMultipartUpload:** gagal di cek awal → 412 dan upload **tetap ada** (bisa di-abort, atau di-complete
+  tanpa syarat). Lolos cek awal tapi kalah di commit (ada tulis lain selama R2 menggabungkan part) → **409
+  `ConditionalRequestConflict`**: R2 sudah memakai upload itu, jadi barisnya, blobnya, dan reservasinya dibuang. Ini
+  arti 409 di Amazon ("re-initiate the multipart upload").
+- CopyObject ke dirinya sendiri (hanya metadata): `If-None-Match: *` selalu 412 (sumbernya ada); `If-Match` dicek lagi
+  di `UPDATE` yang sama.
+- **Syarat sumber CopyObject/UploadPartCopy:** `x-amz-copy-source-if-modified-since` dan `-if-unmodified-since` dulu
+  diabaikan; sekarang dihitung dengan aturan Amazon (ETag cocok mengalahkan tanggal unmodified, ETag tidak cocok
+  mengalahkan tanggal modified).
+- **Operasi tulis lain tanpa dukungan syarat** (UploadPart, UploadPartCopy, CreateMultipartUpload,
+  AbortMultipartUpload, DeleteObject) → `NotImplemented` kalau membawa `If-Match`, `If-None-Match`,
+  `If-(Un)Modified-Since`, atau `x-amz-if-match-*`. DeleteObjects: objek yang membawa `ETag`/`LastModifiedTime`/`Size`
+  mendapat error `NotImplemented` di `DeleteResult` dan tidak dihapus.
+
+**Tidak dibangun:** hapus bersyarat (DeleteObject `If-Match`, `x-amz-if-match-last-modified-time`/`-size`); kalau
+diminta, cukup `DELETE … AND etag = ?`.
+
+**Konsekuensi:** tulis bersyarat menambah satu baca D1 (cek awal). Tanpa header bersyarat jalurnya sama seperti dulu.
+Kode error baru `ConditionalRequestConflict` (409). Test: `tests/integration/s3-conditional.test.ts` (dua penulis
+ditahan sampai keduanya lolos cek awal → tepat satu 200 dan satu 412; If-Match benar/salah/tidak ada; multipart 412
+lalu abort, 409 saat tulis lain masuk di tengah complete; copy tujuan dan sumber; syarat yang ditolak; `used_bytes`,
+jumlah blob R2, dan pesan scan tetap benar).

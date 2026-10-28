@@ -147,22 +147,47 @@ async function scanRequest(ctx: Ctx, row: ObjectRow): Promise<void> {
   });
 }
 
-/** Puts `row` in place of whatever had its name; returns what it replaced. */
+/**
+ * What a write needs to find under its name (ADR-068): nothing (If-None-Match: *), or the object
+ * with this ETag (If-Match).
+ */
+export type WriteCondition = { ifNoneMatch: true } | { ifMatch: string };
+
+const PRECONDITION = 'At least one of the pre-conditions you specified did not hold.';
+
+/** The cheap early check, before any bytes move; the commit checks again. */
+async function checkWrite(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  bucket: string,
+  key: string,
+  cond: WriteCondition | null | undefined,
+): Promise<void> {
+  if (!cond) return;
+  const now = await getObjectRow(ctx, account, bucket, key);
+  if ('ifNoneMatch' in cond ? now !== null : now?.etag !== cond.ifMatch)
+    throw new S3Error('PreconditionFailed', PRECONDITION);
+}
+
+type Replaced = { blob_id: string; size: number } | null;
+
+/**
+ * Puts `row` in place of whatever had its name; returns what it replaced. With a condition, the
+ * condition is part of the same D1 batch, so of two writers only one can see it hold:
+ * `won: false` means nothing was written (`extra` still runs).
+ */
 async function replaceRow(
   db: D1Database,
   row: ObjectRow,
   extra: D1PreparedStatement[] = [],
-): Promise<{ blob_id: string; size: number } | null> {
-  const [deleted] = await db.batch([
-    db
-      .prepare(
-        `DELETE FROM s3_objects WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 RETURNING blob_id, size`,
-      )
-      .bind(row.bucket, row.key, row.user_id),
+  cond?: WriteCondition | null,
+): Promise<{ won: boolean; old: Replaced }> {
+  const name = `bucket = ?1 AND key = ?2 AND user_id = ?3`;
+  const insert = (tail: string) =>
     db
       .prepare(
         `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)${tail}`,
       )
       .bind(
         row.user_id,
@@ -176,10 +201,54 @@ async function replaceRow(
         row.scan_status,
         row.sha256,
         row.modified_at,
+      );
+  if (!cond) {
+    const [deleted] = await db.batch([
+      db
+        .prepare(`DELETE FROM s3_objects WHERE ${name} RETURNING blob_id, size`)
+        .bind(row.bucket, row.key, row.user_id),
+      insert(''),
+      ...extra,
+    ]);
+    return { won: true, old: (deleted?.results[0] as Replaced | undefined) ?? null };
+  }
+  if ('ifNoneMatch' in cond) {
+    const [added] = await db.batch([
+      insert(` ON CONFLICT (bucket, key) DO NOTHING RETURNING blob_id`),
+      ...extra,
+    ]);
+    return { won: Boolean(added?.results.length), old: null };
+  }
+  // If-Match: the old row is read and replaced in one transaction, only while its ETag is the one
+  // asked for. Every column is set, as a fresh INSERT would (replicated: the new bytes have no copies).
+  const [before, updated] = await db.batch([
+    db
+      .prepare(`SELECT blob_id, size FROM s3_objects WHERE ${name} AND etag = ?4`)
+      .bind(row.bucket, row.key, row.user_id, cond.ifMatch),
+    db
+      .prepare(
+        `UPDATE s3_objects SET blob_id = ?5, size = ?6, etag = ?7, content_type = ?8, meta_json = ?9,
+           scan_status = ?10, sha256 = ?11, modified_at = ?12, replicated = 0
+         WHERE ${name} AND etag = ?4 RETURNING blob_id`,
+      )
+      .bind(
+        row.bucket,
+        row.key,
+        row.user_id,
+        cond.ifMatch,
+        row.blob_id,
+        row.size,
+        row.etag,
+        row.content_type,
+        row.meta_json,
+        row.scan_status,
+        row.sha256,
+        row.modified_at,
       ),
     ...extra,
   ]);
-  return (deleted?.results[0] as { blob_id: string; size: number } | undefined) ?? null;
+  if (!updated?.results.length) return { won: false, old: null };
+  return { won: true, old: (before?.results[0] as Replaced | undefined) ?? null };
 }
 
 async function dropBlob(ctx: Ctx, userId: string, blobId: string): Promise<void> {
@@ -202,6 +271,7 @@ export interface PutInput {
   md5Hex?: string | null;
   /** Runs once the bytes are stored, e.g. to compare the payload's SHA-256 (throws to undo). */
   verify?: () => Promise<void>;
+  condition?: WriteCondition | null;
 }
 
 export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): Promise<ObjectRow> {
@@ -213,6 +283,7 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
     );
   const db = await indexDb(ctx.env, account.indexBinding);
   const userId = account.userId;
+  await checkWrite(ctx, account, input.bucket, input.key, input.condition);
   await reserveBytes(ctx, userId, input.size);
   const blobId = ulid(ctx.now());
   const r2Key = s3BlobKey(userId, blobId);
@@ -248,7 +319,9 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
       sha256: null,
       modified_at: ctx.now(),
     };
-    const old = await replaceRow(db, row);
+    const { won, old } = await replaceRow(db, row, [], input.condition);
+    // Another writer got there first: this one's bytes go (below), as on any failed upload.
+    if (!won) throw new S3Error('PreconditionFailed', PRECONDITION);
     await commitBytes(ctx, userId, input.size, row.size - (old?.size ?? 0));
     if (old) await dropBlob(ctx, userId, old.blob_id);
     await scanRequest(ctx, row);
@@ -306,26 +379,41 @@ export interface CopyInput {
   replace: boolean;
   contentType: string | null;
   meta: ObjectMeta;
+  /** x-amz-copy-source-if-*: about the source. */
+  source?: SourceConditions;
+  /** If-Match / If-None-Match: about what the copy replaces (ADR-068). */
+  condition?: WriteCondition | null;
+}
+
+/** The x-amz-copy-source-if-* headers of CopyObject and UploadPartCopy. */
+export interface SourceConditions {
   ifMatch?: string | null;
   ifNoneMatch?: string | null;
+  ifModifiedSince?: string | null;
+  ifUnmodifiedSince?: string | null;
 }
 
 const unquote = (s: string) => s.trim().replace(/^W\//, '').replace(/^"|"$/g, '');
+const tagMatches = (header: string, etag: string) =>
+  header.split(',').some((t) => t.trim() === '*' || unquote(t) === etag);
 
-function copyPreconditions(src: ObjectRow, ifMatch?: string | null, ifNoneMatch?: string | null) {
-  if (ifMatch && !ifMatch.split(',').some((t) => t.trim() === '*' || unquote(t) === src.etag))
-    throw new S3Error(
-      'PreconditionFailed',
-      'At least one of the pre-conditions you specified did not hold.',
-    );
-  if (
-    ifNoneMatch &&
-    ifNoneMatch.split(',').some((t) => t.trim() === '*' || unquote(t) === src.etag)
-  )
-    throw new S3Error(
-      'PreconditionFailed',
-      'At least one of the pre-conditions you specified did not hold.',
-    );
+/** Amazon's rules: a matching ETag outranks the unmodified date, a non-matching one the modified date. */
+function copyPreconditions(src: ObjectRow, c: SourceConditions = {}) {
+  const modified = Math.floor(src.modified_at / 1000) * 1000;
+  const date = (v: string | null | undefined) => {
+    const t = v ? Date.parse(v) : NaN;
+    return Number.isNaN(t) ? null : t;
+  };
+  const unmodifiedSince = date(c.ifUnmodifiedSince);
+  const modifiedSince = date(c.ifModifiedSince);
+  const holds =
+    (c.ifMatch
+      ? tagMatches(c.ifMatch, src.etag)
+      : unmodifiedSince === null || modified <= unmodifiedSince) &&
+    (c.ifNoneMatch
+      ? !tagMatches(c.ifNoneMatch, src.etag)
+      : modifiedSince === null || modified > modifiedSince);
+  if (!holds) throw new S3Error('PreconditionFailed', PRECONDITION);
 }
 
 /** Server-side copy within one account (the bytes are copied in R2, so each object stands alone). */
@@ -340,9 +428,10 @@ export async function copyObject(
   const src = await getObjectRow(ctx, account, input.from.bucket, input.from.key);
   if (!src)
     throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: input.from.key });
-  copyPreconditions(src, input.ifMatch, input.ifNoneMatch);
+  copyPreconditions(src, input.source);
   const db = await indexDb(ctx.env, account.indexBinding);
   const same = input.from.bucket === input.to.bucket && input.from.key === input.to.key;
+  await checkWrite(ctx, account, input.to.bucket, input.to.key, input.condition);
   const contentType = input.replace ? input.contentType : src.content_type;
   const meta = input.replace ? metaJson(input.meta) : src.meta_json;
   const now = ctx.now();
@@ -352,14 +441,27 @@ export async function copyObject(
         'InvalidRequest',
         'This copy request is illegal because it is trying to copy an object to itself without changing the object’s metadata.',
       );
-    // Only the metadata changes: no bytes to move.
-    await db
+    // Only the metadata changes: no bytes to move. If-None-Match: * failed above (the source is
+    // there); If-Match is checked again in the UPDATE itself.
+    const ifMatch =
+      input.condition && 'ifMatch' in input.condition ? input.condition.ifMatch : null;
+    const changed = await db
       .prepare(
         `UPDATE s3_objects SET content_type = ?4, meta_json = ?5, modified_at = ?6
-         WHERE bucket = ?1 AND key = ?2 AND user_id = ?3`,
+         WHERE bucket = ?1 AND key = ?2 AND user_id = ?3${ifMatch === null ? '' : ' AND etag = ?7'}`,
       )
-      .bind(src.bucket, src.key, userId, contentType, meta, now)
+      .bind(
+        src.bucket,
+        src.key,
+        userId,
+        contentType,
+        meta,
+        now,
+        ...(ifMatch === null ? [] : [ifMatch]),
+      )
       .run();
+    if (ifMatch !== null && !changed.meta.changes)
+      throw new S3Error('PreconditionFailed', PRECONDITION);
     return { ...src, content_type: contentType, meta_json: meta, modified_at: now };
   }
   if (src.size > MAX_SINGLE_PUT_BYTES)
@@ -393,7 +495,8 @@ export async function copyObject(
       // The bytes are the source's: so is the scan result.
       modified_at: now,
     };
-    const old = await replaceRow(db, row);
+    const { won, old } = await replaceRow(db, row, [], input.condition);
+    if (!won) throw new S3Error('PreconditionFailed', PRECONDITION);
     await commitBytes(ctx, userId, src.size, src.size - (old?.size ?? 0));
     if (old) await dropBlob(ctx, userId, old.blob_id);
     await scanRequest(ctx, row);
@@ -740,13 +843,13 @@ export async function copyPart(
   partNumber: number,
   from: { bucket: string; key: string },
   range: string | null,
-  conditions: { ifMatch?: string | null; ifNoneMatch?: string | null },
+  conditions: SourceConditions,
 ): Promise<{ etag: string; modifiedAt: number }> {
   checkPartNumber(partNumber);
   await ownBucket(ctx, account.userId, from.bucket);
   const src = await getObjectRow(ctx, account, from.bucket, from.key);
   if (!src) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: from.key });
-  copyPreconditions(src, conditions.ifMatch, conditions.ifNoneMatch);
+  copyPreconditions(src, conditions);
   let offset = 0;
   let length = src.size;
   if (range) {
@@ -790,6 +893,7 @@ export async function completeUpload(
   key: string,
   uploadId: string,
   parts: Array<{ partNumber: number; etag: string }>,
+  condition?: WriteCondition | null,
 ): Promise<ObjectRow> {
   const db = await indexDb(ctx.env, account.indexBinding);
   const up = await findUpload(db, account.userId, bucket, key, uploadId);
@@ -826,6 +930,8 @@ export async function completeUpload(
     throw new S3Error('InvalidPart', 'The last part may not be larger than the others.');
   const total = chosen.reduce((n, p) => n + p.size, 0);
   const reserved = stored.reduce((n, p) => n + p.size, 0);
+  // Failing here keeps the upload: the client may still abort it, or complete it without the condition.
+  await checkWrite(ctx, account, bucket, key, condition);
   let obj: R2Object;
   try {
     obj = await ctx.env.BUCKET.resumeMultipartUpload(
@@ -848,10 +954,25 @@ export async function completeUpload(
     sha256: null,
     modified_at: ctx.now(),
   };
-  const old = await replaceRow(db, row, [
-    db.prepare(`DELETE FROM s3_upload_parts WHERE upload_id = ?1`).bind(up.id),
-    db.prepare(`DELETE FROM s3_uploads WHERE id = ?1`).bind(up.id),
-  ]);
+  const { won, old } = await replaceRow(
+    db,
+    row,
+    [
+      db.prepare(`DELETE FROM s3_upload_parts WHERE upload_id = ?1`).bind(up.id),
+      db.prepare(`DELETE FROM s3_uploads WHERE id = ?1`).bind(up.id),
+    ],
+    condition,
+  );
+  if (!won) {
+    // Another write landed while R2 joined the parts. R2 has used the upload up, so it goes, and
+    // the client starts again (what Amazon's 409 means for a multipart upload).
+    await releaseBytes(ctx, account.userId, reserved);
+    await dropBlob(ctx, account.userId, up.blob_id);
+    throw new S3Error(
+      'ConditionalRequestConflict',
+      'A conflicting operation occurred. Start a new multipart upload and try again.',
+    );
+  }
   await commitBytes(ctx, account.userId, reserved, total - (old?.size ?? 0));
   if (old) await dropBlob(ctx, account.userId, old.blob_id);
   await scanRequest(ctx, row);

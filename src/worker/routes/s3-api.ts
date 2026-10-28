@@ -87,6 +87,8 @@ import {
   validateKey,
   type ListCursor,
   type ObjectRow,
+  type SourceConditions,
+  type WriteCondition,
 } from '../services/s3-objects';
 
 /** Requests for Zeiko S3: its host, or a bucket subdomain of it. */
@@ -356,6 +358,60 @@ function contentMd5Hex(h: Headers): string | null {
   } catch {
     throw new S3Error('InvalidDigest', 'The Content-MD5 you specified is not valid.');
   }
+}
+
+/**
+ * If-Match / If-None-Match on PutObject, CopyObject and CompleteMultipartUpload (ADR-068). Amazon
+ * takes "*" for If-None-Match and one ETag for If-Match there; anything else is refused, not ignored.
+ */
+function writeCondition(h: Headers): WriteCondition | null {
+  for (const name of ['if-modified-since', 'if-unmodified-since'])
+    if (h.has(name))
+      throw new S3Error('NotImplemented', `The ${name} condition is not supported on writes.`);
+  const match = h.get('if-match');
+  const none = h.get('if-none-match');
+  if (match !== null && none !== null)
+    throw new S3Error(
+      'NotImplemented',
+      'Use either If-Match or If-None-Match on a write, not both.',
+    );
+  if (none !== null) {
+    if (none.trim() !== '*')
+      throw new S3Error('NotImplemented', 'If-None-Match on a write only takes "*".');
+    return { ifNoneMatch: true };
+  }
+  if (match === null) return null;
+  const tags = match.split(',');
+  const tag = unquote(tags[0]!);
+  if (tags.length !== 1 || !tag || tag === '*')
+    throw new S3Error('NotImplemented', 'If-Match on a write takes exactly one ETag.');
+  return { ifMatch: tag };
+}
+
+/** Conditional headers a write that takes none would otherwise ignore (ADR-068). */
+const WRITE_CONDITIONS = [
+  'if-match',
+  'if-none-match',
+  'if-modified-since',
+  'if-unmodified-since',
+  'x-amz-if-match-last-modified-time',
+  'x-amz-if-match-size',
+  'x-amz-if-match-initiated-time',
+];
+
+function noConditions(r: Req): void {
+  const name = WRITE_CONDITIONS.find((n) => r.raw.headers.has(n));
+  if (name)
+    throw new S3Error('NotImplemented', `${r.op} with the ${name} condition is not supported.`);
+}
+
+function sourceConditions(h: Headers): SourceConditions {
+  return {
+    ifMatch: h.get('x-amz-copy-source-if-match'),
+    ifNoneMatch: h.get('x-amz-copy-source-if-none-match'),
+    ifModifiedSince: h.get('x-amz-copy-source-if-modified-since'),
+    ifUnmodifiedSince: h.get('x-amz-copy-source-if-unmodified-since'),
+  };
 }
 
 function aclPublic(value: string | null): boolean | null {
@@ -697,6 +753,13 @@ async function deleteMany(r: Req, bucket: BucketRow): Promise<Response> {
     const key = xmlText(o, 'Key') ?? '';
     try {
       validateKey(key);
+      // A per-object condition must not be skipped silently (ADR-068).
+      const cond = ['ETag', 'LastModifiedTime', 'Size'].find((t) => xmlText(o, t) !== null);
+      if (cond)
+        throw new S3Error(
+          'NotImplemented',
+          `Deleting with the ${cond} condition is not supported.`,
+        );
       ok.push(key);
     } catch (e) {
       const err = isS3Error(e) ? e : new S3Error('InternalError');
@@ -869,6 +932,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
     const partNumber = Number(q.get('partNumber'));
     if (copySource) {
       r.op = 'UploadPartCopy';
+      noConditions(r);
       const res = await copyPart(
         r.ctx,
         auth.account,
@@ -878,16 +942,14 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
         partNumber,
         parseCopySource(copySource),
         h.get('x-amz-copy-source-range'),
-        {
-          ifMatch: h.get('x-amz-copy-source-if-match'),
-          ifNoneMatch: h.get('x-amz-copy-source-if-none-match'),
-        },
+        sourceConditions(h),
       );
       return xmlResponse(
         xmlDoc('CopyPartResult', { LastModified: iso(res.modifiedAt), ETag: quoted(res.etag) }),
       );
     }
     r.op = 'UploadPart';
+    noConditions(r);
     const body = objectBody(r);
     try {
       const etag = await uploadPart(
@@ -917,14 +979,15 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       replace: directive === 'REPLACE',
       contentType: h.get('content-type'),
       meta: metaFromHeaders(h),
-      ifMatch: h.get('x-amz-copy-source-if-match'),
-      ifNoneMatch: h.get('x-amz-copy-source-if-none-match'),
+      source: sourceConditions(h),
+      condition: writeCondition(h),
     });
     return xmlResponse(
       xmlDoc('CopyObjectResult', { LastModified: iso(row.modified_at), ETag: quoted(row.etag) }),
     );
   }
   r.op = 'PutObject';
+  const condition = writeCondition(h);
   const md5Hex = contentMd5Hex(h);
   const meta = metaFromHeaders(h);
   const body = objectBody(r);
@@ -937,6 +1000,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       contentType: h.get('content-type'),
       meta,
       md5Hex,
+      condition,
       ...(body.verify ? { verify: body.verify } : {}),
     });
     return new Response(null, { status: 200, headers: { ETag: quoted(row.etag) } });
@@ -1033,16 +1097,19 @@ async function objectOp(r: Req): Promise<Response> {
     case 'DELETE':
       if (q.has('uploadId')) {
         r.op = 'AbortMultipartUpload';
+        noConditions(r);
         await abortUpload(r.ctx, auth.account, bucket.name, key, q.get('uploadId')!);
         return new Response(null, { status: 204 });
       }
       r.op = 'DeleteObject';
+      noConditions(r);
       validateKey(key);
       await deleteObjects(r.ctx, auth.account, bucket.name, [key]);
       return new Response(null, { status: 204 });
     case 'POST':
       if (q.has('uploads')) {
         r.op = 'CreateMultipartUpload';
+        noConditions(r);
         const up = await createUpload(
           r.ctx,
           auth.account,
@@ -1061,6 +1128,7 @@ async function objectOp(r: Req): Promise<Response> {
       }
       if (q.has('uploadId')) {
         r.op = 'CompleteMultipartUpload';
+        const condition = writeCondition(r.raw.headers);
         const xml = await readSmallBody(r);
         const parts = xmlElements(xml, 'Part').map((p) => ({
           partNumber: Number(xmlText(p, 'PartNumber')),
@@ -1081,6 +1149,7 @@ async function objectOp(r: Req): Promise<Response> {
           key,
           q.get('uploadId')!,
           parts,
+          condition,
         );
         const origin = r.ctx.env.S3_ORIGIN!;
         return xmlResponse(
