@@ -46,7 +46,7 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 
 | ID  | Fitur                                                              | Jenis       | Ukuran | Butuh dulu | Status            |
 | --- | ------------------------------------------------------------------ | ----------- | ------ | ---------- | ----------------- |
-| S1  | Key dengan izin terbatas (bucket, prefix, baca/tulis, kedaluwarsa) | Wajib       | M      | –          | belum             |
+| S1  | Key dengan izin terbatas (bucket, prefix, baca/tulis, kedaluwarsa) | Wajib       | M      | –          | selesai (ADR-071) |
 | S2  | Tulis bersyarat `If-None-Match` / `If-Match` (sekarang diabaikan)  | Wajib (bug) | S      | –          | selesai (ADR-068) |
 | S3  | Lifecycle: hapus otomatis, batalkan multipart menggantung          | Wajib       | M      | –          | belum             |
 | S4  | Upload multipart dari halaman `/s3`                                | Sisa        | S      | –          | belum             |

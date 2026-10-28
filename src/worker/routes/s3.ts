@@ -14,6 +14,7 @@ import { checkS3Url, releaseS3Url } from '../services/s3-urls';
 import { activeAccount, s3Call } from '../services/s3-app';
 import { bucketStats, MAX_LOG_PREFIX, setBucketLogging } from '../services/s3-stats';
 import type { AppBindings } from '../types';
+import { S3KeyCreate } from './v1-schemas';
 
 const bucketName = z.string().min(3).max(63);
 const objectKey = z.string().min(1).max(1024);
@@ -29,18 +30,12 @@ const corsRule = z.object({
 export const s3 = new Hono<AppBindings>()
   .use('*', requireUser)
   .get('/', async (c) => c.json(await s3Overview(c.get('ctx'), c.get('user')!.id)))
-  .post(
-    '/keys',
-    validate('json', z.object({ label: z.string().max(60).default('') })),
-    async (c) => {
-      const ctx = c.get('ctx');
-      await activeAccount(ctx, c.get('user')!.id);
-      return c.json(
-        { key: await createKey(ctx, c.get('user')!.id, c.req.valid('json').label) },
-        201,
-      );
-    },
-  )
+  .post('/keys', validate('json', S3KeyCreate), async (c) => {
+    const ctx = c.get('ctx');
+    await activeAccount(ctx, c.get('user')!.id);
+    const { label, ...scope } = c.req.valid('json');
+    return c.json({ key: await createKey(ctx, c.get('user')!.id, label, scope) }, 201);
+  })
   .delete('/keys/:id', async (c) => {
     await revokeKey(c.get('ctx'), c.get('user')!.id, c.req.param('id'));
     return c.body(null, 204);

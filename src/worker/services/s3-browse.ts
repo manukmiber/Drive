@@ -1,12 +1,12 @@
 // The /s3 page's own view of a bucket (ADR-055): list one folder level, a time-limited link to an
-// object (an ordinary presigned URL, signed with the account's newest access key), delete, and
+// object (an ordinary presigned URL, signed with an access key of the account that may read it), delete, and
 // upload a file through the app. Everything here is the signed-in owner's, through /api/s3.
 import type { Ctx } from '../context';
 import { contentDisposition } from '../lib/http';
 import { AppError } from '../lib/errors';
 import { awsEncode, presignUrl } from '../lib/s3-sigv4';
 import { base64UrlDecode, base64UrlEncode } from '../lib/crypto';
-import { lookupKey, ownBucket, S3_REGION, type S3Account } from './s3';
+import { listKeys, lookupKey, ownBucket, S3_REGION, type S3Account } from './s3';
 import {
   deleteObjects,
   getObjectRow,
@@ -80,17 +80,31 @@ export async function browseObjects(
   };
 }
 
-/** The key presigned links are signed with: the newest one that is not revoked. */
-async function signingKeyOf(ctx: Ctx, userId: string): Promise<{ id: string; secret: string }> {
-  const row = await ctx.env.DB.prepare(
-    `SELECT id FROM s3_keys WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1`,
-  )
-    .bind(userId)
-    .first<{ id: string }>();
-  const key = row ? await lookupKey(ctx, row.id) : null;
-  if (!row || !key || key.revoked)
-    throw new AppError('CONFLICT', 'make an access key first', { reason: 's3_no_key' });
-  return { id: row.id, secret: key.secret };
+/**
+ * The key a link to this object is signed with (ADR-071): one whose scope may read it, never-expiring
+ * keys first, then the one that lasts longest, then the newest. A link can't outlive its key.
+ */
+async function signingKeyOf(
+  ctx: Ctx,
+  userId: string,
+  bucket: string,
+  objectKey: string,
+): Promise<{ id: string; secret: string; expiresAt: number | null }> {
+  const now = ctx.now();
+  const usable = (await listKeys(ctx, userId))
+    .filter((k) => k.access !== 'w' && (k.expiresAt === null || k.expiresAt > now + 60_000))
+    .filter((k) => !k.buckets || k.buckets.includes(bucket))
+    .filter((k) => k.prefix === null || objectKey.startsWith(k.prefix))
+    .sort(
+      (a, b) => (b.expiresAt ?? Infinity) - (a.expiresAt ?? Infinity) || b.createdAt - a.createdAt,
+    );
+  for (const k of usable) {
+    const found = await lookupKey(ctx, k.id);
+    if (found && !found.revoked) return { id: k.id, secret: found.secret, expiresAt: k.expiresAt };
+  }
+  throw new AppError('CONFLICT', 'make an access key that may read this object first', {
+    reason: 's3_no_key',
+  });
 }
 
 export async function objectLink(
@@ -108,8 +122,13 @@ export async function objectLink(
     throw new AppError('NOT_FOUND', 'no such object');
   if (!ctx.env.S3_ORIGIN) throw new AppError('FORBIDDEN', 'Zeiko S3 is not available');
   const cfg = await ctx.config();
-  const seconds = Math.max(60, Math.min(cfg.s3_link_max_seconds, Math.floor(expiresSeconds)));
-  const signer = await signingKeyOf(ctx, account.userId);
+  const signer = await signingKeyOf(ctx, account.userId, bucket, key);
+  const keyLeft =
+    signer.expiresAt === null ? Infinity : Math.floor((signer.expiresAt - ctx.now()) / 1000);
+  const seconds = Math.max(
+    60,
+    Math.min(cfg.s3_link_max_seconds, keyLeft, Math.floor(expiresSeconds)),
+  );
   const url = new URL(`${ctx.env.S3_ORIGIN}/${awsEncode(bucket, false)}/${awsEncode(key, true)}`);
   if (download) {
     const name = key.slice(key.lastIndexOf('/') + 1) || key;

@@ -21,7 +21,7 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { SUPPORT_CONTACT } from '../../shared/constants';
 import { formatBytes, formatDate, formatRupiah } from '../../shared/format';
 import { Button } from '../components/Button';
-import { Dialog, PromptDialog } from '../components/ui/Dialog';
+import { Dialog } from '../components/ui/Dialog';
 import { toast } from '../components/ui/Toast';
 import { api, ApiError, postJson, sendJson } from '../lib/api';
 import { t } from '../lib/i18n';
@@ -37,6 +37,200 @@ interface S3Key {
   label: string;
   createdAt: number;
   lastUsedAt: number | null;
+  /** ADR-071: what the key may touch. */
+  buckets: string[] | null;
+  prefix: string | null;
+  access: 'rw' | 'r' | 'w';
+  expiresAt: number | null;
+}
+
+interface KeyRequest {
+  label: string;
+  buckets: string[] | null;
+  prefix: string | null;
+  access: 'rw' | 'r' | 'w';
+  expiresAt: number | null;
+}
+
+/** One line saying what a key may touch. */
+function keyScopeText(k: S3Key): string {
+  const parts: string[] = [];
+  if (k.buckets) parts.push(t.s3.keyScopeBuckets(k.buckets.join(', ')));
+  if (k.prefix) parts.push(t.s3.keyScopePrefix(k.prefix));
+  if (k.access !== 'rw') parts.push(k.access === 'r' ? t.s3.keyAccessR : t.s3.keyAccessW);
+  if (k.expiresAt !== null)
+    parts.push(
+      k.expiresAt <= Date.now()
+        ? t.s3.keyScopeExpired
+        : t.s3.keyScopeExpires(formatDate(k.expiresAt)),
+    );
+  return parts.length ? parts.join(' · ') : t.s3.keyScopeAll;
+}
+
+/** Making a key (ADR-071): a name, and optionally which buckets, a prefix, read/write, an end date. */
+function KeyDialog({
+  open,
+  buckets,
+  onCancel,
+  onSubmit,
+}: {
+  open: boolean;
+  buckets: string[];
+  onCancel: () => void;
+  onSubmit: (req: KeyRequest) => void;
+}) {
+  const [label, setLabel] = useState('');
+  const [some, setSome] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [prefix, setPrefix] = useState('');
+  const [access, setAccess] = useState<'rw' | 'r' | 'w'>('rw');
+  const [until, setUntil] = useState('');
+  const [dated, setDated] = useState(false);
+  const today = new Date();
+  const minDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const ok = (!some || picked.length > 0) && (!dated || until !== '');
+  const field =
+    'mt-1 w-full rounded-xl border border-[var(--border)] bg-transparent px-3 py-2 text-sm text-[var(--fg)]';
+  function reset() {
+    setLabel('');
+    setSome(false);
+    setPicked([]);
+    setPrefix('');
+    setAccess('rw');
+    setUntil('');
+    setDated(false);
+  }
+  return (
+    <Dialog
+      open={open}
+      title={t.s3.newKey}
+      onClose={() => {
+        reset();
+        onCancel();
+      }}
+      footer={
+        <Button
+          disabled={!ok}
+          onClick={() => {
+            onSubmit({
+              label: label.trim(),
+              buckets: some ? picked : null,
+              prefix: prefix.trim() || null,
+              access,
+              // The end of the chosen day, on this device's clock.
+              expiresAt: dated && until ? new Date(`${until}T23:59:59`).getTime() : null,
+            });
+            reset();
+          }}
+        >
+          {t.s3.newKey}
+        </Button>
+      }
+    >
+      <label className="block text-xs text-[var(--fg-muted)]">
+        {t.s3.keyName}
+        <input
+          value={label}
+          maxLength={60}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder={t.s3.keyNamePlaceholder}
+          className={field}
+        />
+      </label>
+      <fieldset className="mt-3">
+        <legend className="text-xs text-[var(--fg-muted)]">{t.s3.keyBuckets}</legend>
+        <div className="mt-1 flex flex-wrap gap-3 text-sm">
+          <label className="flex items-center gap-1">
+            <input type="radio" checked={!some} onChange={() => setSome(false)} />
+            {t.s3.keyAllBuckets}
+          </label>
+          <label className="flex items-center gap-1">
+            <input
+              type="radio"
+              checked={some}
+              disabled={buckets.length === 0}
+              onChange={() => setSome(true)}
+            />
+            {t.s3.keySomeBuckets}
+          </label>
+        </div>
+        {some && (
+          <div className="mt-2 flex max-h-36 flex-col gap-1 overflow-y-auto rounded-xl border border-[var(--border)] p-2 text-sm">
+            {buckets.map((b) => (
+              <label key={b} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={picked.includes(b)}
+                  onChange={(e) =>
+                    setPicked((cur) =>
+                      e.target.checked ? [...cur, b] : cur.filter((x) => x !== b),
+                    )
+                  }
+                />
+                <span className="break-all">{b}</span>
+              </label>
+            ))}
+          </div>
+        )}
+        {some && picked.length === 0 && (
+          <p className="mt-1 text-xs text-amber-700">{t.s3.keyPickBucket}</p>
+        )}
+      </fieldset>
+      <label className="mt-3 block text-xs text-[var(--fg-muted)]">
+        {t.s3.keyPrefix}
+        <input
+          value={prefix}
+          maxLength={512}
+          onChange={(e) => setPrefix(e.target.value.replace(/^\/+/, ''))}
+          spellCheck={false}
+          autoCapitalize="none"
+          placeholder="foto/"
+          className={field}
+        />
+        <span className="mt-1 block">{t.s3.keyPrefixHint}</span>
+      </label>
+      <fieldset className="mt-3">
+        <legend className="text-xs text-[var(--fg-muted)]">{t.s3.keyAccess}</legend>
+        <div className="mt-1 flex flex-wrap gap-3 text-sm">
+          {(
+            [
+              ['rw', t.s3.keyAccessRw],
+              ['r', t.s3.keyAccessR],
+              ['w', t.s3.keyAccessW],
+            ] as const
+          ).map(([v, name]) => (
+            <label key={v} className="flex items-center gap-1">
+              <input type="radio" checked={access === v} onChange={() => setAccess(v)} />
+              {name}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="mt-3">
+        <legend className="text-xs text-[var(--fg-muted)]">{t.s3.keyExpiry}</legend>
+        <div className="mt-1 flex flex-wrap items-center gap-3 text-sm">
+          <label className="flex items-center gap-1">
+            <input type="radio" checked={!dated} onChange={() => setDated(false)} />
+            {t.s3.keyNoExpiry}
+          </label>
+          <label className="flex items-center gap-1">
+            <input type="radio" checked={dated} onChange={() => setDated(true)} />
+            {t.s3.keyUntil}
+          </label>
+          {dated && (
+            <input
+              type="date"
+              min={minDate}
+              value={until}
+              onChange={(e) => setUntil(e.target.value)}
+              className="rounded-xl border border-[var(--border)] bg-transparent px-3 py-1.5 text-sm text-[var(--fg)]"
+            />
+          )}
+        </div>
+      </fieldset>
+      <p className="mt-3 text-xs text-[var(--fg-muted)]">{t.s3.keyFullHint}</p>
+    </Dialog>
+  );
 }
 
 interface CorsRule {
@@ -796,10 +990,10 @@ function S3Page() {
     }
   }
 
-  async function createKey(label: string) {
+  async function createKey(req: KeyRequest) {
     setNaming(false);
     await run(async () => {
-      const r = await postJson<{ key: { id: string; secret: string } }>('/api/s3/keys', { label });
+      const r = await postJson<{ key: { id: string; secret: string } }>('/api/s3/keys', req);
       setCreated({ id: r.key.id, secret: r.key.secret });
     });
   }
@@ -955,6 +1149,7 @@ function S3Page() {
                   <p className="text-xs text-[var(--fg-muted)]">
                     {[
                       k.label,
+                      keyScopeText(k),
                       t.s3.created(formatDate(k.createdAt)),
                       k.lastUsedAt ? t.s3.lastUsed(formatDate(k.lastUsedAt)) : t.s3.neverUsed,
                     ]
@@ -1150,13 +1345,11 @@ force_path_style = true`}
 
       {terms}
 
-      <PromptDialog
+      <KeyDialog
         open={naming}
-        title={t.s3.keyLabel}
-        initial=""
-        confirmLabel={t.s3.newKey}
+        buckets={d.buckets.map((b) => b.name)}
         onCancel={() => setNaming(false)}
-        onSubmit={(label) => void createKey(label)}
+        onSubmit={(req) => void createKey(req)}
       />
       <Dialog open={created !== null} title={t.s3.keyCreatedTitle} onClose={() => setCreated(null)}>
         {created && (

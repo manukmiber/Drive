@@ -161,6 +161,43 @@ function sealKey(env: Env): string {
   return env.S3_KEYS_ENC_KEY;
 }
 
+/** What a key may touch (ADR-071). The defaults (all null, 'rw') are a full-access key. */
+export type KeyAccess = 'rw' | 'r' | 'w';
+
+export interface KeyScope {
+  /** Bucket names it may use; null = every bucket of the account. */
+  buckets: string[] | null;
+  /** Object keys it may use start with this; null = every key. */
+  prefix: string | null;
+  access: KeyAccess;
+  /** ms UTC; null = never. */
+  expiresAt: number | null;
+}
+
+export const FULL_SCOPE: KeyScope = { buckets: null, prefix: null, access: 'rw', expiresAt: null };
+
+/** A key limited by bucket, prefix or access: it may not create, delete or configure buckets. */
+export function isRestricted(scope: KeyScope): boolean {
+  return scope.buckets !== null || scope.prefix !== null || scope.access !== 'rw';
+}
+
+interface ScopeColumns {
+  buckets_json: string | null;
+  prefix: string | null;
+  access: string | null;
+  expires_at: number | null;
+}
+
+function scopeOf(row: ScopeColumns): KeyScope {
+  let buckets: string[] | null = null;
+  if (row.buckets_json !== null) {
+    const v: unknown = JSON.parse(row.buckets_json);
+    buckets = Array.isArray(v) ? v.filter((b): b is string => typeof b === 'string') : [];
+  }
+  const access = row.access === 'r' || row.access === 'w' ? row.access : 'rw';
+  return { buckets, prefix: row.prefix || null, access, expiresAt: row.expires_at };
+}
+
 export interface KeyLookup {
   userId: string;
   secret: string;
@@ -169,6 +206,7 @@ export interface KeyLookup {
   userStatus: string;
   indexBinding: string | null;
   lastUsedAt: number | null;
+  scope: KeyScope;
 }
 
 const KEY_CACHE_MS = 15_000;
@@ -183,21 +221,23 @@ export async function lookupKey(ctx: Ctx, accessKeyId: string): Promise<KeyLooku
   const hit = keyCache.get(accessKeyId);
   if (hit && Date.now() - hit.at < KEY_CACHE_MS) return hit.value;
   const row = await ctx.env.DB.prepare(
-    `SELECT k.user_id, k.secret_enc, k.revoked_at, k.last_used_at, a.status AS account_status,
-            a.index_binding, u.status AS user_status
+    `SELECT k.user_id, k.secret_enc, k.revoked_at, k.last_used_at, k.buckets_json, k.prefix, k.access,
+            k.expires_at, a.status AS account_status, a.index_binding, u.status AS user_status
      FROM s3_keys k JOIN s3_accounts a ON a.user_id = k.user_id JOIN users u ON u.id = k.user_id
      WHERE k.id = ?1`,
   )
     .bind(accessKeyId)
-    .first<{
-      user_id: string;
-      secret_enc: string;
-      revoked_at: number | null;
-      last_used_at: number | null;
-      account_status: S3AccountStatus;
-      index_binding: string | null;
-      user_status: string;
-    }>();
+    .first<
+      ScopeColumns & {
+        user_id: string;
+        secret_enc: string;
+        revoked_at: number | null;
+        last_used_at: number | null;
+        account_status: S3AccountStatus;
+        index_binding: string | null;
+        user_status: string;
+      }
+    >();
   const value: KeyLookup | null = row
     ? {
         userId: row.user_id,
@@ -207,6 +247,7 @@ export async function lookupKey(ctx: Ctx, accessKeyId: string): Promise<KeyLooku
         userStatus: row.user_status,
         indexBinding: row.index_binding,
         lastUsedAt: row.last_used_at,
+        scope: scopeOf(row),
       }
     : null;
   if (keyCache.size > 2000) keyCache.clear();
@@ -230,7 +271,7 @@ export async function touchKey(ctx: Ctx, accessKeyId: string, key: KeyLookup): P
     .run();
 }
 
-export interface KeyDto {
+export interface KeyDto extends KeyScope {
   id: string;
   label: string;
   createdAt: number;
@@ -239,12 +280,51 @@ export interface KeyDto {
 
 export async function listKeys(ctx: Ctx, userId: string): Promise<KeyDto[]> {
   const { results } = await ctx.env.DB.prepare(
-    `SELECT id, label, created_at AS createdAt, last_used_at AS lastUsedAt FROM s3_keys
+    `SELECT id, label, created_at, last_used_at, buckets_json, prefix, access, expires_at FROM s3_keys
      WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at`,
   )
     .bind(userId)
-    .all<KeyDto>();
-  return results;
+    .all<
+      ScopeColumns & { id: string; label: string; created_at: number; last_used_at: number | null }
+    >();
+  return results.map((r) => ({
+    id: r.id,
+    label: r.label,
+    createdAt: r.created_at,
+    lastUsedAt: r.last_used_at,
+    ...scopeOf(r),
+  }));
+}
+
+export interface KeyScopeInput {
+  buckets?: string[] | null | undefined;
+  prefix?: string | null | undefined;
+  access?: KeyAccess | undefined;
+  expiresAt?: number | null | undefined;
+}
+
+/** A scope asked for when making a key: its buckets must be the account's own, its date in the future. */
+async function checkScope(ctx: Ctx, userId: string, input: KeyScopeInput): Promise<KeyScope> {
+  let buckets: string[] | null = null;
+  if (input.buckets) {
+    buckets = [...new Set(input.buckets)].sort();
+    if (buckets.length === 0)
+      throw new AppError('VALIDATION', 'pick at least one bucket', { field: 'buckets' });
+    for (const b of buckets)
+      if ((await getBucket(ctx, b))?.user_id !== userId)
+        throw new AppError('NOT_FOUND', 'no such bucket', { field: 'buckets', bucket: b });
+  }
+  let prefix: string | null = null;
+  if (input.prefix) {
+    prefix = input.prefix;
+    const control = [...prefix].some((ch) => ch.charCodeAt(0) < 0x20 || ch === '\u007f');
+    if (prefix.startsWith('/') || new TextEncoder().encode(prefix).length > 512 || control)
+      throw new AppError('VALIDATION', 'bad prefix', { field: 'prefix' });
+  }
+  const expiresAt = input.expiresAt ?? null;
+  if (expiresAt !== null && expiresAt <= ctx.now())
+    throw new AppError('VALIDATION', 'the expiry date has passed', { field: 'expiresAt' });
+  return { buckets, prefix, access: input.access ?? 'rw', expiresAt };
 }
 
 function requireActive(account: S3Account | null): S3Account {
@@ -262,24 +342,44 @@ export async function createKey(
   ctx: Ctx,
   userId: string,
   label: string,
+  scopeInput: KeyScopeInput = {},
 ): Promise<KeyDto & { secret: string }> {
   requireActive(await getAccount(ctx, userId));
+  const scope = await checkScope(ctx, userId, scopeInput);
   const cfg = await ctx.config();
   const id = newAccessKeyId();
   const secret = randomBase62(40);
   const sealed = await aesGcmEncrypt(sealKey(ctx.env), secret);
   const now = ctx.now();
   const r = await ctx.env.DB.prepare(
-    `INSERT INTO s3_keys (id, user_id, label, secret_enc, created_at)
-     SELECT ?1, ?2, ?3, ?4, ?5
+    `INSERT INTO s3_keys (id, user_id, label, secret_enc, created_at, buckets_json, prefix, access, expires_at)
+     SELECT ?1, ?2, ?3, ?4, ?5, ?7, ?8, ?9, ?10
      WHERE (SELECT COUNT(*) FROM s3_keys WHERE user_id = ?2 AND revoked_at IS NULL) < ?6`,
   )
-    .bind(id, userId, label.trim().slice(0, 60), sealed, now, cfg.s3_max_keys_per_account)
+    .bind(
+      id,
+      userId,
+      label.trim().slice(0, 60),
+      sealed,
+      now,
+      cfg.s3_max_keys_per_account,
+      scope.buckets ? JSON.stringify(scope.buckets) : null,
+      scope.prefix,
+      scope.access,
+      scope.expiresAt,
+    )
     .run();
   if (r.meta.changes === 0)
     throw new AppError('CONFLICT', 'too many access keys', { max: cfg.s3_max_keys_per_account });
-  await audit(ctx, userId, 's3.key_created', 's3_key', id, { label });
-  return { id, label: label.trim().slice(0, 60), createdAt: now, lastUsedAt: null, secret };
+  await audit(ctx, userId, 's3.key_created', 's3_key', id, { label, ...scope });
+  return {
+    id,
+    label: label.trim().slice(0, 60),
+    createdAt: now,
+    lastUsedAt: null,
+    ...scope,
+    secret,
+  };
 }
 
 export async function revokeKey(ctx: Ctx, userId: string, keyId: string): Promise<void> {

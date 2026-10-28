@@ -1811,3 +1811,36 @@ Tanggal: 2026-10-28. Status: diterima.
   ke Zeiko Hosting. Teks lain tetap kata per kata.
 - **S7 (website statis di domain sendiri) dibatalkan.** `website` tetap di `UNSUPPORTED_SUB` (`NotImplemented`), dan
   objek tetap dilayani dengan `Content-Security-Policy: sandbox` (ADR-044).
+
+## ADR-071 — Zeiko S3: key dengan izin terbatas (S1)
+
+Tanggal: 2026-10-28. Status: diterima.
+
+**Yang dibangun.** Saat membuat key (halaman `/s3`, `POST /api/s3/keys`, `POST /api/v1/s3/keys`) bisa dipilih: semua
+bucket atau daftar bucket tertentu, satu prefix opsional, izin baca+tulis / baca saja / tulis saja, dan tanggal
+kedaluwarsa. Migrasi `0018_s3_key_scopes.sql` menambah `buckets_json`, `prefix`, `access`, `expires_at` di `s3_keys`;
+nilai kosong (`NULL`, `'rw'`) = tanpa batas, jadi key lama tetap akses penuh.
+
+**Aturan** (`permit`/`scopeAllows` di `routes/s3-api.ts`):
+
+- Tiap operasi butuh `any` (bucket dalam cakupan: HeadBucket, GetBucketLocation/Versioning), `read` (Get/HeadObject,
+  ListObjects, GetBucketAcl/Cors/Logging, sumber CopyObject/UploadPartCopy), `write` (Put, multipart termasuk ListParts
+  dan ListMultipartUploads, Delete, DeleteObjects), atau `manage` (CreateBucket, DeleteBucket, PutBucketAcl,
+  Put/DeleteBucketCors, PutBucketLogging). `manage` hanya untuk key tanpa batas apa pun.
+- Di luar izin → `AccessDenied` (403). Bucket di luar cakupan ditolak sebelum dicek ada atau tidak, jadi key tidak bisa
+  menebak nama bucket lain.
+- ListBuckets hanya menampilkan bucket dalam cakupan. Key ber-prefix hanya boleh List dengan `prefix` yang diawali
+  prefix key; DeleteObjects menolak per objek (error `AccessDenied` di `DeleteResult`) untuk key di luar prefix.
+- Presigned URL lewat jalur autentikasi yang sama, jadi ikut aturan yang sama. Key kedaluwarsa → `InvalidAccessKeyId`
+  (dicek tiap request; cache `lookupKey` 15 detik tidak menunda kedaluwarsa).
+- Bucket di cakupan harus milik akun saat key dibuat (404 kalau bukan); prefix tidak boleh diawali `/`, maks 512 byte,
+  tanpa karakter kontrol; tanggal harus di masa depan.
+
+**Link di `/s3`** (`services/s3-browse.ts`) ditandatangani key yang boleh membaca objek itu: key tanpa kedaluwarsa
+dulu, lalu yang paling lama berlaku, lalu yang terbaru. Umur link tidak melebihi sisa umur key-nya. Tidak ada key yang
+cocok → 409 `s3_no_key`. Tidak dibuat key internal tersembunyi.
+
+**Tidak dibangun:** kebijakan bucket (bucket policy) dan banyak prefix per key; mengubah cakupan key yang sudah ada
+(cabut lalu buat baru).
+
+Test: `tests/integration/s3-key-scope.test.ts`.

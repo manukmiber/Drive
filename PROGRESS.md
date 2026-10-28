@@ -257,6 +257,11 @@ lewat fase R di `docs/ROADMAP.md`.
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Key S3 dengan izin terbatas (S1, ADR-071, 2026-10-28)
+- [x] Bucket tertentu, prefix, baca/tulis/baca saja/tulis saja, kedaluwarsa; key lama tetap akses penuh. Kelola bucket
+  hanya dengan key tanpa batas; ListBuckets terfilter; presigned URL ikut aturan; link `/s3` pakai key yang boleh baca.
+- [ ] Pemilik: migrasi `0018` di D1 remote, deploy.
+
 ## Tulis bersyarat S3 (S2, ADR-068, 2026-10-28)
 - [x] `If-None-Match: *` dan `If-Match` di PutObject, CopyObject (tujuan), CompleteMultipartUpload; dicek di batch D1
   yang sama dengan commit index (dua penulis: tepat satu menang). Multipart yang kalah di tengah complete → 409

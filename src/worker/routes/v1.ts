@@ -628,13 +628,14 @@ export const ENDPOINTS: readonly Op[] = [
       tag: 'Zeiko S3',
       summary: 'Make an access key pair; the secret is in this answer only',
       idempotent: true,
-      body: z.object({ label: z.string().max(60).default('') }),
+      body: S.S3KeyCreate,
       responses: { 201: z.object({ key: S.S3Key.extend({ secret: z.string() }) }) },
     },
     async (c, { body }) => {
       const ctx = c.get('ctx');
       await activeAccount(ctx, userId(c));
-      return c.json({ key: await createKey(ctx, userId(c), body.label) }, 201);
+      const { label, ...scope } = body;
+      return c.json({ key: await createKey(ctx, userId(c), label, scope) }, 201);
     },
   ),
   op(

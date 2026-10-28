@@ -57,6 +57,7 @@ import {
   createBucket,
   getAccount,
   getBucket,
+  isRestricted,
   listBuckets,
   lookupKey,
   ownBucket,
@@ -66,6 +67,7 @@ import {
   setBucketPublic,
   touchKey,
   type BucketRow,
+  type KeyScope,
   type S3Account,
 } from '../services/s3';
 import {
@@ -149,6 +151,8 @@ interface Auth {
   account: S3Account;
   parsed: ParsedAuth;
   verified: VerifiedSignature;
+  /** What this key may touch (ADR-071). */
+  scope: KeyScope;
 }
 
 interface Req {
@@ -211,6 +215,8 @@ async function authenticate(
       'InvalidAccessKeyId',
       'The AWS Access Key Id you provided does not exist in our records.',
     );
+  if (key.scope.expiresAt !== null && Date.now() >= key.scope.expiresAt)
+    throw new S3Error('InvalidAccessKeyId', 'The AWS Access Key Id you provided has expired.');
   const verified = await verifySignature(
     req.method,
     url,
@@ -237,12 +243,40 @@ async function authenticate(
   )
     throw new S3Error('AccountProblem', 'Uploads are paused until the Zeiko S3 bill is paid.');
   await touchKey(ctx, parsed.accessKeyId, key);
-  return { accessKeyId: parsed.accessKeyId, userId: key.userId, account, parsed, verified };
+  return {
+    accessKeyId: parsed.accessKeyId,
+    userId: key.userId,
+    account,
+    parsed,
+    verified,
+    scope: key.scope,
+  };
 }
 
 function needAuth(r: Req): Auth {
   if (!r.auth) throw new S3Error('AccessDenied', 'Access Denied');
   return r.auth;
+}
+
+/**
+ * What an operation needs from the key (ADR-071): `any` = only that the bucket is in its scope,
+ * `manage` = a key with no limit at all (creating, deleting and configuring buckets).
+ */
+type Need = 'any' | 'read' | 'write' | 'manage';
+
+function scopeAllows(scope: KeyScope, need: Need, bucket: string | null, key?: string): boolean {
+  if (need === 'manage') return !isRestricted(scope);
+  if (bucket !== null && scope.buckets && !scope.buckets.includes(bucket)) return false;
+  if (need === 'read' && scope.access === 'w') return false;
+  if (need === 'write' && scope.access === 'r') return false;
+  if (key !== undefined && scope.prefix !== null && !key.startsWith(scope.prefix)) return false;
+  return true;
+}
+
+/** Refuses a signed request its key's scope doesn't cover; `key` = an object key or a list prefix. */
+function permit(r: Req, need: Need, bucket: string | null, key?: string): void {
+  if (r.auth && !scopeAllows(r.auth.scope, need, bucket, key))
+    throw new S3Error('AccessDenied', 'Access Denied');
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -452,7 +486,10 @@ function owner(userId: string): XmlObject {
 async function listAllBuckets(r: Req): Promise<Response> {
   const auth = needAuth(r);
   r.op = 'ListBuckets';
-  const buckets = await listBuckets(r.ctx, auth.userId);
+  const scope = auth.scope.buckets;
+  const buckets = (await listBuckets(r.ctx, auth.userId)).filter(
+    (b) => !scope || scope.includes(b.name),
+  );
   return xmlResponse(
     xmlDoc('ListAllMyBucketsResult', {
       Owner: owner(auth.userId),
@@ -499,6 +536,7 @@ async function listBucket(r: Req, bucket: BucketRow): Promise<Response> {
     throw new S3Error('InvalidArgument', 'Invalid Encoding Method specified in Request');
   const enc = (s: string) => (encoding === 'url' ? urlEncodeS3(s) : s);
   const prefix = q.get('prefix') ?? '';
+  permit(r, 'read', bucket.name, prefix);
   const delimiter = q.get('delimiter') ?? '';
   const maxKeys = maxParam(q, 'max-keys', 1000, 1000);
   const token = v2 ? q.get('continuation-token') : undefined;
@@ -583,6 +621,7 @@ async function bucketOp(r: Req): Promise<Response> {
     if (sub)
       throw new S3Error('NotImplemented', `The ${sub} configuration is not supported by Zeiko S3.`);
     r.op = 'CreateBucket';
+    permit(r, 'manage', name);
     await readSmallBody(r); // CreateBucketConfiguration (a location) is accepted and ignored
     await createBucket(
       r.ctx,
@@ -592,6 +631,7 @@ async function bucketOp(r: Req): Promise<Response> {
     );
     return new Response(null, { status: 200, headers: { Location: `/${name}` } });
   }
+  permit(r, 'any', name);
   const bucket = await ownBucket(r.ctx, auth.userId, name);
   r.stats = bucket;
   if (sub)
@@ -604,10 +644,12 @@ async function bucketOp(r: Req): Promise<Response> {
       return new Response(null, { status: 200, headers: { 'x-amz-bucket-region': S3_REGION } });
     case 'DELETE':
       r.op = 'DeleteBucket';
+      permit(r, 'manage', name);
       await deleteBucket(r.ctx, auth.account, name);
       return new Response(null, { status: 204 });
     case 'PUT': {
       r.op = 'PutBucketAcl';
+      permit(r, 'manage', name);
       const header = aclPublic(r.raw.headers.get('x-amz-acl'));
       const body = header === null ? await readSmallBody(r) : '';
       await setBucketPublic(r.ctx, auth.userId, name, header ?? body.includes('/global/AllUsers'));
@@ -620,6 +662,7 @@ async function bucketOp(r: Req): Promise<Response> {
           'The specified method is not allowed against this resource.',
         );
       r.op = 'DeleteObjects';
+      permit(r, 'write', name);
       return deleteMany(r, bucket);
     }
     case 'GET':
@@ -635,6 +678,7 @@ async function bucketOp(r: Req): Promise<Response> {
       }
       if (q.has('acl')) {
         r.op = 'GetBucketAcl';
+        permit(r, 'read', name);
         return bucketAcl(auth.userId, Boolean(bucket.public));
       }
       if (q.has('uploads')) {
@@ -656,6 +700,7 @@ async function corsOp(r: Req, bucket: BucketRow): Promise<Response> {
   switch (r.method) {
     case 'GET': {
       r.op = 'GetBucketCors';
+      permit(r, 'read', bucket.name);
       const rules = bucketCors(bucket);
       if (!rules)
         throw new S3Error('NoSuchCORSConfiguration', 'The CORS configuration does not exist', {
@@ -665,10 +710,12 @@ async function corsOp(r: Req, bucket: BucketRow): Promise<Response> {
     }
     case 'PUT':
       r.op = 'PutBucketCors';
+      permit(r, 'manage', bucket.name);
       await setBucketCors(r.ctx, auth.userId, bucket.name, parseCorsXml(await readSmallBody(r)));
       return new Response(null, { status: 200 });
     case 'DELETE':
       r.op = 'DeleteBucketCors';
+      permit(r, 'manage', bucket.name);
       await setBucketCors(r.ctx, auth.userId, bucket.name, null);
       return new Response(null, { status: 204 });
     default:
@@ -685,9 +732,11 @@ async function loggingOp(r: Req, bucket: BucketRow): Promise<Response> {
   switch (r.method) {
     case 'GET':
       r.op = 'GetBucketLogging';
+      permit(r, 'read', bucket.name);
       return xmlResponse(loggingXml(bucketLogging(bucket)));
     case 'PUT':
       r.op = 'PutBucketLogging';
+      permit(r, 'manage', bucket.name);
       await setBucketLogging(
         r.ctx,
         auth.userId,
@@ -753,6 +802,8 @@ async function deleteMany(r: Req, bucket: BucketRow): Promise<Response> {
     const key = xmlText(o, 'Key') ?? '';
     try {
       validateKey(key);
+      if (!scopeAllows(auth.scope, 'write', bucket.name, key))
+        throw new S3Error('AccessDenied', 'Access Denied');
       // A per-object condition must not be skipped silently (ADR-068).
       const cond = ['ETag', 'LastModifiedTime', 'Size'].find((t) => xmlText(o, t) !== null);
       if (cond)
@@ -779,6 +830,7 @@ async function listMultipart(r: Req, bucket: BucketRow): Promise<Response> {
   const auth = needAuth(r);
   const q = r.query;
   const prefix = q.get('prefix') ?? '';
+  permit(r, 'write', bucket.name, prefix);
   const keyMarker = q.get('key-marker') ?? '';
   const max = maxParam(q, 'max-uploads', 1000, 1000);
   const { uploads, truncated } = await listUploads(
@@ -933,6 +985,8 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
     if (copySource) {
       r.op = 'UploadPartCopy';
       noConditions(r);
+      const from = parseCopySource(copySource);
+      permit(r, 'read', from.bucket, from.key);
       const res = await copyPart(
         r.ctx,
         auth.account,
@@ -940,7 +994,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
         key,
         uploadId,
         partNumber,
-        parseCopySource(copySource),
+        from,
         h.get('x-amz-copy-source-range'),
         sourceConditions(h),
       );
@@ -970,11 +1024,13 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
   }
   if (copySource) {
     r.op = 'CopyObject';
+    const from = parseCopySource(copySource);
+    permit(r, 'read', from.bucket, from.key);
     const directive = (h.get('x-amz-metadata-directive') ?? 'COPY').toUpperCase();
     if (directive !== 'COPY' && directive !== 'REPLACE')
       throw new S3Error('InvalidArgument', 'Unknown metadata directive.');
     const row = await copyObject(r.ctx, auth.account, {
-      from: parseCopySource(copySource),
+      from,
       to: { bucket: bucket.name, key },
       replace: directive === 'REPLACE',
       contentType: h.get('content-type'),
@@ -1043,6 +1099,9 @@ async function objectOp(r: Req): Promise<Response> {
   if (bucket.user_id !== auth.userId) throw new S3Error('AccessDenied', 'Access Denied');
   r.stats = bucket;
   const key = r.key!;
+  // Reading is GET/HEAD of the object (or its ACL); everything else, ListParts included, is writing.
+  const reading = (r.method === 'GET' || r.method === 'HEAD') && !q.has('uploadId');
+  permit(r, reading ? 'read' : 'write', bucket.name, key);
   switch (r.method) {
     case 'GET':
       if (q.has('acl')) {

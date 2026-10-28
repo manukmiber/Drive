@@ -157,6 +157,19 @@ export const S3Key = z.strictObject({
   label: z.string(),
   createdAt: ms,
   lastUsedAt: ms.nullable(),
+  buckets: z.array(z.string()).nullable().describe('Buckets the key may use; null = every bucket'),
+  prefix: z.string().nullable().describe('Object keys it may use start with this; null = all'),
+  access: z.enum(['rw', 'r', 'w']).describe('rw = read and write, r = read only, w = write only'),
+  expiresAt: ms.nullable().describe('When the key stops working; null = never'),
+});
+
+/** Making an access key (ADR-071): without the scope fields it has full access, as before. */
+export const S3KeyCreate = z.object({
+  label: z.string().max(60).default(''),
+  buckets: z.array(z.string().min(3).max(63)).min(1).max(100).nullable().optional(),
+  prefix: z.string().min(1).max(512).nullable().optional(),
+  access: z.enum(['rw', 'r', 'w']).optional(),
+  expiresAt: ms.nullable().optional(),
 });
 
 export const S3Overview = z.strictObject({
