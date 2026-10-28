@@ -17,6 +17,7 @@ import {
   FolderOpen,
   ImageIcon,
   Info,
+  LayoutGrid,
   Minimize2,
   Palette,
   Pencil,
@@ -258,12 +259,18 @@ export function useNodeActions(items: NodeDto[]) {
         icon: Clapperboard,
         onSelect: () => setEditing({ tool: 'video', nodes: files, files: [] }),
       });
-    // The local compressor (ADR-067): free, in this browser.
+    // The local compressor and the collage (ADR-067): free, in this browser.
     if (all(isMedia))
       list.push({
         label: t.localCompress.action,
         icon: Shrink,
         onSelect: () => setEditing({ tool: 'compress', nodes: files, files: [] }),
+      });
+    if (files.length > 1 && all(isImage))
+      list.push({
+        label: t.collage.action(files.length),
+        icon: LayoutGrid,
+        onSelect: () => setEditing({ tool: 'collage', nodes: files, files: [] }),
       });
     if (all(isPdf))
       list.push({

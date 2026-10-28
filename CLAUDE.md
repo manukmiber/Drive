@@ -84,6 +84,11 @@ karena CSP, jadi cek spreadsheet di build production, bukan dev), ZIP dibaca sen
 dicek, path dibersihkan), HTML dari file orang selalu lewat `editors/sanitize.ts`. Baru → Dokumen / Spreadsheet / File teks membuka editor dengan file kosong (`EditRequest.blank`)
 yang disimpan ke folder yang sedang dibuka. `EditorFrame` dirender ke `document.body` (portal).
 
+**Kompres lokal, kolase, JPEG XL** (ADR-067): `editors/compress/` (gratis, di browser, beda dari Kompres server
+ADR-031; file Drive di-stream per Range lewat `UrlSource`), `editors/collage/`, teks/stiker/bentuk bersama di
+`editors/decor/`, roda warna + HSL di `photo/adjust.ts` + `editors/colour/`, codec di `editors/codecs/` (JXL/AVIF lewat
+jSquash, MP3/AAC/FLAC lewat encoder WASM mediabunny; CSP punya `'wasm-unsafe-eval'`). Editor video lengkap belum.
+
 **Transfer** (ADR-053): berapa upload/unduhan berjalan bersamaan dipilih per perangkat (`src/web/lib/transfer.ts`,
 maks 20 file tiap arah, batas dari config `*_cap`); "Unduh → File terpisah" lewat antrean unduhan
 (`src/web/download/`, `POST /api/files/download-plan`). **Share** (ADR-054): link folder/bundle bisa "tampilkan daftar

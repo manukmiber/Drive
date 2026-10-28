@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   FileType2,
   ImageIcon,
+  LayoutGrid,
   Shrink,
 } from 'lucide-react';
 import { useRef, useState, type ComponentType } from 'react';
@@ -59,6 +60,15 @@ const CARDS: Card[] = [
     title: t.localCompress.title,
     body: t.localCompress.desc,
     accept: 'video/*,audio/*,image/*,.jxl,.mkv,.flac,.opus',
+    multiple: true,
+  },
+  {
+    id: 'collage',
+    tool: 'collage',
+    icon: LayoutGrid,
+    title: t.collage.title,
+    body: t.collage.desc,
+    accept: 'image/*,.jxl',
     multiple: true,
   },
   {

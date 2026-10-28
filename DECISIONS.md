@@ -1734,3 +1734,11 @@ route baru.
   Grading (tiga roda warna lift/gamma/gain + terang-gelap; per kanal, jadi masuk ke LUT yang sama), Teks & stiker
   (menggantikan Teks), Gambar (pena, spidol *multiply*, neon), Sensor (kotak piksel, blur, atau hitam; diterapkan
   sebelum warna supaya tidak bisa dimunculkan lagi).
+- **Kolase** (`editors/collage/`, alat `collage`, kartu di /alat, menu ⋮ "Buat kolase" untuk 2+ foto): 1–9 foto dari
+  Drive atau perangkat (batas `editor_image_max_bytes` per foto). 37 tata letak (petak menutup seluruh area tanpa
+  tumpang tindih, dites), 8 rasio, jarak antar foto, tepi luar, sudut bulat, latar warna atau gradasi, teks/stiker/
+  bentuk dari `decor/`. Kotak diketuk untuk dipilih, fotonya digeser di dalam kotak dan di-zoom (slider atau scroll),
+  ditukar, diganti, atau dikeluarkan. Disimpan 1080–4096 px sisi terpanjang sebagai JPEG, PNG, WebP, AVIF, atau JXL.
+  Supaya memori HP cukup, tiap foto disimpan paling besar 4096 px (1 foto) sampai 1800 px (5+ foto).
+- **Belum:** editor video lengkap (efek, roda warna, musik, edit audio, transisi, teks berwaktu, export dengan pilihan
+  codec dari `codecs/EncodeForm`) menyusul; pemilik menghentikan sesi setelah foto dan kolase (2026-10-28).
