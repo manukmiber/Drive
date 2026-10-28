@@ -17,6 +17,10 @@ lewat fase R di `docs/ROADMAP.md`.
   20 kali ulang, cron `move_notices_to_relay` dan `prune_notices`, migrasi `0017` buang `telegram_links` + `contacts`;
   relay `ab49789` (`/apps/v1/notices*`). **Relay live perlu di-update pemilik** (dashboard → update, atau
   `bash install.sh`); sampai itu notifikasi menunggu di antrean.
+- [x] Di production (pemilik, 2026-10-28, "Langsung push deploy"): migrasi `0018` dan `0019` di D1 production
+  (bookmark Time Travel sebelum migrasi `00000183-00000000-00005112-83fbe4c06ee77d5a73636743018833b7`), Worker
+  `zeiko-production` versi `1e16925d-a6fc-40e3-b120-f93c02453b22` (ToS ADR-070, S1 ADR-071, S3 lifecycle ADR-072;
+  container tidak di-roll). Dicek dari luar: app, health, katalog 200; host S3 menjawab XML S3.
 - [x] Di production (pemilik, 2026-10-28, "Deploy semua"): Worker `zeiko-production` versi
   `99df3a56-c548-4829-92cd-2b5716a825d1` (ADR-066, ADR-067 editor/kompres lokal/kolase/JXL, S2 ADR-068 `649fa9a`;
   tanpa migrasi baru, container tidak di-roll). Dicek dari luar: app, health, katalog, `/alat`,
@@ -260,12 +264,12 @@ lewat fase R di `docs/ROADMAP.md`.
 ## Lifecycle bucket S3 (S3, ADR-072, 2026-10-28)
 - [x] `Put/Get/DeleteBucketLifecycleConfiguration`: Expiration (Days/Date) dan AbortIncompleteMultipartUpload, filter
   prefix + ukuran; Tag/Transition/versi → 501. Cron jam-an bertahap dengan cursor; editor "Hapus otomatis" di `/s3`.
-- [ ] Pemilik: migrasi `0019` di D1 remote, deploy.
+- [x] Di production 2026-10-28 (migrasi `0019`, Worker `1e16925d`).
 
 ## Key S3 dengan izin terbatas (S1, ADR-071, 2026-10-28)
 - [x] Bucket tertentu, prefix, baca/tulis/baca saja/tulis saja, kedaluwarsa; key lama tetap akses penuh. Kelola bucket
   hanya dengan key tanpa batas; ListBuckets terfilter; presigned URL ikut aturan; link `/s3` pakai key yang boleh baca.
-- [ ] Pemilik: migrasi `0018` di D1 remote, deploy.
+- [x] Di production 2026-10-28 (migrasi `0018`, Worker `1e16925d`).
 
 ## Tulis bersyarat S3 (S2, ADR-068, 2026-10-28)
 - [x] `If-None-Match: *` dan `If-Match` di PutObject, CopyObject (tujuan), CompleteMultipartUpload; dicek di batch D1
