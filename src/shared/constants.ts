@@ -48,9 +48,14 @@ export const MINUTE_MS = 60_000;
 export const HOUR_MS = 60 * MINUTE_MS;
 export const DAY_MS = 24 * HOUR_MS;
 
-/** The operator's address: alerts go there, and so do people who want to advertise (ADR-041). */
+/** The operator's address: alerts go there. Never shown to people. */
 export const OPERATOR_EMAIL = 'admin@zeiko.biz.id';
-export const AD_CONTACT = OPERATOR_EMAIL;
+/** Payments, support, advertising and every other question (the owner's, 2026-10-28): WhatsApp,
+ * answered 08.00–22.00 WIB. */
+export const SUPPORT_WHATSAPP = '+62 819-3241-6096';
+export const SUPPORT_WHATSAPP_URL = 'https://wa.me/6281932416096';
+export const SUPPORT_CONTACT = `WhatsApp ${SUPPORT_WHATSAPP} (08.00–22.00 WIB)`;
+export const AD_CONTACT = SUPPORT_CONTACT;
 
 /** Requests a minute one access token may make on /api/v1 (ADR-061): RL_API in wrangler.jsonc. */
 export const API_RATE_PER_MINUTE = 300;

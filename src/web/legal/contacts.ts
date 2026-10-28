@@ -1,9 +1,9 @@
 // The addresses the policies give, and the two blanks the owner left in them (ADR-045), in one
-// place. Support and privacy go to the operator's address until Zeiko has dedicated mailboxes.
-import { OPERATOR_EMAIL } from '../../shared/constants';
+// place. Support is WhatsApp (the owner's, 2026-10-28); privacy requests go to the operator's address.
+import { OPERATOR_EMAIL, SUPPORT_CONTACT } from '../../shared/constants';
 
 const base = {
-  support: OPERATOR_EMAIL,
+  support: SUPPORT_CONTACT,
   abuse: 'abuse@zeiko.biz.id',
   privacy: OPERATOR_EMAIL,
   website: 'https://zeiko.biz.id',

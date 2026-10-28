@@ -16,7 +16,7 @@ Jumlah iklan tidak dibatasi. Di kartu itu iklan bergantian: tiap iklan tampil be
 
 ## Cara memasang
 
-Kirim email ke admin@zeiko.biz.id berisi usahamu, materi iklan, kota atau Nasional, dan tanggal tayang. Kamu perlu sudah pernah masuk ke Zeiko Drive dengan Akun Zeiko, karena statistik iklanmu ada di sana.
+Chat WhatsApp +62 819-3241-6096 (08.00–22.00 WIB) berisi usahamu, materi iklan, kota atau Nasional, dan tanggal tayang. Kamu perlu sudah pernah masuk ke Zeiko Drive dengan Akun Zeiko, karena statistik iklanmu ada di sana.
 
 Setiap iklan dicek manual oleh tim Zeiko, tidak otomatis. UMKM, usaha kecil, dan mahasiswa dicek lebih dulu dan tampil lebih sering dalam pergantian iklan.
 

@@ -109,6 +109,13 @@ export function EditorFrame({
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, [dirty, onClose]);
+  // While an editor is open the page never pulls to reload or bounces: on a phone that gesture
+  // fought the editors' own scrolling (the owner's, 2026-10-28, the spreadsheet).
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add('editor-open');
+    return () => root.classList.remove('editor-open');
+  }, []);
   // On the page itself, so an editor opened from a part of the page that is hidden (the sidebar on
   // a phone) still shows.
   return createPortal(

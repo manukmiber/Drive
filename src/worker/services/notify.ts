@@ -203,7 +203,7 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
               ]
             : [
                 `Iklanmu sudah kami cek dan aman untuk tayang. Tagihannya ${amount}; QRIS-nya kami kirim lewat email sebentar lagi.`,
-                `Ada pertanyaan? Balas email ini atau tulis ke ${AD_CONTACT}.`,
+                `Ada pertanyaan? Chat ${AD_CONTACT}.`,
               ],
           ...(qr ? { image: { src: qr, alt: `QRIS ${amount}` } } : {}),
           ...(payUrl && !qr ? { cta: { label: 'Bayar', url: payUrl } } : {}),
@@ -221,7 +221,7 @@ function render(ctx: Ctx, type: string, p: Record<string, unknown>): Rendered | 
                 Number(p.refundedIdr) > 0
                   ? `Sisa hari tayang dikembalikan sebagai kredit ${formatRupiah(Number(p.refundedIdr))}, dipotong otomatis dari pembayaran berikutnya.`
                   : status === 'rejected'
-                    ? `Balas email kami atau kirim ulang ke ${AD_CONTACT} dengan materi yang sudah diperbaiki.`
+                    ? `Kirim ulang materi yang sudah diperbaiki lewat ${AD_CONTACT}.`
                     : 'Sisa hari tayang tidak dikembalikan karena pelanggaran berat.',
               ];
       return {

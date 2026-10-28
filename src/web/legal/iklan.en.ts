@@ -16,7 +16,7 @@ There is no limit on the number of ads. The card takes turns: each ad shows for 
 
 ## How to place an ad
 
-Email admin@zeiko.biz.id with your business, the ad itself, the cities or Nationwide, and the dates it should run. You need to have signed in to Zeiko Drive with your Zeiko Account once, because your ad's statistics live there.
+Chat WhatsApp +62 819-3241-6096 (08.00–22.00 WIB) with your business, the ad itself, the cities or Nationwide, and the dates it should run. You need to have signed in to Zeiko Drive with your Zeiko Account once, because your ad's statistics live there.
 
 Every ad is checked by hand by the Zeiko team, never automatically. Small businesses (UMKM) and students are checked first and shown more often as the ads take turns.
 

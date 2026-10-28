@@ -254,7 +254,9 @@ function Workspace({
           if (e.key === 'Escape') e.preventDefault();
         }}
       >
-        <div className="absolute inset-0">
+        {/* zk-sheet: the grid takes every touch itself (scrolling it on a phone), so pulling it
+            down never reloads the page. */}
+        <div className="zk-sheet absolute inset-0">
           <Workbook
             ref={book}
             data={sheets as never}

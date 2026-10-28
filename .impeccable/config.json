@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "src/web/editors/prose.css"
+        ],
+        "createdAt": "2026-10-25T18:05:05.871Z",
+        "reason": "Claude: L64 is the blockquote rule in Markdown/document reading text (a typographic quote marker), not a card side-tab"
+      }
+    ]
+  }
+}

@@ -1668,3 +1668,20 @@ notifikasi menunggu di antrean dan lonceng kosong. Setelah pemilik menekan updat
 - Drive: `tests/unit/notices.test.ts` dan `tests/integration/notifications.test.ts` (pindah data lama, pesan antrean
   lama, tabel yang dibuang); semua test yang memeriksa notifikasi sekarang membaca penyimpanannya (`tests/helpers/notices.ts`).
 - Relay: `tests/drive.rs` dan unit test di `drive_notices.rs`.
+
+## ADR-066 — Kontak pelanggan lewat WhatsApp; spreadsheet di HP tidak bentrok dengan tarik-muat-ulang
+
+**Keputusan pemilik (2026-10-28):** "Ganti semua kontak support jadi ke whatsapp +62 819-3241-6096, payment,
+support, tanya langsung kesitu. Jam jawab 08.00 - 22.00."
+
+- `SUPPORT_CONTACT` (`src/shared/constants.ts`) = WhatsApp +62 819-3241-6096 (08.00–22.00 WIB) dipakai untuk dukungan
+  dan banding di ToS/Kebijakan Privasi (`legal/contacts.ts`), pemesanan iklan (`AD_CONTACT`, halaman `/iklan`, email
+  iklan), dan S3 yang ditangguhkan. Tombol iklan membuka `wa.me` dengan judul sebagai pesan.
+- Permintaan privasi dan laporan penyalahgunaan tetap ke email (`privacy`, `abuse`): itu bukan kontak dukungan.
+  `OPERATOR_EMAIL` tetap alamat tujuan peringatan untuk operator dan tidak ditampilkan ke orang.
+- Email keluar nanti lewat AWS SES (pemilik, 2026-10-28); belum diganti di sini.
+
+**Spreadsheet di HP** (pemilik: "sulit untuk digeser ke atas, gelud dengan gestur reload"): FortuneSheet
+menggulir gridnya dari handler sentuhnya sendiri, jadi browser juga ikut menggeser halaman dan menarik untuk memuat
+ulang. Grid (`.zk-sheet .fortune-sheet-overlay`) diberi `touch-action: none`, dan selama editor apa pun terbuka
+`html`/`body` diberi `overscroll-behavior: none` (`EditorFrame` memasang kelas `editor-open`).

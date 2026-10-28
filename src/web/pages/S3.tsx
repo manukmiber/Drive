@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import type { CheckoutItem } from '../lib/types';
 import { useState, type FormEvent, type ReactNode } from 'react';
-import { OPERATOR_EMAIL } from '../../shared/constants';
+import { SUPPORT_CONTACT } from '../../shared/constants';
 import { formatBytes, formatDate, formatRupiah } from '../../shared/format';
 import { Button } from '../components/Button';
 import { Dialog, PromptDialog } from '../components/ui/Dialog';
@@ -882,7 +882,7 @@ function S3Page() {
           role="alert"
           className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
         >
-          {t.s3.suspended(OPERATOR_EMAIL)}
+          {t.s3.suspended(SUPPORT_CONTACT)}
         </p>
       )}
       {!suspended && acc.billingState !== 'ok' && (

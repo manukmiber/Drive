@@ -111,6 +111,17 @@ body,
   height: 100%;
 }
 
+/* An open editor owns every gesture: no pull-to-reload, no bounce (EditorFrame sets the class). */
+html.editor-open,
+html.editor-open body {
+  overscroll-behavior: none;
+}
+
+/* The spreadsheet scrolls its grid from its own touch handlers; the browser must not pan it too. */
+.zk-sheet .fortune-sheet-overlay {
+  touch-action: none;
+}
+
 body {
   background: var(--bg);
   color: var(--fg);

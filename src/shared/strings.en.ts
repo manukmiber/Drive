@@ -1136,7 +1136,7 @@ export const en: Strings = {
     contactTitle: 'Advertise on Zeiko',
     contactBody:
       'A small ad for your business, shown in the Drive of people in the cities you choose or all over Indonesia. Ads are ordered by email: tell us about your business, send the ad itself (a square picture, a title, a description, and a link or WhatsApp number), the cities or nationwide, and the dates. We check it first; if it’s fine, we email you its QRIS. This page shows your ad’s numbers.',
-    contactButton: (email: string) => `Email ${email}`,
+    contactButton: (contact: string) => `Chat ${contact}`,
     rulesTitle: 'Ad rules',
     rules: [
       'No hate against ethnicity, religion or race, no gambling, no scams, nothing harmful, and nothing else the Ad Policy forbids.',

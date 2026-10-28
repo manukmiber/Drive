@@ -1166,7 +1166,7 @@ export const t = {
     contactTitle: 'Pasang iklan di Zeiko',
     contactBody:
       'Iklan kecil untuk usahamu, tampil di Drive orang-orang di kota yang kamu pilih atau di seluruh Indonesia. Pesannya lewat email: ceritakan usahamu, kirim materi iklannya (gambar persegi, judul, deskripsi, dan link atau nomor WhatsApp), kota atau Nasional, dan tanggal tayang. Kami cek dulu; kalau aman, kami kirim QRIS-nya lewat email. Di halaman ini kamu bisa melihat statistik iklanmu.',
-    contactButton: (email: string) => `Email ${email}`,
+    contactButton: (contact: string) => `Chat ${contact}`,
     rulesTitle: 'Aturan iklan',
     rules: [
       'Tidak boleh SARA, judi, penipuan, hal yang membahayakan, atau isi lain yang dilarang Kebijakan Iklan.',

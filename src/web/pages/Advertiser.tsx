@@ -3,8 +3,8 @@
 // and clicked per day and per city. Ordering and paying are by email; nothing is bought here.
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { Mail, Megaphone } from 'lucide-react';
-import { AD_CONTACT } from '../../shared/constants';
+import { Megaphone, MessageCircle } from 'lucide-react';
+import { AD_CONTACT, SUPPORT_WHATSAPP_URL } from '../../shared/constants';
 import { formatPercent, formatRupiah } from '../../shared/format';
 import { t } from '../lib/i18n';
 import { dashboard, type MyCampaign, type Stat } from '../lib/ads';
@@ -43,10 +43,12 @@ export function Advertiser() {
         </h1>
         <p className="mt-2 text-sm text-[var(--fg-muted)]">{t.ads.contactBody}</p>
         <a
-          href={`mailto:${AD_CONTACT}?subject=${encodeURIComponent(t.ads.contactTitle)}`}
+          href={`${SUPPORT_WHATSAPP_URL}?text=${encodeURIComponent(t.ads.contactTitle)}`}
+          target="_blank"
+          rel="noopener noreferrer"
           className="z-primary mt-4 inline-flex h-10 items-center gap-2 rounded-xl px-5 text-sm font-semibold"
         >
-          <Mail className="h-4 w-4" aria-hidden="true" /> {t.ads.contactButton(AD_CONTACT)}
+          <MessageCircle className="h-4 w-4" aria-hidden="true" /> {t.ads.contactButton(AD_CONTACT)}
         </a>
       </section>
 
