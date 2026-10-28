@@ -17,6 +17,10 @@ lewat fase R di `docs/ROADMAP.md`.
   20 kali ulang, cron `move_notices_to_relay` dan `prune_notices`, migrasi `0017` buang `telegram_links` + `contacts`;
   relay `ab49789` (`/apps/v1/notices*`). **Relay live perlu di-update pemilik** (dashboard → update, atau
   `bash install.sh`); sampai itu notifikasi menunggu di antrean.
+- [x] Di production (pemilik, 2026-10-28, "Deploy semua"): Worker `zeiko-production` versi
+  `99df3a56-c548-4829-92cd-2b5716a825d1` (ADR-066, ADR-067 editor/kompres lokal/kolase/JXL, S2 ADR-068 `649fa9a`;
+  tanpa migrasi baru, container tidak di-roll). Dicek dari luar: app, health, katalog, `/alat`,
+  `/api/v1/openapi.json` 200; CSP memuat `'wasm-unsafe-eval'`; host S3 menjawab XML S3.
 - [x] Di production (pemilik, 2026-10-27): Worker `zeiko-production` versi `83a1f11b-6071-4356-a485-42448c7e7d91`
   (harga S3 3 salinan Rp1.250/GB, `e311d43`; tanpa migrasi baru, container tidak di-roll). Dicek dari luar:
   `/api/public/catalog` memberi `s3_price_idr_per_gb_month_3x` 1250.
@@ -257,7 +261,7 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] `If-None-Match: *` dan `If-Match` di PutObject, CopyObject (tujuan), CompleteMultipartUpload; dicek di batch D1
   yang sama dengan commit index (dua penulis: tepat satu menang). Multipart yang kalah di tengah complete → 409
   `ConditionalRequestConflict`. Syarat tanggal sumber copy sekarang dihitung; syarat lain di operasi tulis → 501.
-- [ ] Pemilik: deploy (tanpa migrasi).
+- [x] Di production 2026-10-28 (Worker `99df3a56`).
 
 ## Login aplikasi OAuth 2.0 + PKCE (A3, ADR-063, 2026-10-26)
 - [x] Klien pihak pertama (Android, desktop, CLI), halaman persetujuan `/oauth/authorize`, code + PKCE S256,
