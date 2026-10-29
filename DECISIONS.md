@@ -1902,3 +1902,50 @@ tidak menyentuh D1 dan tidak menambah data di server).
   dan format lain (`.ass`, `.ssa`, `.sub`).
 
 Test: `tests/unit/subtitles.test.ts` (waktu, encoding, BOM, tag, blok rusak, pencocokan nama).
+
+## ADR-074 — R3: setiap perubahan Drive ditulis ke index R2 (write-through dari D1)
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Kerjakan D13 dan R3").
+
+**Konteks.** Di roadmap, R2 (baca dari index) dijadwalkan sebelum R3 (tulis ke index). Masalahnya, sampai hari ini tidak ada
+kode yang menulis index, jadi index yang mau dibaca R2 belum pernah ada. Karena itu R3 dikerjakan lebih dulu sebagai
+tahap *expand*: setiap perubahan pohon pribadi ditulis ke `u/{userId}/index.txt`, sementara app tetap membaca D1. Setelah
+itu R2 tinggal memindahkan pembacaan ke index yang sudah lengkap dan terkini, dan R8 menghapus tabel D1 (*contract*).
+
+**Keputusan:**
+- **Index = proyeksi pohon pribadi dari D1** (`services/drive-index-sync.ts`): node `space = 'personal'` milik user, tanpa
+  upload yang masih berjalan (`status = 'uploading'`), tanpa node keluarga (R4). Header: `root` (id D1 folder akar) dan
+  `used` (byte terpakai pool pribadi). Entri: kolom ADR-064 ditambah:
+  - **`x`**: id node di D1, untuk menjaga nomor entri tetap sama dari satu tulis ke tulis berikutnya. Kolom ini hanya
+    hidup selama masa pindah (R3–R8) dan berisi `""` untuk entri yang lahir langsung di index;
+  - **`st = 2` (blocked)**: ditolak pemindai (`rejected`/`infected`) atau dikarantina takedown.
+
+  Format v1 tetap (header `cols` mencatat urutan kolom). Perubahan ini aman karena belum ada index yang pernah ditulis.
+- **Penanda + gabung tulis.** Setiap perubahan menandai user di `manifest_dirty` (tabel lama, tanpa kolom baru;
+  `dirty_at > 0`), lalu meminta flush setelah respons (`ctx.defer` = `waitUntil`; queue dan cron menunggu
+  `ctx.drain()`). Flush menunggu `INDEX_FLUSH_DELAY_MS` (bawaan 1000 ms; test 0) lalu **mengklaim** penanda
+  (`dirty_at = -waktu`). Dari semua flush yang diminta selama satu gelombang, hanya satu yang jalan, jadi gelombang
+  upload, satu batch antrean pindai, atau satu operasi massal menjadi satu tulis. Di satu isolate, permintaan flush untuk
+  user yang sama digabung sampai klaim. Perubahan selama flush menandai lagi (`dirty_at > 0`), dan flush berikutnya
+  menulisnya. Klaim yang lebih tua dari 5 menit dianggap milik flush yang mati dan boleh diambil alih.
+- **Tidak pernah menulis pohon lama.** Flush membaca index lalu membaca pohon D1 di **dalam setiap percobaan**
+  `changeIndex` (tulis bersyarat etag). Tulis yang berhasil pasti membaca index sesudah tulis sebelumnya, dan membaca D1
+  sesudahnya. Jadi tulis yang kalah balapan tidak mungkin mengembalikan pohon yang lebih lama.
+- **Yang menandai:** semua jalur yang dulu memanggil `markManifestDirty` (folder baru, ganti nama, pindah, salin,
+  Sampah, pulihkan, hapus, upload, kompres), ditambah dekorasi, bintang (hanya pemilik pohon pribadi), thumbnail, hasil
+  pindai, karantina/batal karantina/tolak laporan, serta paket keluarga (buat, gabung, keluar, bubar).
+- **Cadangan:** cron jam-an `drive_index_flush` menulis `drive_index_flush_per_run` (20) user yang masih bertanda
+  (flush yang gagal mengembalikan tandanya). **Backfill:** migrasi data `0020` menandai semua user yang punya pohon
+  pribadi; tidak ada tabel atau kolom baru.
+- **Hapus akun:** index ikut dihapus, dan flush yang datang belakangan juga menghapusnya (akun `deleted`). Ekspor data
+  tidak berubah: index tidak memuat data yang belum ada di ekspor.
+
+**Biaya.** Satu flush = 1 baca R2, 1 baca D1 berisi seluruh pohon user, dan 1 tulis R2 kalau ada yang berubah. CPU-nya
+mengikuti tabel ADR-064 (urai semua entri): aman di Workers Free sampai beberapa ribu entri per user. Pohon yang jauh
+lebih besar butuh Workers Paid atau flush bertahap (dicatat, belum dibuat).
+
+**Belum:** pembacaan (R2), kuota dan reservasi upload di index, index keluarga (R4), dan membuang `x` saat D1 dihapus (R8).
+
+Test: `tests/integration/drive-index-sync.test.ts` (semua jenis perubahan dengan nomor entri tetap, pindai →
+scanning/ready/blocked, user lain dan node keluarga tidak masuk, gelombang 12 perubahan ≤ 2 tulis, klaim/klaim basi/
+perubahan di tengah flush, flush gagal lalu cron, backfill, akun dihapus) dan `tests/unit/drive-index.test.ts`.

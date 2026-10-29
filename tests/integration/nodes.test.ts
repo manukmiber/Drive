@@ -125,7 +125,9 @@ describe('explorer operations (SPEC §8.3)', () => {
     await rt.settle();
     expect(pool(rt, poolId).used_bytes).toBe(0);
     expect(rt.d1.sqlite.prepare('SELECT COUNT(*) AS n FROM blobs').get()).toEqual({ n: 0 });
-    expect((await rt.env.BUCKET.list({ prefix: `u/${s.userId}/` })).objects).toHaveLength(0);
+    // Only the Drive index is left in the user's folder (ADR-074).
+    const left = (await rt.env.BUCKET.list({ prefix: `u/${s.userId}/` })).objects;
+    expect(left.map((o) => o.key)).toEqual([`u/${s.userId}/index.txt`]);
   });
 
   it('trashes subtrees, restores them (renaming on clash) and keeps quota until deleted', async () => {

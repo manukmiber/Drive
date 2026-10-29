@@ -37,6 +37,7 @@ function tree(n: number): IndexEntry[] {
     const base = {
       id,
       parent,
+      legacy: '',
       status: 'ready',
       created: t,
       updated: rnd() < 0.9 ? t : t + 100_000,

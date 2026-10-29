@@ -11,7 +11,8 @@ const enc = (s: string) => new TextEncoder().encode(s);
 
 describe('SRT → WebVTT (D13)', () => {
   it('converts times, keeps cue text and drops the numbers', () => {
-    const srt = '1\r\n00:00:01,000 --> 00:00:04,500\r\nHalo\r\nsemua\r\n\r\n2\r\n00:01:02,03 --> 01:00:00,1\r\nDua\r\n';
+    const srt =
+      '1\r\n00:00:01,000 --> 00:00:04,500\r\nHalo\r\nsemua\r\n\r\n2\r\n00:01:02,03 --> 01:00:00,1\r\nDua\r\n';
     expect(srtToVtt(srt)).toBe(
       'WEBVTT\n\n00:00:01.000 --> 00:00:04.500\nHalo\nsemua\n\n00:01:02.030 --> 01:00:00.100\nDua\n',
     );

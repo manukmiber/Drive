@@ -1,6 +1,7 @@
 // Account rights under UU PDP (SPEC §14.5): export personal data, delete account after a waiting
 // period. Invoices and the wallet ledger are kept (accounting obligations) but de-identified.
 import { DAY_MS } from '../../shared/constants';
+import { deleteUserIndex } from './drive-index-sync';
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
@@ -212,6 +213,8 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
       DB.prepare('DELETE FROM two_factors WHERE user_id = ?1').bind(id),
       // Rows of the old table not yet moved to the relay (ADR-064).
       DB.prepare('DELETE FROM notifications WHERE user_id = ?1').bind(id),
+      // The Drive index goes too (ADR-074); a flush that comes later finds the account deleted.
+      DB.prepare('DELETE FROM manifest_dirty WHERE user_id = ?1').bind(id),
       DB.prepare(
         `UPDATE users SET email = 'deleted+' || id || '@deleted.invalid', name = '', avatar_url = NULL, ad_city_code = NULL, ad_city = NULL, ad_postal_code = NULL,
            status = 'deleted', updated_at = ?2 WHERE id = ?1`,
@@ -220,6 +223,7 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
         `INSERT INTO audit_logs (id, actor_id, action, target_type, target_id, meta_json, created_at) VALUES (?1, ?2, 'account.deleted', 'user', ?2, NULL, ?3)`,
       ).bind(ulid(now), id, now),
     ]);
+    await deleteUserIndex(ctx, id);
     log.info('account_deleted', { userId: id });
   }
   return results.length;

@@ -9,6 +9,7 @@ import {
   sendRenewalReminders,
 } from '../services/billing';
 import { purgeExpiredTrash } from '../services/nodes';
+import { flushDirtyIndexes } from '../services/drive-index-sync';
 import { deletionReminders, processAccountDeletions } from '../services/account';
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
@@ -24,6 +25,15 @@ import { refreshPendingUrls, releaseLapsedUrls } from '../services/s3-urls';
 import { cleanupVirusTotal } from '../services/virustotal';
 import { moveNoticesToRelay } from '../services/notify';
 import { registerCronTask } from '.';
+
+// Drive indexes a request didn't finish writing (R3, ADR-074).
+registerCronTask(CRON.hourly, {
+  name: 'drive_index_flush',
+  async run(ctx) {
+    const r = await flushDirtyIndexes(ctx);
+    if (r.written || r.failed) log.info('drive_index_flush', r);
+  },
+});
 
 registerCronTask(CRON.hourly, {
   name: 'expire_uploads',

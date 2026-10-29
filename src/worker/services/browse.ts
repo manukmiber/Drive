@@ -1,5 +1,6 @@
 // Cross-folder views: search (FTS5), Berbintang, Terbaru (SPEC §8.1, §8.3).
 import type { Ctx } from '../context';
+import { markIndexDirty } from './drive-index-sync';
 import { AppError } from '../lib/errors';
 import { requireNode } from './access';
 import { COVER_SQL, toDto, type NodeDto } from './nodes';
@@ -76,7 +77,7 @@ export async function setStar(
   nodeId: string,
   on: boolean,
 ): Promise<void> {
-  await requireNode(ctx, userId, nodeId, 'view');
+  const { node } = await requireNode(ctx, userId, nodeId, 'view');
   if (on) {
     await ctx.env.DB.prepare(
       'INSERT INTO node_stars (user_id, node_id, created_at) VALUES (?1, ?2, ?3) ON CONFLICT DO NOTHING',
@@ -88,6 +89,8 @@ export async function setStar(
       .bind(userId, nodeId)
       .run();
   }
+  // A star is in the index of the person's own tree (ADR-074).
+  if (node.space === 'personal' && node.owner_id === userId) await markIndexDirty(ctx, [userId]);
 }
 
 export async function listStarred(ctx: Ctx, userId: string): Promise<NodeDto[]> {

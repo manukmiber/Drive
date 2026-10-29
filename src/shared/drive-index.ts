@@ -11,8 +11,9 @@ export const INDEX_VERSION = 1;
  * Column order of a version-1 row. Rare values go last so they can be trimmed.
  * id: entry number (never reused) · p: parent entry, 0 = root · k: 1 folder, 0 file · n: name ·
  * s: size in bytes · m: MIME type · b: content object under the index's folder (a number for new
- * uploads, a legacy key otherwise; 0 for folders) · st: 1 while the scanner has not cleared it ·
- * c / u / cm: created, updated (0 = same as created), modified on the uploader's device, in unix
+ * uploads, a legacy key otherwise; 0 for folders) · x: the entry's id in D1 while Drive moves off it
+ * (R3–R8, ADR-074; "" otherwise) · st: 1 while the scanner has not cleared it, 2 blocked (the
+ * scanner or a takedown refused it) · c / u / cm: created, updated (0 = same as created), modified on the uploader's device, in unix
  * seconds · th: has a thumbnail · f: starred · t: moved to Trash at · tr: the entry the person
  * trashed · d: folder decoration [colour, icon, cover entry] · o / e / tb: family only: owner,
  * others may edit, trashed by (member positions in the header).
@@ -25,6 +26,7 @@ export const INDEX_COLUMNS = [
   's',
   'm',
   'b',
+  'x',
   'st',
   'c',
   'u',
@@ -66,7 +68,9 @@ export interface IndexEntry {
   size: number;
   mime: string;
   blob: number | string;
-  status: 'ready' | 'scanning';
+  /** The node's id in D1 while Drive still writes there (ADR-074); "" for entries born in the index. */
+  legacy: string;
+  status: 'ready' | 'scanning' | 'blocked';
   /** Times are in milliseconds here and whole seconds in the file. */
   created: number;
   updated: number;
@@ -138,7 +142,8 @@ export function entryToRow(e: IndexEntry): Row {
     e.size,
     e.mime,
     e.blob,
-    e.status === 'scanning' ? 1 : 0,
+    e.legacy,
+    e.status === 'scanning' ? 1 : e.status === 'blocked' ? 2 : 0,
     created,
     updated === created ? 0 : updated,
     e.clientModified === null ? 0 : sec(e.clientModified),
@@ -180,6 +185,9 @@ export function rowToEntry(row: unknown, map: Record<Column, number>): IndexEntr
     throw new IndexFormatError(`bad blob for ${id}`);
   const mime = at('m') ?? '';
   if (typeof mime !== 'string') throw new IndexFormatError(`bad mime for ${id}`);
+  const legacy = at('x') ?? '';
+  if (typeof legacy !== 'string') throw new IndexFormatError(`bad legacy id for ${id}`);
+  const st = at('st');
   const d = at('d') ?? 0;
   let decor: FolderDecorEntry | null = null;
   if (Array.isArray(d)) {
@@ -200,7 +208,8 @@ export function rowToEntry(row: unknown, map: Record<Column, number>): IndexEntr
     size: int(at('s'), 'size'),
     mime,
     blob,
-    status: at('st') === 1 ? 'scanning' : 'ready',
+    legacy,
+    status: st === 1 ? 'scanning' : st === 2 ? 'blocked' : 'ready',
     created,
     updated: updated || created,
     clientModified: cm ? cm * 1000 : null,

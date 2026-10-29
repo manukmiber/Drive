@@ -58,6 +58,7 @@ export async function runScheduled(
       log.error('cron_task_failed', { cron, task: task.name, message: errorMessage(e) });
     }
   }
+  await ctx.drain();
   log.info('cron_done', { cron, ran: ran.join(','), failed: failed.join(',') });
   return { ran, failed };
 }

@@ -5,7 +5,14 @@ import type { AppBindings } from '../types';
 
 export const requestContext: MiddlewareHandler<AppBindings> = async (c, next) => {
   c.set('requestId', c.req.header('cf-ray') ?? crypto.randomUUID());
-  c.set('ctx', createCtx(c.env));
+  let waitUntil: ((p: Promise<unknown>) => void) | undefined;
+  try {
+    const exec = c.executionCtx;
+    waitUntil = (p) => exec.waitUntil(p);
+  } catch {
+    // No execution context: deferred work is held by the ctx instead.
+  }
+  c.set('ctx', createCtx(c.env, waitUntil));
   c.set('user', null);
   await next();
   // HTTPS only from the first visit on (no includeSubDomains: other zeiko.biz.id hosts aren't ours to pin).

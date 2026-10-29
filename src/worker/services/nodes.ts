@@ -1,6 +1,7 @@
 // File tree operations (SPEC §8.3). Everything is a D1 update — R2 objects are never copied or
 // renamed (opaque keys, SPEC §3). Bulk operations work on subtrees via recursive CTEs (ADR-020).
 import { DAY_MS } from '../../shared/constants';
+import { markIndexDirty } from './drive-index-sync';
 import {
   isFolderColor,
   isFolderIcon,
@@ -301,12 +302,9 @@ export async function requireWritableFolder(
   return node;
 }
 
+/** The user's Drive index is behind D1: it is written after the response (R3, ADR-074). */
 export async function markManifestDirty(ctx: Ctx, userId: string): Promise<void> {
-  await ctx.env.DB.prepare(
-    'INSERT INTO manifest_dirty (user_id, dirty_at) VALUES (?1, ?2) ON CONFLICT (user_id) DO NOTHING',
-  )
-    .bind(userId, ctx.now())
-    .run();
+  await markIndexDirty(ctx, [userId]);
 }
 
 // ───────────────────────────── writes ─────────────────────────────
@@ -470,6 +468,10 @@ export async function decorateFolders(
       folders.map((f) =>
         DB.prepare(`UPDATE nodes SET ${sets.join(', ')} WHERE id = ?1`).bind(f.id, ...values),
       ),
+    );
+    await markIndexDirty(
+      ctx,
+      folders.filter((f) => f.space === 'personal').map((f) => f.owner_id),
     );
   }
   return Promise.all(folders.map((f) => getNodeDto(ctx, userId, f.id)));

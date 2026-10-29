@@ -48,4 +48,6 @@ export async function handleQueue(batch: MessageBatch<QueueMessage>, env: Env): 
       msg.retry({ delaySeconds: retryDelaySeconds(msg.attempts) });
     }
   }
+  // One Drive index write per user for the whole batch (ADR-074).
+  await ctx.drain();
 }

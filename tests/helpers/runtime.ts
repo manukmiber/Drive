@@ -10,8 +10,13 @@ export async function makeRuntime(opts: DevRuntimeOptions = {}): Promise<DevRunt
   return rt;
 }
 
-afterEach(() => {
-  while (open.length) open.pop()!.close();
+afterEach(async () => {
+  while (open.length) {
+    const rt = open.pop()!;
+    // Work after the response (Drive index flushes, ADR-074) ends before its database closes.
+    await rt.idle().catch(() => undefined);
+    rt.close();
+  }
 });
 
 export const APP = 'http://localhost:5173';

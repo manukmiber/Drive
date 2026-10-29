@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { markBlobOwnersDirty } from '../services/drive-index-sync';
 import { z } from 'zod';
 import { AppError } from '../lib/errors';
 import { validate } from '../lib/validate';
@@ -230,6 +231,7 @@ export const nodes = new Hono<AppBindings>()
     await ctx.env.DB.prepare('UPDATE blobs SET thumb_key = ?2 WHERE id = ?1')
       .bind(node.blob_id, key)
       .run();
+    await markBlobOwnersDirty(ctx, [node.blob_id]);
     return c.body(null, 204);
   })
   .get('/files/:id/thumbnail', async (c) => {

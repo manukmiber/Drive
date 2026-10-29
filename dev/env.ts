@@ -89,6 +89,8 @@ export interface DevRuntime {
   fetch(input: Request | string, init?: RequestInit): Promise<Response>;
   /** Waits for ctx.waitUntil() work and (in manual mode) drains every queue. */
   settle(): Promise<void>;
+  /** Waits for ctx.waitUntil() work only (queues untouched). */
+  idle(): Promise<void>;
   runCron(cron: string): Promise<{ ran: string[]; failed: string[] }>;
   close(): void;
 }
@@ -143,6 +145,8 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
 
   const env = {
     ...DEV_DEFAULTS,
+    // Tests flush Drive indexes at once instead of waiting for more changes (ADR-074).
+    ...(temp ? { INDEX_FLUSH_DELAY_MS: '0' } : {}),
     ...opts.vars,
     ...extraD1,
     DB: d1,
@@ -198,6 +202,9 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
         if (mode === 'manual') for (const q of Object.values(queues)) delivered += await q.drain();
         if (!waits.size && !delivered) return;
       }
+    },
+    idle: async () => {
+      while (waits.size) await Promise.all([...waits]);
     },
     runCron: (cron) => runScheduled(cron, env),
     close: () => {

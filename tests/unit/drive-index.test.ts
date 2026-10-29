@@ -26,6 +26,7 @@ function file(id: number, parent: number, name: string, extra: Partial<IndexEntr
     size: 1234,
     mime: 'image/jpeg',
     blob: id,
+    legacy: '',
     status: 'ready',
     created: T,
     updated: T,
@@ -56,13 +57,15 @@ function docWith(entries: IndexEntry[]): IndexDoc {
 
 describe('drive index format (ADR-064)', () => {
   it('writes one compact JSON row per entry and leaves trailing defaults off', () => {
-    expect(entryLine(folder(3, 0, 'Foto'))).toBe(`[3,0,1,"Foto",0,"",0,0,${T / 1000}]`);
+    expect(entryLine(folder(3, 0, 'Foto'))).toBe(`[3,0,1,"Foto",0,"",0,"",0,${T / 1000}]`);
     expect(
       entryLine(file(9, 3, 'a.jpg', { updated: T + 5000, thumb: true, clientModified: T - 1000 })),
-    ).toBe(`[9,3,0,"a.jpg",1234,"image/jpeg",9,0,${T / 1000},${T / 1000 + 5},${T / 1000 - 1},1]`);
+    ).toBe(
+      `[9,3,0,"a.jpg",1234,"image/jpeg",9,"",0,${T / 1000},${T / 1000 + 5},${T / 1000 - 1},1]`,
+    );
     expect(
       entryLine(folder(4, 0, 'Kerja', { decor: { color: 'teal', icon: null, cover: 9 } })),
-    ).toBe(`[4,0,1,"Kerja",0,"",0,0,${T / 1000},0,0,0,0,0,0,["teal","",9]]`);
+    ).toBe(`[4,0,1,"Kerja",0,"",0,"",0,${T / 1000},0,0,0,0,0,0,["teal","",9]]`);
   });
 
   it('round-trips every field, with times in whole seconds', () => {

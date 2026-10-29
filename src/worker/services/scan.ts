@@ -4,6 +4,7 @@
 // nodes `ready`; infected → object deleted, reservation released, nodes `rejected`, hash
 // blocklisted, uploader notified.
 import type { ScanResult } from '../adapters/scanner';
+import { markBlobOwnersDirty } from './drive-index-sync';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
 import type { ScanCarry } from '../queues/messages';
@@ -139,6 +140,7 @@ export async function processScan(
            scanned_at = ?7, scan_attempts = scan_attempts + 1 WHERE id = ?1`,
       ).bind(blobId, status, result.sha256, result.crc32, result.sniffedMime, detail, now),
     ]);
+    await markBlobOwnersDirty(ctx, [blobId]);
     await checkQuotaThresholds(ctx, blob.pool_id);
   } else {
     const { results: affected } = await DB.prepare(
@@ -167,6 +169,7 @@ export async function processScan(
       );
     }
     await DB.batch(stmts);
+    await markBlobOwnersDirty(ctx, [blobId]);
     for (const n of affected)
       await notify(ctx, n.created_by, 'file_rejected', {
         nodeId: n.id,

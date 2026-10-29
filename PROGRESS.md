@@ -37,7 +37,11 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] R1 format + pustaka index (2026-10-26): `shared/drive-index.ts` (format v1: header + satu baris JSON per entri,
   polos di R2), `services/drive-index.ts` (`IndexDoc`, `readIndex`, `changeIndex` bersyarat etag + ulang + tunggu 429),
   shim R2 (put atomik per key, `limitWritesPerKey`), `npm run bench:index`, 17 test. Angka di ADR-064.
-- [ ] R2 baca dari index · R3 tulis ke index · R4 index keluarga · R5 share tanpa D1 ·
+- [x] R3 tulis ke index (ADR-074, 2026-10-29): setiap perubahan pohon pribadi ditulis ke `u/{userId}/index.txt` sebagai
+  proyeksi D1 (kolom `x` = id D1, `st = 2` diblokir), digabung lewat klaim `manifest_dirty` (satu gelombang = satu
+  tulis), cron jam-an `drive_index_flush` sebagai cadangan, migrasi data `0020` menandai user lama. App masih membaca D1.
+- [ ] Pemilik: migrasi `0020` di D1 remote + deploy, supaya index user production mulai ditulis.
+- [ ] R2 baca dari index · R4 index keluarga · R5 share tanpa D1 ·
   R6 sesi/token/OAuth tanpa D1 · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

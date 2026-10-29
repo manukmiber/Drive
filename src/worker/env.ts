@@ -48,6 +48,8 @@ export interface Env {
   CF_ACCOUNT_ID?: string;
   /** Zeiko S3's own address, e.g. https://s3.zeiko.biz.id (ADR-044). Unset = no S3 API. */
   S3_ORIGIN?: string;
+  /** How long a Drive index flush waits for more changes before writing (ADR-074); default 1000 ms. */
+  INDEX_FLUSH_DELAY_MS?: string;
   /** Own S3 addresses (ADR-048): s3.<name>.<S3_SUBDOMAIN_SUFFIX>, e.g. suffix zeiko.biz.id. */
   S3_SUBDOMAIN_SUFFIX?: string;
   /** What a person's own domain CNAMEs to: the zone's Cloudflare for SaaS fallback origin. */

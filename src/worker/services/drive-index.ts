@@ -94,6 +94,16 @@ export class IndexDoc {
     else this.changes.delete(id);
   }
 
+  /** Sets a header field other than the format's own (v, rev, next, cols); unchanged values are no write. */
+  setMeta(key: string, value: unknown): void {
+    if (key === 'v' || key === 'rev' || key === 'next' || key === 'cols')
+      throw new Error(`drive index: ${key} is not metadata`);
+    if (JSON.stringify(this.head[key]) === JSON.stringify(value)) return;
+    if (value === undefined) delete this.head[key];
+    else this.head[key] = value;
+    this.headChanged = true;
+  }
+
   /** Every entry (a full parse; use parents() when only the tree shape is needed). */
   entries(): IndexEntry[] {
     const out: IndexEntry[] = [];

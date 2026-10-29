@@ -199,6 +199,8 @@ export const configSchema = z.object({
   s3_lifecycle_buckets_per_run: int().min(1).max(10).default(2),
   /** Objects one bucket's turn looks at; the rest waits for the next run (a cursor). */
   s3_lifecycle_scan_rows: int().min(10).max(1000).default(200),
+  /** Drive indexes the hourly cron writes for changes no request finished writing (ADR-074). */
+  drive_index_flush_per_run: int().min(1).max(200).default(20),
   // Paid upfront (ADR-047): a size in whole GB, 1 copy or 3 (in three R2 buckets), for a month.
   s3_price_idr_per_gb_month: nonNeg().default(500),
   s3_price_idr_per_gb_month_3x: nonNeg().default(1_250),

@@ -18,6 +18,9 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
   bertahap lewat **fase R di `docs/ROADMAP.md`**, R0 sudah dijawab semua (ADR-064).
   Sampai pindah selesai: **jangan menambah tabel atau kolom D1 untuk Drive**, dan fitur Drive baru di roadmap dibekukan sampai R3
   selesai (keputusan pemilik; fitur S3 boleh jalan).
+- **Sejak R3 (ADR-074) index ditulis untuk setiap perubahan** pohon pribadi, sebagai proyeksi D1 (app masih membaca D1
+  sampai R2). Kode yang mengubah `nodes`, `node_stars`, atau status/thumbnail `blobs` harus menandai user-nya:
+  `markManifestDirty`/`markIndexDirty` (atau `markBlobOwnersDirty`) dari `services/drive-index-sync.ts`.
 
 ## Mesin ini
 - HP Android (PRoot, aarch64). **workerd tidak bisa jalan** → jangan pakai `wrangler dev`,

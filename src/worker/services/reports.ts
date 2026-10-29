@@ -4,6 +4,7 @@
 // operator's call, never automatic: a report is only a claim (ADR-056). Rejecting a report undoes
 // what it switched off. The operator works from the relay's Zeiko Drive screen (ops API, ADR-057).
 import type { Ctx } from '../context';
+import { markBlobOwnersDirty } from './drive-index-sync';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
 import { disableSharesForNode } from './shares';
@@ -201,6 +202,7 @@ export async function applyActions(
           )
             .bind(b, mark)
             .run();
+        await markBlobOwnersDirty(ctx, target.blobIds);
         break;
       case 'unquarantine':
         for (const b of target.blobIds) {
@@ -210,6 +212,7 @@ export async function applyActions(
             .bind(b)
             .run();
         }
+        await markBlobOwnersDirty(ctx, target.blobIds);
         break;
       case 'legal_hold':
         for (const b of target.blobIds) {
@@ -268,6 +271,7 @@ export async function applyActions(
             ).bind(mark),
             DB.prepare(`DELETE FROM legal_holds WHERE reason = ?1`).bind(`report:${reportId}`),
           ]);
+        if (action !== 'resolve') await markBlobOwnersDirty(ctx, target.blobIds);
         break;
       }
     }
