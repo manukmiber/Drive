@@ -2021,3 +2021,35 @@ Test: `tests/integration/s3-tagging.test.ts`.
   ukuran part tidak tercatat) → `InvalidRequest` dengan saran memakai Range.
 
 Test: `tests/integration/s3-part-number.test.ts`.
+
+### 3. Checksum
+- **Diverifikasi:** `x-amz-checksum-crc32`, `-crc32c`, `-crc64nvme`, `-sha1`, `-sha256`. Nilainya boleh dikirim sebagai
+  header, sebagai trailer aws-chunked yang disebut di `x-amz-trailer` (cara AWS SDK v3 terbaru mengirim CRC32 secara
+  bawaan), atau cukup nama algoritmanya (`x-amz-sdk-checksum-algorithm`), lalu dihitung di sini. Berlaku untuk PutObject,
+  UploadPart, dan body XML kecil. Nilai salah → `BadDigest` (400) dan tidak ada yang tersimpan; nilai yang bukan base64
+  dengan panjang digest yang benar → `InvalidRequest`. Respons PutObject/UploadPart mengembalikan nilainya.
+- **Cara menghitung** (`lib/checksums.ts`): CRC32/CRC32C slice-by-8 di JavaScript (±600 MB/s di HP pengembang), CRC64NVME
+  dua tabel 32-bit, SHA-1/SHA-256 lewat `crypto.DigestStream` native di Workers (JS di dev). Vektor uji standar di
+  `tests/unit/checksums.test.ts`.
+- **Batas CPU:** Workers tidak punya CRC native. CRC memakan sekitar 1 ms CPU per MiB, sedangkan Workers Free memberi
+  10 ms per request. Karena itu CRC pada body yang lebih besar dari `s3_checksum_crc_max_bytes` (8 MiB, cukup untuk part
+  bawaan aws-cli/SDK) **tidak diperiksa dan tidak disimpan**: objek tetap tersimpan, hanya tanpa checksum. Di paket
+  berbayar angka ini bisa dinaikkan. SHA-1/SHA-256 selalu diperiksa.
+- **Disimpan** (langkah `v6`): `s3_objects.checksum_json` `{a, t, v, p?}`, `s3_uploads.checksum_json` `{a, t}`, dan
+  `s3_upload_parts.checksum`. PutObject → `FULL_OBJECT`. Multipart memakai `x-amz-checksum-algorithm` dan `-type` saat
+  dibuat, dengan bawaan dan pasangan seperti Amazon (CRC64NVME hanya FULL_OBJECT; SHA hanya COMPOSITE). Saat complete:
+  COMPOSITE = checksum dari gabungan checksum part + `-N`; FULL_OBJECT = CRC part digabung secara matematis
+  (crc_combine ala zlib, tanpa membaca ulang byte). Checksum part yang disebut di XML complete harus sama dengan yang
+  diperiksa (`InvalidPart`), dan `x-amz-checksum-<alg>` di request complete dibandingkan dengan nilai utuhnya
+  (`BadDigest`). Kalau ada part yang tidak diperiksa (CRC melewati batas), objeknya tidak punya checksum.
+- **Dikembalikan** dengan `x-amz-checksum-mode: ENABLED` di GetObject/HeadObject: untuk objek utuh, atau part N dari
+  objek COMPOSITE (nilai part itu). Range biasa tidak membawa checksum. ListParts menampilkan checksum tiap part.
+- **GetObjectAttributes** (`?attributes`, keluar dari `UNSUPPORTED_SUB`): `ETag`, `Checksum`, `ObjectParts` (jumlah
+  part, ukuran, dan checksum part kalau COMPOSITE; `x-amz-max-parts` / `x-amz-part-number-marker`), `StorageClass`,
+  `ObjectSize`. Butuh izin `read`; anonim ditolak.
+- **CopyObject** membawa checksum FULL_OBJECT sumber (byte-nya sama), membuang COMPOSITE (salinan = satu part), dan
+  `x-amz-checksum-algorithm` di CopyObject → `NotImplemented` (perlu membaca ulang seluruh byte).
+- Objek tanpa checksum dari klien tidak diberi checksum. Berbeda dari Amazon, yang sekarang menghitung CRC64NVME untuk
+  semua objek; di sini itu terlalu mahal CPU.
+
+Test: `tests/unit/checksums.test.ts`, `tests/integration/s3-checksums.test.ts`.

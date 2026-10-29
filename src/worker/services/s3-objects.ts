@@ -4,6 +4,7 @@
 // after, like Drive's quota (SPEC §4), on the account's row in the main database. A replaced or
 // deleted object's bytes are removed from R2 right away: nothing is shared between objects.
 import { GIB, R2_MAX_PARTS, R2_MIN_PART_BYTES } from '../../shared/constants';
+import { algOf, combineCrcs, compositeOf, type ChecksumAlg } from '../lib/checksums';
 import { parseTags, tagsJson, type Tag } from './s3-tags';
 import type { ScanResult } from '../adapters/scanner';
 import type { Ctx } from '../context';
@@ -67,6 +68,35 @@ export interface ObjectRow {
   /** Multipart objects: how many parts, and the size of every part but the last (ADR-076). */
   parts?: number | null;
   part_size?: number | null;
+  /** The checksum the client sent and Zeiko S3 checked (`StoredChecksum`, ADR-076). */
+  checksum_json?: string | null;
+}
+
+export type ChecksumType = 'FULL_OBJECT' | 'COMPOSITE';
+
+export interface StoredChecksum {
+  a: ChecksumAlg;
+  t: ChecksumType;
+  /** base64; a COMPOSITE value ends in "-<parts>". */
+  v: string;
+  /** COMPOSITE: each part's value. */
+  p?: string[];
+}
+
+/** A checksum computed while a request body streamed (its comparison is in the body's verify()). */
+export interface BodyChecksum {
+  alg: ChecksumAlg;
+  value: () => Promise<string>;
+}
+
+export function storedChecksum(json: string | null | undefined): StoredChecksum | null {
+  if (!json) return null;
+  try {
+    const c = JSON.parse(json) as StoredChecksum;
+    return c && typeof c.v === 'string' && algOf(c.a) ? c : null;
+  } catch {
+    return null;
+  }
 }
 
 const enc = new TextEncoder();
@@ -192,8 +222,8 @@ async function replaceRow(
   const insert = (tail: string) =>
     db
       .prepare(
-        `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at, tags_json, parts, part_size)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)${tail}`,
+        `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at, tags_json, parts, part_size, checksum_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)${tail}`,
       )
       .bind(
         row.user_id,
@@ -210,6 +240,7 @@ async function replaceRow(
         row.tags_json,
         row.parts ?? null,
         row.part_size ?? null,
+        row.checksum_json ?? null,
       );
   if (!cond) {
     const [deleted] = await db.batch([
@@ -238,7 +269,7 @@ async function replaceRow(
       .prepare(
         `UPDATE s3_objects SET blob_id = ?5, size = ?6, etag = ?7, content_type = ?8, meta_json = ?9,
            scan_status = ?10, sha256 = ?11, modified_at = ?12, tags_json = ?13, parts = ?14,
-           part_size = ?15, replicated = 0
+           part_size = ?15, checksum_json = ?16, replicated = 0
          WHERE ${name} AND etag = ?4 RETURNING blob_id`,
       )
       .bind(
@@ -257,6 +288,7 @@ async function replaceRow(
         row.tags_json,
         row.parts ?? null,
         row.part_size ?? null,
+        row.checksum_json ?? null,
       ),
     ...extra,
   ]);
@@ -287,6 +319,8 @@ export interface PutInput {
   condition?: WriteCondition | null;
   /** x-amz-tagging (ADR-076). */
   tags?: Tag[] | null;
+  /** x-amz-checksum-* (ADR-076): checked by `verify`, kept with the object. */
+  checksum?: BodyChecksum | null;
 }
 
 export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): Promise<ObjectRow> {
@@ -334,6 +368,13 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
       sha256: null,
       modified_at: ctx.now(),
       tags_json: tagsJson(input.tags),
+      checksum_json: input.checksum
+        ? JSON.stringify({
+            a: input.checksum.alg,
+            t: 'FULL_OBJECT',
+            v: await input.checksum.value(),
+          })
+        : null,
     };
     const { won, old } = await replaceRow(db, row, [], input.condition);
     // Another writer got there first: this one's bytes go (below), as on any failed upload.
@@ -519,9 +560,11 @@ export async function copyObject(
       content_type: contentType,
       meta_json: meta,
       tags_json: tags,
-      // One object in one put, whatever the source was made of.
+      // One object in one put, whatever the source was made of; a full-object checksum still holds.
       parts: null,
       part_size: null,
+      checksum_json:
+        storedChecksum(src.checksum_json)?.t === 'FULL_OBJECT' ? src.checksum_json : null,
       // The bytes are the source's: so is the scan result.
       modified_at: now,
     };
@@ -709,6 +752,8 @@ export interface UploadRow {
   expires_at: number;
   /** x-amz-tagging, given to the object on completion (ADR-076). */
   tags_json?: string | null;
+  /** x-amz-checksum-algorithm / -type at the start: {a, t} (ADR-076). */
+  checksum_json?: string | null;
 }
 
 export async function createUpload(
@@ -719,6 +764,7 @@ export async function createUpload(
   contentType: string | null,
   meta: ObjectMeta,
   tags: Tag[] | null = null,
+  checksum: { a: ChecksumAlg; t: ChecksumType } | null = null,
 ): Promise<UploadRow> {
   validateKey(key);
   if (account.status !== 'active')
@@ -751,11 +797,12 @@ export async function createUpload(
     created_at: now,
     expires_at: now + cfg.s3_multipart_ttl_hours * 3_600_000,
     tags_json: tagsJson(tags),
+    checksum_json: checksum ? JSON.stringify(checksum) : null,
   };
   await db
     .prepare(
-      `INSERT INTO s3_uploads (id, user_id, bucket, key, blob_id, r2_upload_id, content_type, meta_json, created_at, expires_at, tags_json)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+      `INSERT INTO s3_uploads (id, user_id, bucket, key, blob_id, r2_upload_id, content_type, meta_json, created_at, expires_at, tags_json, checksum_json)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
     )
     .bind(
       row.id,
@@ -769,6 +816,7 @@ export async function createUpload(
       now,
       row.expires_at,
       row.tags_json,
+      row.checksum_json,
     )
     .run();
   return row;
@@ -809,6 +857,7 @@ async function storePart(
   size: number,
   body: () => Promise<ReadableStream<Uint8Array>>,
   verify?: () => Promise<void>,
+  checksum?: BodyChecksum | null,
 ): Promise<string> {
   await reserveBytes(ctx, account.userId, size);
   let etag: string;
@@ -820,6 +869,7 @@ async function storePart(
     const part = await mpu.uploadPart(partNumber, withKnownLength(await body(), size));
     await verify?.();
     etag = part.etag;
+    const sum = checksum ? `${checksum.alg}:${await checksum.value()}` : null;
     const [old] = await db.batch([
       db
         .prepare(
@@ -828,9 +878,9 @@ async function storePart(
         .bind(up.id, partNumber),
       db
         .prepare(
-          `INSERT INTO s3_upload_parts (upload_id, part_number, etag, size, created_at) VALUES (?1, ?2, ?3, ?4, ?5)`,
+          `INSERT INTO s3_upload_parts (upload_id, part_number, etag, size, created_at, checksum) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`,
         )
-        .bind(up.id, partNumber, etag, size, ctx.now()),
+        .bind(up.id, partNumber, etag, size, ctx.now(), sum),
     ]);
     const replaced = (old?.results[0] as { size: number } | undefined)?.size ?? 0;
     await releaseBytes(ctx, account.userId, replaced);
@@ -851,6 +901,7 @@ export async function uploadPart(
   body: ReadableStream<Uint8Array> | null,
   size: number,
   verify?: () => Promise<void>,
+  checksum?: BodyChecksum | null,
 ): Promise<string> {
   checkPartNumber(partNumber);
   if (size > MAX_PART_BYTES) throw new S3Error('EntityTooLarge', 'A part may be 5 GiB at most.');
@@ -865,6 +916,7 @@ export async function uploadPart(
     size,
     async () => body ?? new ReadableStream({ start: (c) => c.close() }),
     verify,
+    checksum,
   );
 }
 
@@ -919,6 +971,35 @@ interface PartRow {
   etag: string;
   size: number;
   created_at: number;
+  /** "ALG:base64" when the part came with a checksum that was checked (ADR-076). */
+  checksum?: string | null;
+}
+
+/** A part's value for `alg`, if it was checked with that algorithm. */
+export function partChecksum(p: Pick<PartRow, 'checksum'>, alg: ChecksumAlg): string | null {
+  return p.checksum?.startsWith(`${alg}:`) ? p.checksum.slice(alg.length + 1) : null;
+}
+
+/**
+ * The object's checksum from its parts (ADR-076): COMPOSITE = checksum of the part checksums + "-N",
+ * FULL_OBJECT = the CRCs combined. Null when the upload named no algorithm, or a part wasn't checked
+ * with it (a CRC on a part over `s3_checksum_crc_max_bytes`).
+ */
+async function wholeChecksum(up: UploadRow, chosen: PartRow[]): Promise<StoredChecksum | null> {
+  if (!up.checksum_json) return null;
+  const { a, t } = JSON.parse(up.checksum_json) as { a: ChecksumAlg; t: ChecksumType };
+  const values = chosen.map((p) => partChecksum(p, a));
+  if (values.some((v) => v === null)) return null;
+  const parts = values as string[];
+  if (t === 'COMPOSITE') return { a, t, v: await compositeOf(a, parts), p: parts };
+  return {
+    a,
+    t,
+    v: combineCrcs(
+      a,
+      parts.map((value, i) => ({ value, size: chosen[i]!.size })),
+    ),
+  };
 }
 
 export async function completeUpload(
@@ -927,8 +1008,15 @@ export async function completeUpload(
   bucket: string,
   key: string,
   uploadId: string,
-  parts: Array<{ partNumber: number; etag: string }>,
+  parts: Array<{
+    partNumber: number;
+    etag: string;
+    /** Checksum<ALG> elements of the part in the request (ADR-076). */
+    checksums?: Partial<Record<ChecksumAlg, string>>;
+  }>,
   condition?: WriteCondition | null,
+  /** x-amz-checksum-<alg> on the request: what the client expects the whole object's to be. */
+  expected?: { alg: ChecksumAlg; value: string } | null,
 ): Promise<ObjectRow> {
   const db = await indexDb(ctx.env, account.indexBinding);
   const up = await findUpload(db, account.userId, bucket, key, uploadId);
@@ -939,7 +1027,7 @@ export async function completeUpload(
   }
   const { results: stored } = await db
     .prepare(
-      `SELECT part_number, etag, size, created_at FROM s3_upload_parts WHERE upload_id = ?1 ORDER BY part_number`,
+      `SELECT part_number, etag, size, created_at, checksum FROM s3_upload_parts WHERE upload_id = ?1 ORDER BY part_number`,
     )
     .bind(up.id)
     .all<PartRow>();
@@ -963,6 +1051,24 @@ export async function completeUpload(
   }
   if (chosen.length > 1 && chosen[chosen.length - 1]!.size > chosen[0]!.size)
     throw new S3Error('InvalidPart', 'The last part may not be larger than the others.');
+  // A part checksum the client lists must be the one its part was checked against.
+  chosen.forEach((s, i) => {
+    for (const [alg, value] of Object.entries(parts[i]!.checksums ?? {})) {
+      const have = partChecksum(s, alg as ChecksumAlg);
+      if (have !== null && have !== value)
+        throw new S3Error(
+          'InvalidPart',
+          `The ${alg} checksum of part ${s.part_number} does not match the part that was uploaded.`,
+          { PartNumber: String(s.part_number) },
+        );
+    }
+  });
+  const checksum = await wholeChecksum(up, chosen);
+  if (expected && checksum && expected.alg === checksum.a && expected.value !== checksum.v)
+    throw new S3Error(
+      'BadDigest',
+      `The ${expected.alg} you specified did not match the calculated checksum.`,
+    );
   const total = chosen.reduce((n, p) => n + p.size, 0);
   const reserved = stored.reduce((n, p) => n + p.size, 0);
   // Failing here keeps the upload: the client may still abort it, or complete it without the condition.
@@ -988,6 +1094,7 @@ export async function completeUpload(
     tags_json: up.tags_json ?? null,
     parts: chosen.length,
     part_size: chosen[0]!.size,
+    checksum_json: checksum ? JSON.stringify(checksum) : null,
     scan_status: total === 0 ? 'clean' : 'pending',
     sha256: null,
     modified_at: ctx.now(),
@@ -1061,7 +1168,7 @@ export async function listParts(
   const upload = await findUpload(db, account.userId, bucket, key, uploadId);
   const { results } = await db
     .prepare(
-      `SELECT part_number, etag, size, created_at FROM s3_upload_parts WHERE upload_id = ?1 AND part_number > ?2
+      `SELECT part_number, etag, size, created_at, checksum FROM s3_upload_parts WHERE upload_id = ?1 AND part_number > ?2
        ORDER BY part_number LIMIT ?3`,
     )
     .bind(upload.id, marker, max + 1)

@@ -86,6 +86,13 @@ const MIGRATIONS: string[][] = [
     `ALTER TABLE s3_objects ADD COLUMN parts INTEGER`,
     `ALTER TABLE s3_objects ADD COLUMN part_size INTEGER`,
   ],
+  // v6 (ADR-076): checksums the client sent and Zeiko S3 checked. Objects: {a, t, v, p?} (algorithm,
+  // FULL_OBJECT/COMPOSITE, base64 value, part values); uploads: {a, t}; parts: "ALG:base64".
+  [
+    `ALTER TABLE s3_objects ADD COLUMN checksum_json TEXT`,
+    `ALTER TABLE s3_uploads ADD COLUMN checksum_json TEXT`,
+    `ALTER TABLE s3_upload_parts ADD COLUMN checksum TEXT`,
+  ],
 ];
 export const INDEX_SCHEMA_VERSION = MIGRATIONS.length;
 

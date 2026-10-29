@@ -179,6 +179,12 @@ export const configSchema = z.object({
     .max(100 * 1000 * 1000)
     .default(95 * MIB),
   /**
+   * CRC checksums (x-amz-checksum-crc32/-crc32c/-crc64nvme) are computed in JavaScript, about 1 ms
+   * of CPU per MiB: bodies bigger than this are stored without checking or keeping them (ADR-076).
+   * Workers Free allows 10 ms per request; raise it on a paid plan. SHA-1/SHA-256 are always checked.
+   */
+  s3_checksum_crc_max_bytes: nonNeg().default(8 * MIB),
+  /**
    * Bigger files from the /s3 page go up in parts through the app (S4, ADR-075): this size per part
    * (raised when a file would need more than 10,000), each part one request.
    */

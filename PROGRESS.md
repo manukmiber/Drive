@@ -270,7 +270,10 @@ lewat fase R di `docs/ROADMAP.md`.
   CopyObject, batas Amazon, `x-amz-tagging-count`; lifecycle filter Tag/And. Index per akun v4.
 - [x] 2. GetObject/HeadObject `partNumber`: jumlah dan ukuran part dicatat saat complete (index v5), 206 + Content-Range
   + `x-amz-mp-parts-count`, error Amazon (`InvalidPartNumber` 416).
-- [ ] 3. checksum · 4. PostObject.
+- [x] 3. Checksum: CRC32/CRC32C/CRC64NVME/SHA-1/SHA-256 diperiksa (header, trailer aws-chunked), disimpan (index v6),
+  dikembalikan dengan checksum mode; multipart COMPOSITE/FULL_OBJECT; GetObjectAttributes. CRC hanya sampai
+  `s3_checksum_crc_max_bytes` (8 MiB, batas CPU Workers Free).
+- [ ] 4. PostObject.
 
 ## Upload multipart dari `/s3` (S4, ADR-075, 2026-10-29)
 - [x] File di atas satu part (32 MiB) naik per part lewat `/api/s3/buckets/:name/uploads/*`: paralel, coba ulang per

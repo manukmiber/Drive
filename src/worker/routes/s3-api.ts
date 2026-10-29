@@ -8,6 +8,17 @@ import type { Ctx } from '../context';
 import type { Env } from '../env';
 import { track } from '../lib/analytics';
 import { awsChunkedDecoder, payloadHasher } from '../lib/aws-chunked';
+import {
+  algOf,
+  algOfHeader,
+  CHECKSUM_ALGS,
+  checksumHeader,
+  checksumStream,
+  DIGEST_BYTES,
+  fromBase64,
+  isCrc,
+  type ChecksumAlg,
+} from '../lib/checksums';
 import { base64UrlDecode, base64UrlEncode, toHex } from '../lib/crypto';
 import { parseRange } from '../lib/http';
 import { errorMessage, log } from '../lib/log';
@@ -97,6 +108,9 @@ import {
   putObject,
   uploadPart,
   validateKey,
+  storedChecksum,
+  type BodyChecksum,
+  type ChecksumType,
   type ListCursor,
   type ObjectRow,
   type SourceConditions,
@@ -128,7 +142,6 @@ export async function resolveS3Host(url: URL, env: Env): Promise<{ owner: string
 const UNSUPPORTED_SUB = [
   'accelerate',
   'analytics',
-  'attributes',
   'encryption',
   'intelligent-tiering',
   'inventory',
@@ -299,16 +312,96 @@ interface Body {
   size: number;
   verify?: () => Promise<void>;
   failure: () => S3Error | null;
+  /** The x-amz-checksum-* the request carried, computed as it streamed (ADR-076). */
+  checksum?: BodyChecksum;
+}
+
+/**
+ * The checksum a request carries (ADR-076): an x-amz-checksum-* header, a trailer named in
+ * x-amz-trailer (aws-chunked), or only an algorithm (then it is computed and kept, like Amazon).
+ * A CRC over a body bigger than `crcMax` is neither checked nor kept (CPU on Workers Free).
+ */
+function requestChecksum(
+  h: Headers,
+  size: number,
+  crcMax: number,
+): { alg: ChecksumAlg; header: string | null; trailer: string | null } | null {
+  const inHeaders = CHECKSUM_ALGS.filter((a) => h.get(checksumHeader(a)) !== null);
+  const inTrailer = (h.get('x-amz-trailer') ?? '')
+    .split(',')
+    .map((s) => algOfHeader(s))
+    .filter((a): a is ChecksumAlg => a !== null);
+  if (inHeaders.length + inTrailer.length > 1)
+    throw new S3Error(
+      'InvalidRequest',
+      'Expecting a single x-amz-checksum- header. Multiple checksum Types are not allowed.',
+    );
+  let alg: ChecksumAlg | null = inHeaders[0] ?? inTrailer[0] ?? null;
+  const named = h.get('x-amz-sdk-checksum-algorithm');
+  if (named !== null) {
+    const n = algOf(named);
+    if (!n)
+      throw new S3Error(
+        'InvalidRequest',
+        'Value for x-amz-sdk-checksum-algorithm header is invalid.',
+      );
+    if (alg && alg !== n)
+      throw new S3Error(
+        'InvalidRequest',
+        'The algorithm in x-amz-sdk-checksum-algorithm does not match the checksum sent.',
+      );
+    alg = n;
+  }
+  if (!alg) return null;
+  const header = inHeaders.length ? h.get(checksumHeader(alg)) : null;
+  if (header !== null && fromBase64(header)?.length !== DIGEST_BYTES[alg])
+    throw new S3Error('InvalidRequest', `Value for ${checksumHeader(alg)} header is invalid.`);
+  if (isCrc(alg) && size > crcMax) return null;
+  return { alg, header, trailer: inTrailer.length ? checksumHeader(alg) : null };
+}
+
+/** Adds the request's checksum to a body: hashed as it streams, compared in verify(). */
+function withChecksum(
+  body: Body,
+  sum: ReturnType<typeof requestChecksum>,
+  trailers: () => Record<string, string>,
+): Body {
+  if (!sum) return body;
+  const cs = checksumStream(sum.alg);
+  const verify = body.verify;
+  return {
+    ...body,
+    stream: body.stream ? body.stream.pipeThrough(cs.stream) : null,
+    checksum: { alg: sum.alg, value: cs.value },
+    verify: async () => {
+      await verify?.();
+      const got = await cs.value();
+      const want = sum.header ?? (sum.trailer ? (trailers()[sum.trailer] ?? null) : null);
+      if (sum.trailer && want === null)
+        throw new S3Error(
+          'InvalidRequest',
+          `The trailer ${sum.trailer} was announced but not sent.`,
+        );
+      if (want !== null && want !== got)
+        throw new S3Error(
+          'BadDigest',
+          `The ${sum.alg} you specified did not match the calculated checksum.`,
+        );
+    },
+  };
 }
 
 /**
  * The request body as the object's bytes: aws-chunked decoded, its SHA-256 checked if signed.
  * `needLength` = false lets a body without Content-Length through (size 0 = unknown).
  */
-function objectBody(r: Req, needLength = true): Body {
+function objectBody(r: Req, needLength = true, crcMax = Infinity): Body {
   const auth = needAuth(r);
   const ph = auth.parsed.payloadHash;
   const h = r.raw.headers;
+  const declared = Number(h.get('x-amz-decoded-content-length') ?? h.get('content-length') ?? 0);
+  const sum = requestChecksum(h, Number.isFinite(declared) ? declared : 0, crcMax);
+  let trailers: Record<string, string> = {};
   if (
     ph === STREAMING_SIGNED ||
     ph === STREAMING_SIGNED_TRAILER ||
@@ -323,38 +416,53 @@ function objectBody(r: Req, needLength = true): Body {
     const decoder = awsChunkedDecoder(
       ph === STREAMING_UNSIGNED_TRAILER ? {} : { signed: auth.verified },
     );
+    trailers = decoder.trailers;
     r.bytesIn = Number(decoded);
-    return {
-      stream: r.raw.body ? r.raw.body.pipeThrough(decoder.stream) : null,
-      size: Number(decoded),
-      failure: () => decoder.failure,
-    };
+    return withChecksum(
+      {
+        stream: r.raw.body ? r.raw.body.pipeThrough(decoder.stream) : null,
+        size: Number(decoded),
+        failure: () => decoder.failure,
+      },
+      sum,
+      () => trailers,
+    );
   }
+  if (sum?.trailer)
+    throw new S3Error('InvalidRequest', 'Trailing checksums need an aws-chunked body.');
   const header = h.get('content-length');
   const length = header !== null && /^\d+$/.test(header) ? header : needLength ? null : '0';
   if (length === null)
     throw new S3Error('MissingContentLength', 'You must provide the Content-Length HTTP header.');
   r.bytesIn = Number(length);
   if (ph === UNSIGNED_PAYLOAD)
-    return { stream: r.raw.body, size: Number(length), failure: () => null };
+    return withChecksum(
+      { stream: r.raw.body, size: Number(length), failure: () => null },
+      sum,
+      () => trailers,
+    );
   if (!/^[0-9a-f]{64}$/.test(ph))
     throw new S3Error(
       'InvalidArgument',
       'x-amz-content-sha256 must be UNSIGNED-PAYLOAD, STREAMING-* or a SHA-256 hex digest.',
     );
   const hasher = payloadHasher();
-  return {
-    stream: r.raw.body ? r.raw.body.pipeThrough(hasher.stream) : null,
-    size: Number(length),
-    verify: async () => {
-      if ((await hasher.digest()) !== ph)
-        throw new S3Error(
-          'XAmzContentSHA256Mismatch',
-          'The provided x-amz-content-sha256 header does not match what was computed.',
-        );
+  return withChecksum(
+    {
+      stream: r.raw.body ? r.raw.body.pipeThrough(hasher.stream) : null,
+      size: Number(length),
+      verify: async () => {
+        if ((await hasher.digest()) !== ph)
+          throw new S3Error(
+            'XAmzContentSHA256Mismatch',
+            'The provided x-amz-content-sha256 header does not match what was computed.',
+          );
+      },
+      failure: () => null,
     },
-    failure: () => null,
-  };
+    sum,
+    () => trailers,
+  );
 }
 
 /** Small request bodies (XML): read whole, bounded, with the signed hash checked. */
@@ -1021,10 +1129,22 @@ async function readObject(
   }
   let range = parseRange(h.get('range'), row.size);
   if (range.kind === 'multi') range = { kind: 'none' };
+  // The whole object, or part 1 of one put in one go: its checksum applies (ADR-076).
+  const whole = range.kind === 'none' && (part === null || !row.parts);
   if (part !== null) {
     const p = partRange(row, part);
     if (row.parts) headers.set('x-amz-mp-parts-count', String(p.count));
     range = row.size ? { kind: 'single', start: p.start, end: p.end } : { kind: 'none' };
+  }
+  const sum = storedChecksum(row.checksum_json);
+  if (sum && h.get('x-amz-checksum-mode')?.toUpperCase() === 'ENABLED') {
+    if (whole) {
+      headers.set(checksumHeader(sum.a), sum.v);
+      headers.set('x-amz-checksum-type', sum.t);
+    } else if (part !== null && sum.p?.[part - 1]) {
+      headers.set(checksumHeader(sum.a), sum.p[part - 1]!);
+      headers.set('x-amz-checksum-type', sum.t);
+    }
   }
   if (range.kind === 'unsatisfiable')
     throw new S3Error('InvalidRange', 'The requested range is not satisfiable.', {
@@ -1051,10 +1171,41 @@ async function readObject(
   return new Response(obj.body, { status: 200, headers });
 }
 
+/** CreateMultipartUpload's x-amz-checksum-algorithm and -type (Amazon's defaults and pairs). */
+function uploadChecksum(h: Headers): { a: ChecksumAlg; t: ChecksumType } | null {
+  const named = h.get('x-amz-checksum-algorithm');
+  const type = h.get('x-amz-checksum-type')?.toUpperCase() ?? null;
+  if (named === null) {
+    if (type !== null)
+      throw new S3Error('InvalidRequest', 'x-amz-checksum-type needs x-amz-checksum-algorithm.');
+    return null;
+  }
+  const a = algOf(named);
+  if (!a) throw new S3Error('InvalidArgument', 'Checksum algorithm provided is unsupported.');
+  if (type !== null && type !== 'COMPOSITE' && type !== 'FULL_OBJECT')
+    throw new S3Error('InvalidArgument', 'Value for x-amz-checksum-type header is invalid.');
+  const t: ChecksumType =
+    (type as ChecksumType | null) ?? (a === 'CRC64NVME' ? 'FULL_OBJECT' : 'COMPOSITE');
+  if ((t === 'FULL_OBJECT' && !isCrc(a)) || (t === 'COMPOSITE' && a === 'CRC64NVME'))
+    throw new S3Error(
+      'InvalidRequest',
+      `The ${t} checksum type cannot be used with the ${a.toLowerCase()} checksum algorithm.`,
+    );
+  return { a, t };
+}
+
+/** x-amz-checksum-<alg> (and its type) on a response. */
+async function checksumHeaders(c: BodyChecksum | undefined): Promise<Record<string, string>> {
+  return c
+    ? { [checksumHeader(c.alg)]: await c.value(), 'x-amz-checksum-type': 'FULL_OBJECT' }
+    : {};
+}
+
 async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
   const auth = needAuth(r);
   const h = r.raw.headers;
   const q = r.query;
+  const crcMax = (await r.ctx.config()).s3_checksum_crc_max_bytes;
   const key = r.key!;
   const copySource = h.get('x-amz-copy-source');
   const uploadId = q.get('uploadId');
@@ -1082,7 +1233,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
     }
     r.op = 'UploadPart';
     noConditions(r);
-    const body = objectBody(r);
+    const body = objectBody(r, true, crcMax);
     try {
       const etag = await uploadPart(
         r.ctx,
@@ -1094,14 +1245,23 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
         body.stream,
         body.size,
         body.verify,
+        body.checksum,
       );
-      return new Response(null, { status: 200, headers: { ETag: quoted(etag) } });
+      const sum = body.checksum
+        ? { [checksumHeader(body.checksum.alg)]: await body.checksum.value() }
+        : {};
+      return new Response(null, { status: 200, headers: { ETag: quoted(etag), ...sum } });
     } catch (e) {
       throw body.failure() ?? e;
     }
   }
   if (copySource) {
     r.op = 'CopyObject';
+    if (h.get('x-amz-checksum-algorithm') !== null)
+      throw new S3Error(
+        'NotImplemented',
+        'CopyObject with a new checksum algorithm is not supported by Zeiko S3; a full-object checksum is copied as it is.',
+      );
     const from = parseCopySource(copySource);
     permit(r, 'read', from.bucket, from.key);
     const directive = (h.get('x-amz-metadata-directive') ?? 'COPY').toUpperCase();
@@ -1128,7 +1288,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
   const condition = writeCondition(h);
   const md5Hex = contentMd5Hex(h);
   const meta = metaFromHeaders(h);
-  const body = objectBody(r);
+  const body = objectBody(r, true, crcMax);
   try {
     const row = await putObject(r.ctx, auth.account, {
       bucket: bucket.name,
@@ -1140,9 +1300,13 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       md5Hex,
       condition,
       tags: tagsFromHeader(h.get('x-amz-tagging')),
+      checksum: body.checksum ?? null,
       ...(body.verify ? { verify: body.verify } : {}),
     });
-    return new Response(null, { status: 200, headers: { ETag: quoted(row.etag) } });
+    return new Response(null, {
+      status: 200,
+      headers: { ETag: quoted(row.etag), ...(await checksumHeaders(body.checksum)) },
+    });
   } catch (e) {
     throw body.failure() ?? e;
   }
@@ -1166,7 +1330,8 @@ async function objectOp(r: Req): Promise<Response> {
       (r.method !== 'GET' && r.method !== 'HEAD') ||
       q.has('acl') ||
       q.has('uploadId') ||
-      q.has('tagging')
+      q.has('tagging') ||
+      q.has('attributes')
     )
       throw new S3Error('AccessDenied', 'Access Denied');
     if (!bucket.public || bucket.blocked_at !== null)
@@ -1191,6 +1356,7 @@ async function objectOp(r: Req): Promise<Response> {
   const reading = (r.method === 'GET' || r.method === 'HEAD') && !q.has('uploadId');
   permit(r, reading ? 'read' : 'write', bucket.name, key);
   if (q.has('tagging')) return taggingOp(r, auth.account, bucket, key);
+  if (q.has('attributes') && r.method === 'GET') return attributesOp(r, auth.account, bucket, key);
   switch (r.method) {
     case 'GET':
       if (q.has('acl')) {
@@ -1211,6 +1377,9 @@ async function objectOp(r: Req): Promise<Response> {
           max,
         );
         const last = parts[parts.length - 1];
+        const upChecksum = upload.checksum_json
+          ? (JSON.parse(upload.checksum_json) as { a: ChecksumAlg; t: ChecksumType })
+          : null;
         return xmlResponse(
           xmlDoc('ListPartsResult', {
             Bucket: bucket.name,
@@ -1223,12 +1392,17 @@ async function objectOp(r: Req): Promise<Response> {
             ...(truncated && last ? { NextPartNumberMarker: last.part_number } : {}),
             MaxParts: max,
             IsTruncated: truncated,
-            Part: parts.map((p) => ({
-              PartNumber: p.part_number,
-              LastModified: iso(p.created_at),
-              ETag: quoted(p.etag),
-              Size: p.size,
-            })),
+            ...(upChecksum ? { ChecksumAlgorithm: upChecksum.a, ChecksumType: upChecksum.t } : {}),
+            Part: parts.map((p) => {
+              const [alg, value] = p.checksum?.split(':') ?? [];
+              return {
+                PartNumber: p.part_number,
+                LastModified: iso(p.created_at),
+                ETag: quoted(p.etag),
+                Size: p.size,
+                ...(alg && value ? { [`Checksum${alg}`]: value } : {}),
+              };
+            }),
           }),
         );
       }
@@ -1258,6 +1432,7 @@ async function objectOp(r: Req): Promise<Response> {
       if (q.has('uploads')) {
         r.op = 'CreateMultipartUpload';
         noConditions(r);
+        const checksum = uploadChecksum(r.raw.headers);
         const up = await createUpload(
           r.ctx,
           auth.account,
@@ -1266,6 +1441,7 @@ async function objectOp(r: Req): Promise<Response> {
           r.raw.headers.get('content-type'),
           metaFromHeaders(r.raw.headers),
           tagsFromHeader(r.raw.headers.get('x-amz-tagging')),
+          checksum,
         );
         return xmlResponse(
           xmlDoc('InitiateMultipartUploadResult', {
@@ -1273,6 +1449,10 @@ async function objectOp(r: Req): Promise<Response> {
             Key: key,
             UploadId: up.id,
           }),
+          200,
+          checksum
+            ? { 'x-amz-checksum-algorithm': checksum.a, 'x-amz-checksum-type': checksum.t }
+            : {},
         );
       }
       if (q.has('uploadId')) {
@@ -1282,7 +1462,11 @@ async function objectOp(r: Req): Promise<Response> {
         const parts = xmlElements(xml, 'Part').map((p) => ({
           partNumber: Number(xmlText(p, 'PartNumber')),
           etag: xmlText(p, 'ETag') ?? '',
+          checksums: Object.fromEntries(
+            CHECKSUM_ALGS.map((a) => [a, xmlText(p, `Checksum${a}`)]).filter(([, v]) => v !== null),
+          ) as Partial<Record<ChecksumAlg, string>>,
         }));
+        const wholeAlg = CHECKSUM_ALGS.find((a) => r.raw.headers.get(checksumHeader(a)) !== null);
         if (
           !xmlElements(xml, 'CompleteMultipartUpload').length ||
           parts.some((p) => !Number.isInteger(p.partNumber))
@@ -1299,14 +1483,17 @@ async function objectOp(r: Req): Promise<Response> {
           q.get('uploadId')!,
           parts,
           condition,
+          wholeAlg ? { alg: wholeAlg, value: r.raw.headers.get(checksumHeader(wholeAlg))! } : null,
         );
         const origin = r.ctx.env.S3_ORIGIN!;
+        const sum = storedChecksum(row.checksum_json);
         return xmlResponse(
           xmlDoc('CompleteMultipartUploadResult', {
             Location: `${origin}/${encodeURIComponent(bucket.name)}/${key.split('/').map(encodeURIComponent).join('/')}`,
             Bucket: bucket.name,
             Key: key,
             ETag: quoted(row.etag),
+            ...(sum ? { [`Checksum${sum.a}`]: sum.v, ChecksumType: sum.t } : {}),
           }),
         );
       }
@@ -1317,6 +1504,69 @@ async function objectOp(r: Req): Promise<Response> {
         'The specified method is not allowed against this resource.',
       );
   }
+}
+
+const OBJECT_ATTRIBUTES = ['ETag', 'Checksum', 'ObjectParts', 'StorageClass', 'ObjectSize'];
+
+/** GetObjectAttributes (ADR-076): what x-amz-object-attributes asks for, without the bytes. */
+async function attributesOp(
+  r: Req,
+  account: S3Account,
+  bucket: BucketRow,
+  key: string,
+): Promise<Response> {
+  r.op = 'GetObjectAttributes';
+  const h = r.raw.headers;
+  const wanted = (h.get('x-amz-object-attributes') ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!wanted.length)
+    throw new S3Error(
+      'InvalidArgument',
+      'x-amz-object-attributes header specifying the attributes to be retrieved is either missing or empty',
+    );
+  if (wanted.some((w) => !OBJECT_ATTRIBUTES.includes(w)))
+    throw new S3Error('InvalidArgument', 'Invalid attribute name specified.');
+  const row = await getObjectRow(r.ctx, account, bucket.name, key);
+  if (!row) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });
+  const sum = storedChecksum(row.checksum_json);
+  const body: XmlObject = {};
+  if (wanted.includes('ETag')) body.ETag = row.etag;
+  if (wanted.includes('Checksum') && sum)
+    body.Checksum = { [`Checksum${sum.a}`]: sum.v, ChecksumType: sum.t };
+  if (wanted.includes('ObjectParts') && row.parts && row.part_size) {
+    const count = row.parts;
+    const num = (name: string, def: number, max: number) => {
+      const v = h.get(name);
+      if (v === null) return def;
+      if (!/^\d+$/.test(v)) throw new S3Error('InvalidArgument', `${name} must be a whole number.`);
+      return Math.min(Number(v), max);
+    };
+    const maxParts = num('x-amz-max-parts', 1000, 1000);
+    const marker = num('x-amz-part-number-marker', 0, 10_000);
+    const last = Math.min(count, marker + maxParts);
+    const list: XmlObject[] = [];
+    for (let n = marker + 1; n <= last; n++)
+      list.push({
+        ...(sum?.p?.[n - 1] ? { [`Checksum${sum.a}`]: sum.p[n - 1] } : {}),
+        PartNumber: n,
+        Size: n < count ? row.part_size : row.size - row.part_size * (count - 1),
+      });
+    body.ObjectParts = {
+      PartsCount: count,
+      PartNumberMarker: marker,
+      NextPartNumberMarker: last,
+      MaxParts: maxParts,
+      IsTruncated: last < count,
+      Part: list,
+    };
+  }
+  if (wanted.includes('StorageClass')) body.StorageClass = 'STANDARD';
+  if (wanted.includes('ObjectSize')) body.ObjectSize = row.size;
+  return xmlResponse(xmlDoc('GetObjectAttributesResponse', body), 200, {
+    'Last-Modified': new Date(row.modified_at).toUTCString(),
+  });
 }
 
 /** Put/Get/DeleteObjectTagging (ADR-076). Tags change neither the ETag nor the date. */
