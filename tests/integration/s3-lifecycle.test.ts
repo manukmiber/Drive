@@ -90,13 +90,14 @@ describe('Zeiko S3 lifecycle', () => {
     expect(
       code(rule('<Transition><Days>30</Days><StorageClass>GLACIER</StorageClass></Transition>')),
     ).toBe('NotImplemented');
+    // Tag filters arrived with object tagging (ADR-076).
     expect(
       code(
         rule(
           '<Filter><Tag><Key>a</Key><Value>b</Value></Tag></Filter><Expiration><Days>1</Days></Expiration>',
         ),
       ),
-    ).toBe('NotImplemented');
+    ).toBe('ok');
     expect(
       code(
         rule(

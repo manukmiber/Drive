@@ -4,6 +4,7 @@
 // after, like Drive's quota (SPEC §4), on the account's row in the main database. A replaced or
 // deleted object's bytes are removed from R2 right away: nothing is shared between objects.
 import { GIB, R2_MAX_PARTS, R2_MIN_PART_BYTES } from '../../shared/constants';
+import { parseTags, tagsJson, type Tag } from './s3-tags';
 import type { ScanResult } from '../adapters/scanner';
 import type { Ctx } from '../context';
 import { randomBase62, ulid } from '../lib/ids';
@@ -61,6 +62,8 @@ export interface ObjectRow {
   scan_status: 'pending' | 'clean' | 'skipped' | 'error';
   sha256: string | null;
   modified_at: number;
+  /** Object tags, `[[key, value], …]` (ADR-076). */
+  tags_json: string | null;
 }
 
 const enc = new TextEncoder();
@@ -186,8 +189,8 @@ async function replaceRow(
   const insert = (tail: string) =>
     db
       .prepare(
-        `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)${tail}`,
+        `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at, tags_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)${tail}`,
       )
       .bind(
         row.user_id,
@@ -201,6 +204,7 @@ async function replaceRow(
         row.scan_status,
         row.sha256,
         row.modified_at,
+        row.tags_json,
       );
   if (!cond) {
     const [deleted] = await db.batch([
@@ -228,7 +232,7 @@ async function replaceRow(
     db
       .prepare(
         `UPDATE s3_objects SET blob_id = ?5, size = ?6, etag = ?7, content_type = ?8, meta_json = ?9,
-           scan_status = ?10, sha256 = ?11, modified_at = ?12, replicated = 0
+           scan_status = ?10, sha256 = ?11, modified_at = ?12, tags_json = ?13, replicated = 0
          WHERE ${name} AND etag = ?4 RETURNING blob_id`,
       )
       .bind(
@@ -244,6 +248,7 @@ async function replaceRow(
         row.scan_status,
         row.sha256,
         row.modified_at,
+        row.tags_json,
       ),
     ...extra,
   ]);
@@ -272,6 +277,8 @@ export interface PutInput {
   /** Runs once the bytes are stored, e.g. to compare the payload's SHA-256 (throws to undo). */
   verify?: () => Promise<void>;
   condition?: WriteCondition | null;
+  /** x-amz-tagging (ADR-076). */
+  tags?: Tag[] | null;
 }
 
 export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): Promise<ObjectRow> {
@@ -318,6 +325,7 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
       scan_status: obj.size === 0 ? 'clean' : 'pending',
       sha256: null,
       modified_at: ctx.now(),
+      tags_json: tagsJson(input.tags),
     };
     const { won, old } = await replaceRow(db, row, [], input.condition);
     // Another writer got there first: this one's bytes go (below), as on any failed upload.
@@ -383,6 +391,8 @@ export interface CopyInput {
   source?: SourceConditions;
   /** If-Match / If-None-Match: about what the copy replaces (ADR-068). */
   condition?: WriteCondition | null;
+  /** x-amz-tagging-directive REPLACE with these tags; absent = the source's tags (COPY). */
+  tags?: Tag[] | null;
 }
 
 /** The x-amz-copy-source-if-* headers of CopyObject and UploadPartCopy. */
@@ -434,9 +444,10 @@ export async function copyObject(
   await checkWrite(ctx, account, input.to.bucket, input.to.key, input.condition);
   const contentType = input.replace ? input.contentType : src.content_type;
   const meta = input.replace ? metaJson(input.meta) : src.meta_json;
+  const tags = input.tags !== undefined ? tagsJson(input.tags) : src.tags_json;
   const now = ctx.now();
   if (same) {
-    if (!input.replace)
+    if (!input.replace && input.tags === undefined)
       throw new S3Error(
         'InvalidRequest',
         'This copy request is illegal because it is trying to copy an object to itself without changing the object’s metadata.',
@@ -447,8 +458,8 @@ export async function copyObject(
       input.condition && 'ifMatch' in input.condition ? input.condition.ifMatch : null;
     const changed = await db
       .prepare(
-        `UPDATE s3_objects SET content_type = ?4, meta_json = ?5, modified_at = ?6
-         WHERE bucket = ?1 AND key = ?2 AND user_id = ?3${ifMatch === null ? '' : ' AND etag = ?7'}`,
+        `UPDATE s3_objects SET content_type = ?4, meta_json = ?5, modified_at = ?6, tags_json = ?7
+         WHERE bucket = ?1 AND key = ?2 AND user_id = ?3${ifMatch === null ? '' : ' AND etag = ?8'}`,
       )
       .bind(
         src.bucket,
@@ -457,12 +468,19 @@ export async function copyObject(
         contentType,
         meta,
         now,
+        tags,
         ...(ifMatch === null ? [] : [ifMatch]),
       )
       .run();
     if (ifMatch !== null && !changed.meta.changes)
       throw new S3Error('PreconditionFailed', PRECONDITION);
-    return { ...src, content_type: contentType, meta_json: meta, modified_at: now };
+    return {
+      ...src,
+      content_type: contentType,
+      meta_json: meta,
+      modified_at: now,
+      tags_json: tags,
+    };
   }
   if (src.size > MAX_SINGLE_PUT_BYTES)
     throw new S3Error(
@@ -492,6 +510,7 @@ export async function copyObject(
       etag: obj?.etag ?? src.etag,
       content_type: contentType,
       meta_json: meta,
+      tags_json: tags,
       // The bytes are the source's: so is the scan result.
       modified_at: now,
     };
@@ -677,6 +696,8 @@ export interface UploadRow {
   meta_json: string | null;
   created_at: number;
   expires_at: number;
+  /** x-amz-tagging, given to the object on completion (ADR-076). */
+  tags_json?: string | null;
 }
 
 export async function createUpload(
@@ -686,6 +707,7 @@ export async function createUpload(
   key: string,
   contentType: string | null,
   meta: ObjectMeta,
+  tags: Tag[] | null = null,
 ): Promise<UploadRow> {
   validateKey(key);
   if (account.status !== 'active')
@@ -717,11 +739,12 @@ export async function createUpload(
     meta_json: metaJson(meta),
     created_at: now,
     expires_at: now + cfg.s3_multipart_ttl_hours * 3_600_000,
+    tags_json: tagsJson(tags),
   };
   await db
     .prepare(
-      `INSERT INTO s3_uploads (id, user_id, bucket, key, blob_id, r2_upload_id, content_type, meta_json, created_at, expires_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+      `INSERT INTO s3_uploads (id, user_id, bucket, key, blob_id, r2_upload_id, content_type, meta_json, created_at, expires_at, tags_json)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
     )
     .bind(
       row.id,
@@ -734,6 +757,7 @@ export async function createUpload(
       row.meta_json,
       now,
       row.expires_at,
+      row.tags_json,
     )
     .run();
   return row;
@@ -950,6 +974,7 @@ export async function completeUpload(
     etag: obj.etag,
     content_type: up.content_type,
     meta_json: up.meta_json,
+    tags_json: up.tags_json ?? null,
     scan_status: total === 0 ? 'clean' : 'pending',
     sha256: null,
     modified_at: ctx.now(),
@@ -1314,4 +1339,34 @@ export async function processS3Scan(
   });
   log.warn('s3_scan_infected', { userId: msg.userId, detail });
   return 'infected';
+}
+
+// ───────────────────────────── tags (ADR-076) ─────────────────────────────
+
+export async function getObjectTags(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  bucket: string,
+  key: string,
+): Promise<Tag[]> {
+  const row = await getObjectRow(ctx, account, bucket, key);
+  if (!row) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });
+  return parseTags(row.tags_json);
+}
+
+/** Put (or, with an empty list, delete) an object's tags. Tags don't change its ETag or date. */
+export async function setObjectTags(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  bucket: string,
+  key: string,
+  tags: Tag[],
+): Promise<void> {
+  const db = await indexDb(ctx.env, account.indexBinding);
+  const res = await db
+    .prepare(`UPDATE s3_objects SET tags_json = ?4 WHERE bucket = ?1 AND key = ?2 AND user_id = ?3`)
+    .bind(bucket, key, account.userId, tagsJson(tags))
+    .run();
+  if (!res.meta.changes)
+    throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });
 }

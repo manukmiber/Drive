@@ -35,6 +35,7 @@ import {
 } from '../lib/s3-xml';
 import { clientIp } from '../middleware/ratelimit';
 import { meterS3Egress } from '../services/s3-billing';
+import { parseTags, taggingXml, tagsFromHeader, tagsFromXml } from '../services/s3-tags';
 import {
   bucketLogging,
   loggingXml,
@@ -85,6 +86,8 @@ import {
   deleteBucket,
   deleteObjects,
   getObjectRow,
+  getObjectTags,
+  setObjectTags,
   listObjects,
   listParts,
   listUploads,
@@ -141,7 +144,6 @@ const UNSUPPORTED_SUB = [
   'restore',
   'retention',
   'select',
-  'tagging',
   'torrent',
   'versions',
   'website',
@@ -620,7 +622,8 @@ function bucketAcl(userId: string, isPublic: boolean): Response {
 async function bucketOp(r: Req): Promise<Response> {
   const name = r.bucket!;
   const q = r.query;
-  const sub = UNSUPPORTED_SUB.find((s) => q.has(s));
+  // Tags are for objects (ADR-076); a bucket's own tags aren't kept.
+  const sub = UNSUPPORTED_SUB.find((s) => q.has(s)) ?? (q.has('tagging') ? 'tagging' : undefined);
   const auth = needAuth(r);
   if (
     r.method === 'PUT' &&
@@ -988,6 +991,8 @@ async function readObject(
     if (t !== null && modified > t) throw fail412();
   }
   const headers = objectHeaders(row, r);
+  const tagCount = parseTags(row.tags_json).length;
+  if (!head && r.auth && tagCount) headers.set('x-amz-tagging-count', String(tagCount));
   const notModified =
     ifNoneMatch !== null
       ? tagMatches(ifNoneMatch, row.etag)
@@ -1082,6 +1087,9 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
     const directive = (h.get('x-amz-metadata-directive') ?? 'COPY').toUpperCase();
     if (directive !== 'COPY' && directive !== 'REPLACE')
       throw new S3Error('InvalidArgument', 'Unknown metadata directive.');
+    const tagging = (h.get('x-amz-tagging-directive') ?? 'COPY').toUpperCase();
+    if (tagging !== 'COPY' && tagging !== 'REPLACE')
+      throw new S3Error('InvalidArgument', 'Unknown tagging directive.');
     const row = await copyObject(r.ctx, auth.account, {
       from,
       to: { bucket: bucket.name, key },
@@ -1090,6 +1098,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       meta: metaFromHeaders(h),
       source: sourceConditions(h),
       condition: writeCondition(h),
+      ...(tagging === 'REPLACE' ? { tags: tagsFromHeader(h.get('x-amz-tagging')) ?? [] } : {}),
     });
     return xmlResponse(
       xmlDoc('CopyObjectResult', { LastModified: iso(row.modified_at), ETag: quoted(row.etag) }),
@@ -1110,6 +1119,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       meta,
       md5Hex,
       condition,
+      tags: tagsFromHeader(h.get('x-amz-tagging')),
       ...(body.verify ? { verify: body.verify } : {}),
     });
     return new Response(null, { status: 200, headers: { ETag: quoted(row.etag) } });
@@ -1132,7 +1142,12 @@ async function objectOp(r: Req): Promise<Response> {
   if (!r.auth) {
     r.stats = bucket;
     // Anonymous: read-only, public buckets, nothing else (ToS §4).
-    if ((r.method !== 'GET' && r.method !== 'HEAD') || q.has('acl') || q.has('uploadId'))
+    if (
+      (r.method !== 'GET' && r.method !== 'HEAD') ||
+      q.has('acl') ||
+      q.has('uploadId') ||
+      q.has('tagging')
+    )
       throw new S3Error('AccessDenied', 'Access Denied');
     if (!bucket.public || bucket.blocked_at !== null)
       throw new S3Error('AccessDenied', 'Access Denied');
@@ -1155,6 +1170,7 @@ async function objectOp(r: Req): Promise<Response> {
   // Reading is GET/HEAD of the object (or its ACL); everything else, ListParts included, is writing.
   const reading = (r.method === 'GET' || r.method === 'HEAD') && !q.has('uploadId');
   permit(r, reading ? 'read' : 'write', bucket.name, key);
+  if (q.has('tagging')) return taggingOp(r, auth.account, bucket, key);
   switch (r.method) {
     case 'GET':
       if (q.has('acl')) {
@@ -1229,6 +1245,7 @@ async function objectOp(r: Req): Promise<Response> {
           key,
           r.raw.headers.get('content-type'),
           metaFromHeaders(r.raw.headers),
+          tagsFromHeader(r.raw.headers.get('x-amz-tagging')),
         );
         return xmlResponse(
           xmlDoc('InitiateMultipartUploadResult', {
@@ -1274,6 +1291,38 @@ async function objectOp(r: Req): Promise<Response> {
         );
       }
       throw new S3Error('NotImplemented', 'This POST request is not supported by Zeiko S3.');
+    default:
+      throw new S3Error(
+        'MethodNotAllowed',
+        'The specified method is not allowed against this resource.',
+      );
+  }
+}
+
+/** Put/Get/DeleteObjectTagging (ADR-076). Tags change neither the ETag nor the date. */
+async function taggingOp(
+  r: Req,
+  account: S3Account,
+  bucket: BucketRow,
+  key: string,
+): Promise<Response> {
+  validateKey(key);
+  switch (r.method) {
+    case 'GET':
+      r.op = 'GetObjectTagging';
+      return xmlResponse(taggingXml(await getObjectTags(r.ctx, account, bucket.name, key)));
+    case 'PUT': {
+      r.op = 'PutObjectTagging';
+      noConditions(r);
+      const tags = tagsFromXml(await readSmallBody(r));
+      await setObjectTags(r.ctx, account, bucket.name, key, tags);
+      return new Response(null, { status: 200 });
+    }
+    case 'DELETE':
+      r.op = 'DeleteObjectTagging';
+      noConditions(r);
+      await setObjectTags(r.ctx, account, bucket.name, key, []);
+      return new Response(null, { status: 204 });
     default:
       throw new S3Error(
         'MethodNotAllowed',

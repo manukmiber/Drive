@@ -1,7 +1,7 @@
 // Lifecycle rules for Zeiko S3 buckets (ADR-072): Put/Get/DeleteBucketLifecycleConfiguration and the
 // hourly run that carries them out. Supported: Expiration (Days or Date) and
-// AbortIncompleteMultipartUpload, filtered by prefix and object size. Anything else in a rule is
-// refused out loud (MalformedXML / NotImplemented), never silently ignored.
+// AbortIncompleteMultipartUpload, filtered by prefix, object size and object tags (ADR-076).
+// Anything else in a rule is refused out loud (MalformedXML / NotImplemented), never silently ignored.
 import { DAY_MS } from '../../shared/constants';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
@@ -10,6 +10,7 @@ import { esc, xmlElements, xmlText } from '../lib/s3-xml';
 import { getAccount, ownBucket, type BucketRow } from './s3';
 import { indexDb } from './s3-index';
 import { deleteObjects, dropUpload, type UploadRow } from './s3-objects';
+import { hasTags, tagElements, tagXml, validateTags, type Tag } from './s3-tags';
 
 export interface LifecycleRule {
   id: string;
@@ -19,6 +20,8 @@ export interface LifecycleRule {
   /** Bytes; the object must be strictly bigger / smaller. */
   sizeGreaterThan?: number;
   sizeLessThan?: number;
+  /** The object must carry every one of these tags (ADR-076). */
+  tags?: Tag[];
   /** Objects are deleted this many days after they were written (rounded as Amazon does). */
   expirationDays?: number;
   /** …or from this midnight UTC (ms) on. */
@@ -55,7 +58,6 @@ const NOT_YET: Record<string, string> = {
   NoncurrentVersionTransition: 'NoncurrentVersionTransition (versioning)',
   NoncurrentVersionExpiration: 'NoncurrentVersionExpiration (versioning)',
   ExpiredObjectDeleteMarker: 'ExpiredObjectDeleteMarker (versioning)',
-  Tag: 'A Tag filter (object tagging)',
 };
 
 function only(xml: string, allowed: string[], where: string): void {
@@ -138,12 +140,19 @@ export function validateLifecycle(rules: LifecycleRule[], maxRules: number): Lif
       );
     if (new TextEncoder().encode(r.prefix).length > 1024)
       throw new S3Error('InvalidArgument', 'The prefix is too long.');
+    const tags = r.tags?.length ? validateTags(r.tags) : undefined;
+    if (tags && r.abortDays !== undefined)
+      throw new S3Error(
+        'InvalidRequest',
+        'AbortIncompleteMultipartUpload cannot be specified with Tags.',
+      );
     return {
       id,
       enabled: r.enabled,
       prefix: r.prefix,
       ...(r.sizeGreaterThan !== undefined ? { sizeGreaterThan: r.sizeGreaterThan } : {}),
       ...(r.sizeLessThan !== undefined ? { sizeLessThan: r.sizeLessThan } : {}),
+      ...(tags ? { tags: tags.map((t) => ({ key: t.key, value: t.value })) } : {}),
       ...(r.expirationDays !== undefined ? { expirationDays: r.expirationDays } : {}),
       ...(r.expirationDate !== undefined ? { expirationDate: r.expirationDate } : {}),
       ...(r.abortDays !== undefined ? { abortDays: r.abortDays } : {}),
@@ -151,25 +160,27 @@ export function validateLifecycle(rules: LifecycleRule[], maxRules: number): Lif
   });
 }
 
-/** <Filter>: Prefix and size limits, alone or in an <And>. */
+/** <Filter>: Prefix, a Tag, and size limits, alone or in an <And>. */
 function parseFilter(
   xml: string,
-): Pick<LifecycleRule, 'prefix' | 'sizeGreaterThan' | 'sizeLessThan'> {
-  only(xml, ['Prefix', 'ObjectSizeGreaterThan', 'ObjectSizeLessThan', 'And'], 'Filter');
+): Pick<LifecycleRule, 'prefix' | 'sizeGreaterThan' | 'sizeLessThan' | 'tags'> {
+  only(xml, ['Prefix', 'Tag', 'ObjectSizeGreaterThan', 'ObjectSizeLessThan', 'And'], 'Filter');
   const and = xmlElements(xml, 'And')[0];
   const direct = childTags(xml);
   if (and !== undefined && direct.length > 1)
     throw malformed('Filter takes either And or one condition, not both.');
   const block = and ?? xml;
   if (and !== undefined)
-    only(and, ['Prefix', 'ObjectSizeGreaterThan', 'ObjectSizeLessThan'], 'And');
+    only(and, ['Prefix', 'Tag', 'ObjectSizeGreaterThan', 'ObjectSizeLessThan'], 'And');
   else if (direct.length > 1) throw malformed('Use And to combine conditions in a Filter.');
   const gt = wholeNumber(xmlText(block, 'ObjectSizeGreaterThan'), 'ObjectSizeGreaterThan', 0);
   const lt = wholeNumber(xmlText(block, 'ObjectSizeLessThan'), 'ObjectSizeLessThan', 1);
+  const tags = tagElements(block);
   return {
     prefix: xmlText(block, 'Prefix') ?? '',
     ...(gt !== undefined ? { sizeGreaterThan: gt } : {}),
     ...(lt !== undefined ? { sizeLessThan: lt } : {}),
+    ...(tags.length ? { tags } : {}),
   };
 }
 
@@ -228,8 +239,11 @@ export function lifecycleXml(rules: LifecycleRule[]): string {
   const body = rules
     .map((r) => {
       const sized = r.sizeGreaterThan !== undefined || r.sizeLessThan !== undefined;
+      const tags = r.tags ?? [];
+      const combined = sized || tags.length > 1 || (tags.length === 1 && r.prefix !== '');
       const conditions =
-        `<Prefix>${esc(r.prefix)}</Prefix>` +
+        (tags.length === 1 && !combined ? '' : `<Prefix>${esc(r.prefix)}</Prefix>`) +
+        tags.map(tagXml).join('') +
         (r.sizeGreaterThan !== undefined
           ? `<ObjectSizeGreaterThan>${r.sizeGreaterThan}</ObjectSizeGreaterThan>`
           : '') +
@@ -246,7 +260,7 @@ export function lifecycleXml(rules: LifecycleRule[]): string {
         r.abortDays !== undefined
           ? `<AbortIncompleteMultipartUpload><DaysAfterInitiation>${r.abortDays}</DaysAfterInitiation></AbortIncompleteMultipartUpload>`
           : '';
-      return `<Rule><ID>${esc(r.id)}</ID><Filter>${sized ? `<And>${conditions}</And>` : conditions}</Filter><Status>${r.enabled ? 'Enabled' : 'Disabled'}</Status>${expiration}${abort}</Rule>`;
+      return `<Rule><ID>${esc(r.id)}</ID><Filter>${combined ? `<And>${conditions}</And>` : conditions}</Filter><Status>${r.enabled ? 'Enabled' : 'Disabled'}</Status>${expiration}${abort}</Rule>`;
     })
     .join('');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${body}</LifecycleConfiguration>`;
@@ -293,10 +307,11 @@ export function expiryCutoff(now: number, days: number): number {
 
 export function ruleCovers(
   r: LifecycleRule,
-  o: { key: string; size: number; modified_at: number },
+  o: { key: string; size: number; modified_at: number; tags_json?: string | null },
   now: number,
 ): boolean {
   if (!r.enabled || !o.key.startsWith(r.prefix)) return false;
+  if (r.tags?.length && !hasTags(o.tags_json, r.tags)) return false;
   if (r.sizeGreaterThan !== undefined && !(o.size > r.sizeGreaterThan)) return false;
   if (r.sizeLessThan !== undefined && !(o.size < r.sizeLessThan)) return false;
   if (r.expirationDate !== undefined) return now >= r.expirationDate;
@@ -404,11 +419,11 @@ async function bucketTurn(
     }
     const { results } = await db
       .prepare(
-        `SELECT key, size, modified_at FROM s3_objects
+        `SELECT key, size, modified_at, tags_json FROM s3_objects
          WHERE bucket = ?1 AND user_id = ?2 AND key >= ?3 AND key > ?4 ORDER BY key LIMIT ?5`,
       )
       .bind(b.name, b.user_id, rule.prefix, cursor.after, scanRows)
-      .all<{ key: string; size: number; modified_at: number }>();
+      .all<{ key: string; size: number; modified_at: number; tags_json: string | null }>();
     const inPrefix = results.filter((o) => o.key.startsWith(rule.prefix));
     const due = inPrefix.filter((o) => ruleCovers(rule, o, now)).map((o) => o.key);
     if (due.length) await deleteObjects(ctx, account, b.name, due);

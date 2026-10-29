@@ -1985,3 +1985,27 @@ Test: `tests/integration/s3-web-multipart.test.ts` (urutan bebas, part dikirim u
 salah, batal, kuota, batas ukuran, readonly, ukuran part) dan suite IDOR. Dicek di Chrome dev dengan file 230 MB (8 part):
 jeda/lanjut, jaringan diputus 4 detik (12 request gagal lalu pulih, ETag sama), batal (reservasi 0), desktop gelap dan
 360 px terang.
+
+## ADR-076 — Zeiko S3: kompatibilitas tambahan (S8)
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: roadmap S8). Satu commit per bagian.
+
+### 1. Object tagging
+- `Put/Get/DeleteObjectTagging` (`?tagging` di objek), `x-amz-tagging` di PutObject dan CreateMultipartUpload (tag
+  disimpan di upload, lalu diberikan ke objek saat complete), dan `x-amz-tagging-directive` di CopyObject. `COPY`
+  (bawaan) membawa tag sumber; `REPLACE` memakai `x-amz-tagging`, atau kosong kalau header itu tidak ada. CopyObject ke
+  dirinya sendiri boleh kalau hanya tag yang diganti.
+- Disimpan di index per akun (langkah `v4` di `MIGRATIONS`, `services/s3-index.ts`): `s3_objects.tags_json` dan
+  `s3_uploads.tags_json`, berisi `[[key, value], …]`. Tag tidak mengubah ETag maupun tanggal objek.
+- Batas mengikuti Amazon (`services/s3-tags.ts`): paling banyak 10 tag, key 1–128 karakter, value 0–256, key unik,
+  tanpa awalan `aws:`, dan karakter hanya huruf/angka/spasi (semua aksara) serta `+ - = . _ : / @`. Di luar itu →
+  `InvalidTag` (400).
+- GetObject (bukan HEAD) dengan tanda tangan mengirim `x-amz-tagging-count`. Pembaca anonim di bucket publik tidak
+  melihat tag (`?tagging` → 403, tanpa header hitungan).
+- Izin (ADR-071): GetObjectTagging butuh `read`; Put/DeleteObjectTagging butuh `write`. Tag bucket
+  (`PutBucketTagging`) tetap `NotImplemented`.
+- **Lifecycle** (ADR-072) mendapat filter `Tag` (sendiri) dan `Tag` di dalam `And` (bersama Prefix dan ukuran). Rule
+  hanya mengenai objek yang punya **semua** tag-nya. `AbortIncompleteMultipartUpload` bersama Tag → `InvalidRequest`,
+  seperti Amazon. Editor "Hapus otomatis" di `/s3` menampilkan rule bertag sebagai rule API, tanpa mengubahnya.
+
+Test: `tests/integration/s3-tagging.test.ts`.

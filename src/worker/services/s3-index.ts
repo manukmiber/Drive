@@ -75,6 +75,11 @@ const MIGRATIONS: string[][] = [
      )`,
     `CREATE INDEX IF NOT EXISTS s3_log_lines_bucket_idx ON s3_log_lines (user_id, bucket, id)`,
   ],
+  // v4 (ADR-076): object tags, `[[key, value], …]`; an upload's tags until it is completed.
+  [
+    `ALTER TABLE s3_objects ADD COLUMN tags_json TEXT`,
+    `ALTER TABLE s3_uploads ADD COLUMN tags_json TEXT`,
+  ],
 ];
 export const INDEX_SCHEMA_VERSION = MIGRATIONS.length;
 

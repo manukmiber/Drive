@@ -36,6 +36,10 @@ const lifecycleRule = z.object({
   prefix: z.string().max(1024).default(''),
   sizeGreaterThan: z.number().int().min(0).optional(),
   sizeLessThan: z.number().int().min(1).optional(),
+  tags: z
+    .array(z.object({ key: z.string().min(1).max(128), value: z.string().max(256) }))
+    .max(10)
+    .optional(),
   expirationDays: days.optional(),
   expirationDate: z.number().int().optional(),
   abortDays: days.optional(),

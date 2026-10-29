@@ -265,6 +265,11 @@ lewat fase R di `docs/ROADMAP.md`.
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Kompatibilitas S3 tambahan (S8, ADR-076, 2026-10-29)
+- [x] 1. Object tagging: Put/Get/DeleteObjectTagging, `x-amz-tagging` (PutObject, multipart), tagging directive di
+  CopyObject, batas Amazon, `x-amz-tagging-count`; lifecycle filter Tag/And. Index per akun v4.
+- [ ] 2. GetObject/HeadObject `partNumber` · 3. checksum · 4. PostObject.
+
 ## Upload multipart dari `/s3` (S4, ADR-075, 2026-10-29)
 - [x] File di atas satu part (32 MiB) naik per part lewat `/api/s3/buckets/:name/uploads/*`: paralel, coba ulang per
   part, jeda/lanjut (part tersimpan ditanya ke server), batal (reservasi kembali); batas 50 GiB per file.

@@ -259,6 +259,8 @@ interface LifecycleRule {
   prefix: string;
   sizeGreaterThan?: number;
   sizeLessThan?: number;
+  /** Set through the S3 API only (ADR-076): such a rule is kept as it is. */
+  tags?: Array<{ key: string; value: string }>;
   expirationDays?: number;
   expirationDate?: number;
   abortDays?: number;
@@ -276,7 +278,8 @@ function lifecycleRow(rule: LifecycleRule): LifecycleRow {
   const simple =
     rule.expirationDate === undefined &&
     rule.sizeGreaterThan === undefined &&
-    rule.sizeLessThan === undefined;
+    rule.sizeLessThan === undefined &&
+    !rule.tags?.length;
   return {
     rule,
     simple,
