@@ -1,6 +1,7 @@
 // Account rights under UU PDP (SPEC §14.5): export personal data, delete account after a waiting
 // period. Invoices and the wallet ledger are kept (accounting obligations) but de-identified.
 import { DAY_MS } from '../../shared/constants';
+import { deleteActivity, exportActivity } from './activity';
 import { deleteUserIndex } from './drive-index-sync';
 import type { Ctx } from '../context';
 import { accessDb } from '../lib/access-db';
@@ -70,6 +71,8 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
        WHERE owner_id = ?1 AND space = 'personal' ORDER BY created_at LIMIT 100000`,
       userId,
     ),
+    // D4: what happened in the person's own Drive, from its log in R2 (ADR-083).
+    activity: await exportActivity(ctx, userId),
     shares: await qa(
       'SELECT title, kind, expires_at, download_count, revoked_at, created_at FROM shares WHERE created_by = ?1',
       userId,
@@ -236,6 +239,7 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
       ).bind(ulid(now), id, now),
     ]);
     await deleteUserIndex(ctx, id);
+    await deleteActivity(ctx, { user: id });
     log.info('account_deleted', { userId: id });
   }
   return results.length;

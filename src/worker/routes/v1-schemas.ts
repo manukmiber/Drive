@@ -3,6 +3,7 @@
 // the contract test fails, so the published document never lags behind.
 import { z } from 'zod';
 import { FOLDER_COLORS } from '../../shared/folder-decor';
+import { ACTIVITY_ACTIONS } from '../../shared/activity';
 import { CORS_METHODS } from '../services/s3-cors';
 import { TOKEN_SCOPES } from '../services/tokens';
 
@@ -38,6 +39,22 @@ export const Node = z.strictObject({
     })
     .nullable(),
   expiresAt: ms.nullable().describe('When it goes to the Trash by itself (00:00 WIB that day)'),
+});
+
+export const Activity = z.strictObject({
+  at: ms,
+  actorId: z.string(),
+  actorName: z.string().nullable().describe('A family member’s name; null for you'),
+  action: z.enum(ACTIVITY_ACTIONS),
+  nodeId: z.string(),
+  parentId: z.string().nullable(),
+  name: z.string(),
+  from: z
+    .string()
+    .nullable()
+    .describe('rename: the old name; move: the folder it left; copy: the file it came from'),
+  to: z.string().nullable().describe('rename: the new name; move: the folder it went to'),
+  space: z.enum(['personal', 'family']),
 });
 
 export const Crumb = z.strictObject({

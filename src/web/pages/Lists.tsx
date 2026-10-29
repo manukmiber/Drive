@@ -14,6 +14,7 @@ import {
 import { useEffect, useState } from 'react';
 import { formatDateTime } from '../../shared/format';
 import { t } from '../lib/i18n';
+import { ActivityList } from '../components/ActivityList';
 import { FileView } from '../components/explorer/FileView';
 import { ShareQr } from '../components/explorer/ShareQr';
 import { ShareSettings } from '../components/explorer/ShareSettings';
@@ -23,6 +24,7 @@ import { toast } from '../components/ui/Toast';
 import { cn } from '../lib/cn';
 import {
   listRecent,
+  recentActivity,
   listShares,
   listStarred,
   revokeShare,
@@ -46,12 +48,44 @@ const emptyBox = (text: string) => (
 );
 
 export function Recent() {
+  const [tab, setTab] = useState<'files' | 'activity'>('files');
   const q = useQuery({ queryKey: ['recent'], queryFn: listRecent });
+  const activity = useQuery({
+    queryKey: ['activity'],
+    queryFn: recentActivity,
+    enabled: tab === 'activity',
+  });
   useEffect(() => void (document.title = `${t.nav.recent} · Zeiko`), []);
   return (
     <div>
-      <Header title={t.nav.recent} />
-      {q.isPending ? (
+      <Header title={t.nav.recent}>
+        <div role="tablist" className="flex gap-1 rounded-xl bg-[var(--bg-subtle)] p-1 text-sm">
+          {(['files', 'activity'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => setTab(k)}
+              className={cn(
+                'rounded-lg px-3 py-1',
+                tab === k ? 'bg-[var(--card)] font-medium shadow-sm' : 'text-[var(--fg-muted)]',
+              )}
+            >
+              {k === 'files' ? t.activity.filesTab : t.activity.tab}
+            </button>
+          ))}
+        </div>
+      </Header>
+      {tab === 'activity' ? (
+        activity.isPending ? (
+          <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>
+        ) : (
+          <div className="mx-auto max-w-3xl px-4">
+            <ActivityList items={activity.data?.items ?? []} />
+          </div>
+        )
+      ) : q.isPending ? (
         <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>
       ) : (
         <FileView

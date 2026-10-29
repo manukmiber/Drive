@@ -1,5 +1,6 @@
 // Chunked, resumable, parallel uploads (SPEC §5.2). The client never sees R2 credentials or
 // presigned URLs: every byte passes through the Worker via the R2 binding.
+import { recordActivity } from './activity';
 import {
   HOUR_MS,
   MIB,
@@ -323,11 +324,11 @@ async function finalizeNode(
     .bind(up.node_id)
     .first<NodeRecord>();
   if (!node) throw new AppError('NOT_FOUND', 'node disappeared');
+  let replaced = false;
   for (let attempt = 0; attempt < 3; attempt++) {
     let name = node.name;
     const clash = node.parent_id ? await siblingByName(ctx, node.parent_id, name) : null;
     if (clash && clash.id !== node.id) {
-      let replaced = false;
       if (up.on_conflict === 'replace' && clash.kind === 'file') {
         try {
           await trashNodes(ctx, userId, [clash.id]);
@@ -345,6 +346,10 @@ async function finalizeNode(
       )
         .bind(node.id, name, nameKey(name), ctx.now())
         .run();
+      recordActivity(ctx, userId, {
+        action: replaced ? 'replace' : 'upload',
+        node: { ...node, name },
+      });
       return;
     } catch (e) {
       if (!(e instanceof Error && /UNIQUE/.test(e.message)) || attempt === 2) throw e;

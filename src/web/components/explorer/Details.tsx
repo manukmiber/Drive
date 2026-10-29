@@ -6,8 +6,9 @@ import { formatBytes, formatDate, formatDateTime } from '../../../shared/format'
 import { addDaysWib, wibDate } from '../../../shared/time';
 import { useCatalog } from '../../lib/catalog';
 import { t } from '../../lib/i18n';
-import { nodeInfo, setExpiry, type NodeDto } from '../../lib/files';
+import { nodeActivity, nodeInfo, setExpiry, type NodeDto } from '../../lib/files';
 import { useMe } from '../../lib/session';
+import { ActivityList } from '../ActivityList';
 import { Button } from '../Button';
 import { FileIcon } from '../FileIcon';
 import { toast } from '../ui/Toast';
@@ -16,6 +17,12 @@ export function Details({ id, onClose }: { id: string; onClose: () => void }) {
   const me = useMe();
   const catalog = useCatalog();
   const q = useQuery({ queryKey: ['node', id], queryFn: () => nodeInfo(id) });
+  const [tab, setTab] = useState<'details' | 'activity'>('details');
+  const activity = useQuery({
+    queryKey: ['activity', id],
+    queryFn: () => nodeActivity(id),
+    enabled: tab === 'activity',
+  });
   const n = q.data?.node;
   // "Safe" only when an antivirus looked; the basic check says what it is (ADR-056).
   const scan =
@@ -44,7 +51,31 @@ export function Details({ id, onClose }: { id: string; onClose: () => void }) {
           <X className="h-4 w-4" />
         </button>
       </div>
-      {n && (
+      <div role="tablist" className="mt-3 flex gap-1 rounded-xl bg-[var(--bg-subtle)] p-1 text-sm">
+        {(['details', 'activity'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={tab === k}
+            onClick={() => setTab(k)}
+            className={`flex-1 rounded-lg px-3 py-1.5 ${tab === k ? 'bg-[var(--card)] font-medium shadow-sm' : 'text-[var(--fg-muted)]'}`}
+          >
+            {k === 'details' ? t.activity.detailsTab : t.activity.tab}
+          </button>
+        ))}
+      </div>
+      {tab === 'activity' &&
+        (activity.isPending ? (
+          <p className="mt-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>
+        ) : activity.isError ? (
+          <p className="mt-6 text-sm text-red-600">{t.errors.generic}</p>
+        ) : (
+          <div className="mt-3">
+            <ActivityList items={activity.data.items} />
+          </div>
+        ))}
+      {tab === 'details' && n && (
         <>
           <div className="my-5 flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-[var(--bg-subtle)]">
             {n.hasThumb ? (

@@ -11,7 +11,8 @@ import { base64UrlDecode, base64UrlEncode, hmacBase62, timingSafeEqual } from '.
 import { accessDb, idSlices } from '../lib/access-db';
 import { AppError } from '../lib/errors';
 import { isBase62, randomBase62 } from '../lib/ids';
-import { requireNode } from './access';
+import { loadNode, requireNode } from './access';
+import { recordActivity } from './activity';
 import { getActiveSubscription } from './storage';
 
 export interface ShareRow {
@@ -258,6 +259,7 @@ export async function createShare(
       A.prepare('INSERT INTO share_items (share_id, node_id) VALUES (?1, ?2)').bind(id, n.id),
     ),
   ]);
+  for (const node of nodes) recordActivity(ctx, userId, { action: 'share', node });
   return toShareDto(ctx, (await getShareRow(ctx, id))!);
 }
 
@@ -325,10 +327,15 @@ export async function updateShare(
 
 export async function revokeShare(ctx: Ctx, userId: string, id: string): Promise<void> {
   await requireOwnShare(ctx, userId, id);
-  await accessDb(ctx.env)
+  const res = await accessDb(ctx.env)
     .prepare('UPDATE shares SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL')
     .bind(id, ctx.now())
     .run();
+  if (!res.meta.changes) return;
+  for (const nodeId of await shareNodeIds(ctx, id)) {
+    const node = await loadNode(ctx, nodeId);
+    if (node) recordActivity(ctx, userId, { action: 'unshare', node });
+  }
 }
 
 /** "Buat ulang link": new r64 with the same items and settings; the old link dies. */

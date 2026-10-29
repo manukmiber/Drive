@@ -11,6 +11,7 @@ import {
 import { purgeExpiredTrash } from '../services/nodes';
 import { flushDirtyIndexes } from '../services/drive-index-sync';
 import { runExpiries } from '../services/expiry';
+import { pruneActivity } from '../services/activity';
 import { deletionReminders, processAccountDeletions } from '../services/account';
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
@@ -162,6 +163,12 @@ registerCronTask(CRON.nightly, {
     const r = await runExpiries(ctx);
     if (r.expired || r.reminded) log.info('drive_expiry', r);
   },
+});
+
+// D4 (ADR-083): Activity log months past `activity_keep_days`.
+registerCronTask(CRON.nightly, {
+  name: 'prune_activity',
+  run: async (ctx) => void (await pruneActivity(ctx)),
 });
 
 registerCronTask(CRON.nightly, {

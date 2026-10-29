@@ -2,6 +2,7 @@
 // keeps a private "Drive Saya" (invisible to the family owner) plus a shared "Drive Keluarga".
 // Pool changes (create, join, leave, dissolve) move nodes, blobs and usage counters in one batch.
 import { DAY_MS, SHARE_ID_LENGTH } from '../../shared/constants';
+import { deleteActivity } from './activity';
 import { deleteFamilyIndex, markIndexDirty } from './drive-index-sync';
 import { revokeSharesOfNodes } from './shares';
 import { formatBytes, formatRupiah } from '../../shared/format';
@@ -704,6 +705,7 @@ export async function dissolveFamily(ctx: Ctx, ownerId: string): Promise<{ credi
     poolLimitStmt(ctx, personal),
   ]);
   await deleteFamilyIndex(ctx, m.familyId);
+  await deleteActivity(ctx, { family: m.familyId });
   await markIndexDirty(ctx, [ownerId]);
   await audit(ctx, ownerId, 'family.dissolve', m.familyId, { creditIdr: convert.creditIdr });
   return { creditIdr: convert.creditIdr };

@@ -1,5 +1,6 @@
 // File tree operations (SPEC §8.3). Everything is a D1 update — R2 objects are never copied or
 // renamed (opaque keys, SPEC §3). Bulk operations work on subtrees via recursive CTEs (ADR-020).
+import { recordActivity } from './activity';
 import { DAY_MS } from '../../shared/constants';
 import { markIndexDirty } from './drive-index-sync';
 import { isFolderColor, isFolderIcon, type FolderDecor } from '../../shared/folder-decor';
@@ -322,6 +323,17 @@ export async function createFolder(
     }
   }
   await markManifestDirty(ctx, userId);
+  recordActivity(ctx, userId, {
+    action: 'create',
+    node: {
+      id,
+      parent_id: parent.id,
+      name,
+      space: parent.space,
+      owner_id: userId,
+      family_id: parent.family_id,
+    },
+  });
   return getNodeDto(ctx, userId, id);
 }
 
@@ -349,6 +361,13 @@ export async function renameNode(
     throw e;
   }
   await markManifestDirty(ctx, node.owner_id);
+  if (name !== node.name)
+    recordActivity(ctx, userId, {
+      action: 'rename',
+      node: { ...node, name },
+      from: node.name,
+      to: name,
+    });
   return getNodeDto(ctx, userId, node.id);
 }
 
@@ -438,6 +457,7 @@ export async function decorateFolders(
       ctx,
       folders.map((f) => f.owner_id),
     );
+    for (const f of folders) recordActivity(ctx, userId, { action: 'decor', node: f });
   }
   return Promise.all(folders.map((f) => getNodeDto(ctx, userId, f.id)));
 }
@@ -451,6 +471,12 @@ export async function moveNodes(
 ): Promise<NodeDto[]> {
   const target = await requireWritableFolder(ctx, userId, targetId);
   const moved: NodeDto[] = [];
+  const names = new Map<string, Promise<string>>();
+  const nameOf = (id: string) => {
+    let p = names.get(id);
+    if (!p) names.set(id, (p = loadNode(ctx, id).then((n) => n?.name ?? '')));
+    return p;
+  };
   for (const id of ids) {
     const { node } = await requireNode(ctx, userId, id, 'edit');
     if (node.parent_id === null) throw new AppError('FORBIDDEN', 'cannot move a root folder');
@@ -483,6 +509,23 @@ export async function moveNodes(
     )
       .bind(node.id, target.id, name, nameKey(name), ctx.now())
       .run();
+    const ev = {
+      action: 'move' as const,
+      from: await nameOf(node.parent_id),
+      to: target.name,
+      fromParent: node.parent_id,
+    };
+    const after = {
+      ...node,
+      parent_id: target.id,
+      name,
+      space: target.space,
+      family_id: target.family_id,
+      owner_id: target.space === 'personal' ? userId : node.owner_id,
+    };
+    recordActivity(ctx, userId, { ...ev, node: after });
+    // Into or out of the family's space: both spaces' logs tell it.
+    if (node.space !== target.space) recordActivity(ctx, userId, { ...ev, node });
     moved.push(await getNodeDto(ctx, userId, node.id));
   }
   await markManifestDirty(ctx, userId);
@@ -585,6 +628,18 @@ export async function copyFile(
     throw e;
   }
   await markManifestDirty(ctx, userId);
+  recordActivity(ctx, userId, {
+    action: 'copy',
+    node: {
+      id: newId,
+      parent_id: target.id,
+      name,
+      space: target.space,
+      owner_id: userId,
+      family_id: target.family_id,
+    },
+    from: node.name,
+  });
   return getNodeDto(ctx, userId, newId);
 }
 
@@ -606,6 +661,7 @@ export async function trashNodes(ctx: Ctx, userId: string, ids: string[]): Promi
       .run();
     count += res.meta.changes;
     await markManifestDirty(ctx, node.owner_id);
+    recordActivity(ctx, userId, { action: 'trash', node });
   }
   return count;
 }
@@ -630,6 +686,10 @@ export async function restoreNodes(ctx: Ctx, userId: string, ids: string[]): Pro
       ).bind(node.id, ctx.now()),
     ]);
     await markManifestDirty(ctx, node.owner_id);
+    recordActivity(ctx, userId, {
+      action: 'restore',
+      node: { ...node, parent_id: parentId, name },
+    });
     out.push(await getNodeDto(ctx, userId, node.id));
   }
   return out;
@@ -728,6 +788,7 @@ export async function deleteForever(ctx: Ctx, userId: string, ids: string[]): Pr
     const { node } = await requireNode(ctx, userId, id, 'remove');
     if (node.parent_id === null) throw new AppError('FORBIDDEN', 'cannot delete a root folder');
     total += (await deleteSubtree(ctx, node.id)).nodes;
+    recordActivity(ctx, userId, { action: 'delete', node });
   }
   return total;
 }

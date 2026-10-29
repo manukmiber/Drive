@@ -79,6 +79,8 @@ export const configSchema = z.object({
   upload_part_concurrency_cap: int().min(1).max(16).default(8),
   upload_expiry_hours: int().min(1).max(160).default(144),
   trash_retention_days: int().min(1).default(30),
+  /** D4 (ADR-083): how long the Activity panel looks back; older log months are dropped. */
+  activity_keep_days: int().min(1).max(365).default(90),
   manifest_rebuild_min_interval_minutes: int().min(1).default(60),
   quota_reconcile_alert_bytes: nonNeg().default(0),
 

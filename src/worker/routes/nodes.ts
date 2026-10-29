@@ -11,6 +11,7 @@ import { downloadPlan, downloadUrl, previewUrl } from '../services/download';
 import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
 import { findDuplicates } from '../services/duplicates';
 import { setExpiry } from '../services/expiry';
+import { nodeActivity, recentActivity } from '../services/activity';
 import {
   copyFile,
   createFolder,
@@ -46,6 +47,7 @@ export const nodes = new Hono<AppBindings>()
   .use('/starred', requireUser)
   .use('/recent', requireUser)
   .use('/drive/*', requireUser)
+  .use('/activity', requireUser)
   .get(
     '/search',
     validate(
@@ -91,6 +93,13 @@ export const nodes = new Hono<AppBindings>()
         c.req.valid('query').space ?? 'personal',
         c.req.header('if-none-match'),
       ),
+  )
+  // D4: the Activity panel (a node's, or the latest across the person's spaces).
+  .get('/activity', async (c) =>
+    c.json({ items: await recentActivity(c.get('ctx'), c.get('user')!.id) }),
+  )
+  .get('/nodes/:id/activity', async (c) =>
+    c.json({ items: await nodeActivity(c.get('ctx'), c.get('user')!.id, c.req.param('id')) }),
   )
   // D11: files with the same content, in the person's own pool.
   .get('/drive/duplicates', async (c) =>

@@ -79,7 +79,7 @@ Fitur di bawah dibangun di atas index R2 (fase R), bukan D1.
 | D1  | Riwayat versi file                               | Wajib   | L      | R3         | belum                                    |
 | D2  | Share ke akun tertentu + "Dibagikan dengan saya" | Wajib   | L      | R4, R5     | belum                                    |
 | D3  | Link minta file (orang lain hanya upload)        | Wajib   | M      | R3, R5     | belum                                    |
-| D4  | Panel Aktivitas (SPEC §8.1, belum dibuat)        | Wajib   | M      | R3         | belum                                    |
+| D4  | Panel Aktivitas (SPEC §8.1, belum dibuat)        | Wajib   | M      | R3         | selesai (ADR-083)                        |
 | D5  | Dekorasi folder: warna, ikon, gambar             | Diminta | M      | –          | selesai (ADR-058); pindah ke index di R3 |
 | D6  | Pencarian lanjutan + cari isi file               | Diminta | L      | R2         | belum                                    |
 | D7  | OCR PDF dan foto dokumen                         | Diminta | M      | D6, R3     | belum                                    |

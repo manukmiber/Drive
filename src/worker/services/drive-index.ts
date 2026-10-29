@@ -219,7 +219,7 @@ export async function readIndex(
   }
 }
 
-const isRateLimited = (e: unknown) =>
+export const isRateLimited = (e: unknown) =>
   e instanceof Error && /\(10058\)|TooManyRequests/.test(e.message);
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));

@@ -2263,3 +2263,38 @@ Test: jam palsu (H-2 tidak ada apa-apa, H-1 pengingat, hari H pindah ke Sampah, 
 kena setelah ganti nama dan pindah folder, folder beserta isinya, tanggal yang dihapus, izin (orang lain 404, root 403,
 tanggal tidak sah 400, item di Sampah 400), keluarga (anggota hanya item buatannya, Sampah dan pengingat milik pembuat).
 
+## ADR-083 — D4: panel Aktivitas dari log per ruang per bulan di R2
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Langsung kerjain roadmap yang dependencynya udah dikerjakan").
+
+**Keputusan:**
+- Prompt D4 meminta tabel `node_events`; ADR-064 melarangnya dan catatannya menyebut "aktivitas D4 = log per user di
+  R2". Log ada di sebelah index: `u/{userId}/log/{YYYY-MM}.txt` untuk Drive pribadi, `f/{familyId}/log/{YYYY-MM}.txt`
+  untuk Drive Keluarga. Satu baris JSON per kejadian: `[waktu (detik), pelaku, aksi, node, induk, nama, dari, ke,
+  induk-asal]`, sel kosong di belakang dibuang. Aksi: create, upload, replace, rename, move, copy, trash, restore,
+  delete, share, unshare, decor.
+- **Satu objek per bulan**, bukan per hari: retensi 90 hari cukup dengan paling banyak 4 GET (Workers Free memberi 50
+  subrequest), juga untuk ekspor data. Bulan dibaca utuh lalu diurutkan, karena baris dari request yang
+  bersamaan bisa tiba sedikit tidak urut. Untuk waktu yang sama, baris yang ditulis belakangan dihitung lebih baru.
+- Service mencatat kejadian saat mengubah D1 (`recordActivity` di `nodes.ts`, `uploads.ts`, `shares.ts`). Barisnya
+  ditulis setelah request selesai (`ctx.defer`, jeda flush yang sama dengan index), satu tambahan bersyarat etag per
+  log, diulang kalau bentrok atau kena batas 1 tulis/detik. Ini tidak bisa satu batch dengan perubahan D1 (beda
+  penyimpanan): kalau tulis log gagal, yang hilang barisnya, bukan perubahannya.
+- Pindah antara pribadi dan keluarga dicatat di kedua log. Penggantian lewat upload "replace" tercatat sebagai `trash`
+  (isi lama) lalu `replace` (isi baru). Pemindahan ke Sampah oleh D12 tercatat atas nama pembuat item.
+- Baca: `GET /api/nodes/:id/activity` (file: kejadiannya sendiri; folder: dirinya dan isi langsungnya, termasuk yang
+  baru keluar) dan `GET /api/activity` (terbaru, pribadi + keluarga), juga di v1 (scope `drive.read`). Izin sama dengan
+  izin node: ruang pribadi hanya pemiliknya, ruang keluarga semua anggota (nama pelaku dari `users`).
+- Retensi `activity_keep_days` (config, default 90): bacaan menyaring yang lebih lama. Baris pertama tiap bulan
+  menaruh penanda `sys/activity/{YYYY-MM}/{u|f}/{id}`, dan cron malam `prune_activity` menghapus bulan yang seluruh
+  isinya sudah lewat retensi. Hapus akun menghapus log pribadi; keluarga dibubarkan menghapus log keluarga. Ekspor
+  data menyertakan log pribadi.
+- UI: tab Detail/Aktivitas di panel Detail, tab File/Aktivitas di halaman Terbaru.
+
+Test: setiap aksi tercatat berurutan; file vs folder (termasuk yang pindah keluar); log ada di R2 dan tidak ada tabel
+event di D1; ekspor; izin (pribadi tertutup untuk anggota lain dan orang luar, keluarga terlihat dengan nama, 404 untuk
+orang luar); keluarga dibubarkan menghapus lognya; retensi dengan jam palsu dan cron.
+
+**D1, jawaban pemilik (2026-10-29), untuk dipakai saat D1 dikerjakan:** versi lama dihitung ke kuota; disimpan paling
+lama 30 hari; berapa banyak versi yang disimpan ditentukan user sendiri.
+

@@ -1,3 +1,4 @@
+import type { ActivityItem } from '../../shared/activity';
 import type { DriveCrumb, DriveNode } from '../../shared/drive-tree';
 import { api, postJson, sendJson } from './api';
 import { treeHolding } from './drive-index';
@@ -98,6 +99,10 @@ export const nodeInfo = (id: string) =>
     path: Crumb[];
     access: { view: boolean; edit: boolean; remove: boolean; isOwner: boolean };
   }>(`/api/nodes/${id}`);
+/** D4: a node's activity (a folder's includes its direct contents), or the latest overall. */
+export const nodeActivity = (id: string) =>
+  api<{ items: ActivityItem[] }>(`/api/nodes/${id}/activity`);
+export const recentActivity = () => api<{ items: ActivityItem[] }>('/api/activity');
 /** D12: the day a node goes to the Trash by itself (YYYY-MM-DD, WIB), or null to clear it. */
 export const setExpiry = (id: string, date: string | null) =>
   sendJson<{ node: NodeDto }>('PUT', `/api/nodes/${id}/expiry`, { date });

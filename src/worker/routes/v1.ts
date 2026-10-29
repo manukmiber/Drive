@@ -27,6 +27,7 @@ import { downloadUrl } from '../services/download';
 import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
 import { findDuplicates } from '../services/duplicates';
 import { setExpiry } from '../services/expiry';
+import { nodeActivity, recentActivity } from '../services/activity';
 import {
   copyFile,
   createFolder,
@@ -353,6 +354,31 @@ export const ENDPOINTS: readonly Op[] = [
       responses: { 200: NODES },
     },
     async (c) => c.json({ items: await readTrash(c.get('ctx'), userId(c)) }),
+  ),
+  op(
+    {
+      method: 'get',
+      path: '/activity',
+      scope: 'drive.read',
+      tag: 'Drive',
+      summary:
+        "What happened lately in your own Drive and your family's (uploads, renames, moves, copies, Trash, links), newest first",
+      responses: { 200: z.object({ items: z.array(S.Activity) }) },
+    },
+    async (c) => c.json({ items: await recentActivity(c.get('ctx'), userId(c)) }),
+  ),
+  op(
+    {
+      method: 'get',
+      path: '/nodes/{id}/activity',
+      scope: 'drive.read',
+      tag: 'Drive',
+      summary: "A file's activity, or a folder's own and its direct contents', newest first",
+      params: nodeParam,
+      responses: { 200: z.object({ items: z.array(S.Activity) }) },
+    },
+    async (c, { params }) =>
+      c.json({ items: await nodeActivity(c.get('ctx'), userId(c), params.id) }),
   ),
   op(
     {

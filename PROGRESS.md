@@ -60,6 +60,10 @@ lewat fase R di `docs/ROADMAP.md`.
   dan keluarga, hash dari `blobs.sha256`, hanya di pool sendiri.
 - [x] D12 tanggal hapus otomatis (ADR-082, 2026-10-29): kolom index `ex` (hanya di index, dibawa proyeksi D1),
   `PUT /api/nodes/:id/expiry` (+ v1), penanda `sys/expiry/…` untuk cron malam, pengingat H-1 `file_expiring`.
+- [x] D4 panel Aktivitas (ADR-083, 2026-10-29): log per ruang per bulan di R2 (`u|f/…/log/YYYY-MM.txt`), tab di panel
+  Detail dan halaman Terbaru, `GET /api/activity` dan `/api/nodes/:id/activity` (+ v1), retensi `activity_keep_days`.
+- [ ] D1 riwayat versi: jawaban pemilik sudah ada (ADR-083 bagian akhir): masuk kuota, maks 30 hari, jumlah versi
+  dipilih user.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

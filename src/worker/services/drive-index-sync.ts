@@ -29,7 +29,7 @@ const DEFAULT_DELAY_MS = 1000;
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-function flushDelay(ctx: Ctx): number {
+export function flushDelay(ctx: Ctx): number {
   const v = Number(ctx.env.INDEX_FLUSH_DELAY_MS ?? DEFAULT_DELAY_MS);
   return Number.isFinite(v) && v >= 0 ? v : DEFAULT_DELAY_MS;
 }
