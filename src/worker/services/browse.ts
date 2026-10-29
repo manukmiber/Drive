@@ -1,14 +1,15 @@
-// Cross-folder views: search, Berbintang, Terbaru (SPEC §8.1, §8.3). The person's own files come
-// from their index (R2, ADR-077); family files from D1 (FTS5) until R4.
+// Cross-folder views: search, Berbintang, Terbaru (SPEC §8.1, §8.3). Search reads the person's own
+// index (R2, ADR-077) and their family's (R4, ADR-078). Stars on family files are each member's own
+// and Terbaru is not in any index yet, so those stay on D1.
 import type { Ctx } from '../context';
-import type { DriveTypeFilter } from '../../shared/drive-tree';
+import { DRIVE_TYPE_FILTERS, type DriveTypeFilter } from '../../shared/drive-tree';
 import { markIndexDirty } from './drive-index-sync';
-import { mergeSearch, personalTree } from './drive-read';
+import { personalTree, searchTrees } from './drive-read';
 import { AppError } from '../lib/errors';
 import { requireNode } from './access';
 import { COVER_SQL, toDto, type NodeDto } from './nodes';
 
-/** Family nodes the user may see (§9.4); their own personal space is read from the index. */
+/** Family nodes the user may see (§9.4). */
 const FAMILY = `n.space = 'family'
   AND n.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?1)
   AND n.trashed_at IS NULL AND n.status != 'uploading' AND n.parent_id IS NOT NULL`;
@@ -24,30 +25,6 @@ const SELECT = `SELECT n.*, b.scan_status, b.thumb_key, ${COVER_SQL},
 
 export type TypeFilter = DriveTypeFilter;
 
-const TYPE_SQL: Record<TypeFilter, string> = {
-  folder: "n.kind = 'folder'",
-  image: "n.mime LIKE 'image/%'",
-  video: "n.mime LIKE 'video/%'",
-  audio: "n.mime LIKE 'audio/%'",
-  pdf: "n.mime = 'application/pdf'",
-  document:
-    "(n.mime LIKE 'text/%' OR n.mime LIKE 'application/vnd.%' OR n.mime IN ('application/pdf', 'application/msword', 'application/rtf'))",
-  archive:
-    "(n.mime LIKE '%zip%' OR n.mime LIKE '%rar%' OR n.mime LIKE '%7z%' OR n.mime LIKE '%tar%' OR n.mime LIKE '%zstd%' OR n.mime = 'application/gzip')",
-};
-
-/** Turns user input into a safe FTS5 prefix query: every token quoted, AND-ed, prefix-matched. */
-export function ftsQuery(input: string): string | null {
-  const tokens = input
-    .normalize('NFC')
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter(Boolean)
-    .slice(0, 8);
-  if (!tokens.length) return null;
-  return tokens.map((t) => `"${t.replace(/"/g, '')}"*`).join(' AND ');
-}
-
 export interface SearchOptions {
   q: string;
   type?: TypeFilter | undefined;
@@ -56,25 +33,9 @@ export interface SearchOptions {
   limit?: number | undefined;
 }
 
+/** Names in the person's own Drive and their family's: every word a prefix, accents ignored. */
 export async function search(ctx: Ctx, userId: string, o: SearchOptions): Promise<NodeDto[]> {
-  const match = ftsQuery(o.q);
-  if (!match) return [];
-  return mergeSearch(ctx, userId, o, async () => {
-    const where = [FAMILY, 'n.rid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?2)'];
-    const binds: unknown[] = [userId, match];
-    if (o.type) where.push(TYPE_SQL[o.type]);
-    if (o.modifiedAfter) {
-      binds.push(o.modifiedAfter);
-      where.push(`n.updated_at >= ?${binds.length}`);
-    }
-    const limit = Math.min(o.limit ?? 50, 100);
-    const { results } = await ctx.env.DB.prepare(
-      `${SELECT} WHERE ${where.join(' AND ')} ORDER BY (n.kind = 'folder') DESC, n.updated_at DESC LIMIT ${limit}`,
-    )
-      .bind(...binds)
-      .all<Parameters<typeof toDto>[0]>();
-    return results.map(toDto);
-  });
+  return searchTrees(ctx, userId, o);
 }
 
 export async function setStar(
@@ -130,6 +91,6 @@ export async function listRecent(ctx: Ctx, userId: string): Promise<NodeDto[]> {
 
 export function parseType(v: string | undefined): TypeFilter | undefined {
   if (!v) return undefined;
-  if (v in TYPE_SQL) return v as TypeFilter;
+  if ((DRIVE_TYPE_FILTERS as readonly string[]).includes(v)) return v as TypeFilter;
   throw new AppError('VALIDATION', 'unknown type filter');
 }

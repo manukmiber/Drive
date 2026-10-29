@@ -23,13 +23,7 @@ import {
   revokeToken as revokeOAuthToken,
 } from '../services/oauth';
 import { downloadUrl } from '../services/download';
-import {
-  indexResponse,
-  openPersonalIndex,
-  readChildren,
-  readNode,
-  readTrash,
-} from '../services/drive-read';
+import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
 import {
   copyFile,
   createFolder,
@@ -262,13 +256,16 @@ export const ENDPOINTS: readonly Op[] = [
       scope: 'drive.read',
       tag: 'Drive',
       summary:
-        'The whole of your own Drive in one text file, to read before anything else: line 1 is a JSON header (rev, root, cols), every other line one item as a JSON array in the order of cols. Send If-None-Match with the ETag to get 304 when nothing changed',
+        "The whole of your own Drive (or, with space=family, your family's) in one text file, to read before anything else: line 1 is a JSON header (rev, root, cols; a family's also members), every other line one item as a JSON array in the order of cols. Send If-None-Match with the ETag to get 304 when nothing changed",
+      query: z.object({ space: z.enum(['personal', 'family']).optional() }),
       text: true,
       responses: { 200: z.string(), 304: null },
     },
-    async (c) =>
-      indexResponse(
-        await openPersonalIndex(c.get('ctx'), userId(c)),
+    async (c, { query }) =>
+      indexAnswer(
+        c.get('ctx'),
+        userId(c),
+        query.space ?? 'personal',
         c.req.header('if-none-match'),
       ),
   ),

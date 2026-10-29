@@ -23,8 +23,9 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
   (atau `markBlobOwnersDirty`) dari `services/drive-index-sync.ts`. Tanpa tanda itu, bacaan R2 tidak melihat perubahannya.
 - **Sejak R2 (ADR-077) Drive pribadi dibaca dari index**: tampilan ada di `shared/drive-tree.ts` (dipakai Worker dan
   app), route baca lewat `services/drive-read.ts`, app menarik `GET /api/drive/index` dulu (`web/lib/drive-index.ts`).
-  Bacaan baru untuk pohon pribadi ditulis di `DriveTree`, bukan sebagai query D1. Keluarga (R4), upload berjalan,
-  Terbaru, dan jawaban dari tulis masih D1.
+  Bacaan baru untuk pohon pribadi ditulis di `DriveTree`, bukan sebagai query D1. Sejak R4 (ADR-078) ruang keluarga
+  juga: `f/{familyId}/index.txt`, ditulis oleh flush anggota mana pun (perubahan di ruang keluarga harus menandai seorang
+  anggota). Upload berjalan, Terbaru, bintang keluarga, dan jawaban dari tulis masih D1.
 
 ## Mesin ini
 - HP Android (PRoot, aarch64). **workerd tidak bisa jalan** → jangan pakai `wrangler dev`,

@@ -14,7 +14,10 @@
 // 4. The hourly cron flushes what a lost request left marked, and claims older than five minutes.
 //
 // Index entries carry their D1 id (`x`) so the entry numbers stay put from one flush to the next.
-// Family trees are R4: their changes don't touch these indexes.
+//
+// R4 (ADR-078): a family's tree has its own index (`f/{familyId}/index.txt`). It needs no mark of
+// its own: a member's flush writes their family's index as well, and every change to the family
+// space marks a member (the node's owner, the one acting, or the family owner).
 import { entryLine, type IndexEntry } from '../../shared/drive-index';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
@@ -47,12 +50,14 @@ export async function markIndexDirty(ctx: Ctx, userIds: Iterable<string>): Promi
   for (const id of ids) scheduleIndexFlush(ctx, id);
 }
 
-/** Marks the owners of personal files that use these blobs (scan results, thumbnails, takedowns). */
+/**
+ * Marks the owners of files that use these blobs (scan results, thumbnails, takedowns). A family
+ * file's owner is a member, so their flush writes the family's index too.
+ */
 export async function markBlobOwnersDirty(ctx: Ctx, blobIds: string[]): Promise<void> {
   if (!blobIds.length) return;
   const { results } = await ctx.env.DB.prepare(
-    `SELECT DISTINCT owner_id FROM nodes
-     WHERE space = 'personal' AND blob_id IN (SELECT value FROM json_each(?1))`,
+    `SELECT DISTINCT owner_id FROM nodes WHERE blob_id IN (SELECT value FROM json_each(?1))`,
   )
     .bind(JSON.stringify(blobIds))
     .all<{ owner_id: string }>();
@@ -87,8 +92,8 @@ export function scheduleIndexFlush(ctx: Ctx, userId: string): void {
 export type FlushResult = 'written' | 'unchanged' | 'skipped';
 
 /**
- * Claims the user's mark and writes their index from D1. 'skipped': nothing was marked, or another
- * flush holds a fresh claim (it will see everything that marked before it read).
+ * Claims the user's mark and writes their index, and their family's, from D1. 'skipped': nothing was
+ * marked, or another flush holds a fresh claim (it will see everything that marked before it read).
  */
 export async function flushUserIndex(ctx: Ctx, userId: string): Promise<FlushResult> {
   const DB = ctx.env.DB;
@@ -101,7 +106,13 @@ export async function flushUserIndex(ctx: Ctx, userId: string): Promise<FlushRes
     .first();
   if (!claimed) return 'skipped';
   try {
-    const written = await writeUserIndex(ctx, userId);
+    const own = await writeUserIndex(ctx, userId);
+    const family = await ctx.env.DB.prepare(
+      'SELECT family_id FROM family_members WHERE user_id = ?1',
+    )
+      .bind(userId)
+      .first<{ family_id: string }>();
+    const written = (family ? await writeFamilyIndex(ctx, family.family_id) : false) || own;
     // A change during the flush marked again (dirty_at > 0): the row stays for its own flush.
     await DB.prepare('DELETE FROM manifest_dirty WHERE user_id = ?1 AND dirty_at = ?2')
       .bind(userId, claim)
@@ -147,6 +158,11 @@ export async function deleteUserIndex(ctx: Ctx, userId: string): Promise<void> {
   await ctx.env.BUCKET.delete(indexKey({ user: userId }));
 }
 
+/** A family that ended: its tree went back to the owner's own Drive, and its index goes. */
+export async function deleteFamilyIndex(ctx: Ctx, familyId: string): Promise<void> {
+  await ctx.env.BUCKET.delete(indexKey({ family: familyId }));
+}
+
 export interface TreeRow {
   id: string;
   parent_id: string | null;
@@ -167,7 +183,15 @@ export interface TreeRow {
   thumb_key: string | null;
   scan_status: string | null;
   starred: number;
+  /** Family rows only: who owns it, whether other members may edit, who trashed it. */
+  owner_id?: string;
+  family_can_edit?: number;
+  trashed_by?: string | null;
 }
+
+const TREE_COLUMNS = `n.id, n.parent_id, n.kind, n.name, n.size, n.mime, n.status, n.trashed_at,
+  n.trash_root_id, n.client_modified_at, n.created_at, n.updated_at,
+  n.decor_color, n.decor_icon, n.decor_cover_id, b.r2_key, b.thumb_key, b.scan_status`;
 
 export async function readTree(
   ctx: Ctx,
@@ -180,10 +204,7 @@ export async function readTree(
     ).bind(userId),
     // Uploads still running aren't in the tree yet.
     DB.prepare(
-      `SELECT n.id, n.parent_id, n.kind, n.name, n.size, n.mime, n.status, n.trashed_at,
-              n.trash_root_id, n.client_modified_at, n.created_at, n.updated_at,
-              n.decor_color, n.decor_icon, n.decor_cover_id,
-              b.r2_key, b.thumb_key, b.scan_status,
+      `SELECT ${TREE_COLUMNS},
               EXISTS (SELECT 1 FROM node_stars s WHERE s.node_id = n.id AND s.user_id = ?1) AS starred
        FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id
        WHERE n.owner_id = ?1 AND n.space = 'personal' AND n.status != 'uploading'
@@ -194,6 +215,52 @@ export async function readTree(
     rows: tree!.results as unknown as TreeRow[],
     used: (pool!.results[0] as { used_bytes: number } | undefined)?.used_bytes ?? 0,
   };
+}
+
+/**
+ * A family's tree and its members, the family owner first. Stars are each member's own, so the
+ * family index carries none (they stay with the member, ADR-064).
+ */
+export async function readFamilyTree(
+  ctx: Ctx,
+  familyId: string,
+): Promise<{ rows: TreeRow[]; used: number; members: string[] } | null> {
+  const DB = ctx.env.DB;
+  const [family, members, tree] = await DB.batch([
+    DB.prepare(
+      `SELECT p.used_bytes FROM families f JOIN storage_pools p ON p.id = f.pool_id WHERE f.id = ?1`,
+    ).bind(familyId),
+    DB.prepare(
+      `SELECT user_id FROM family_members WHERE family_id = ?1
+       ORDER BY (role = 'owner') DESC, joined_at, user_id`,
+    ).bind(familyId),
+    DB.prepare(
+      `SELECT ${TREE_COLUMNS}, 0 AS starred, n.owner_id, n.family_can_edit, n.trashed_by
+       FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id
+       WHERE n.family_id = ?1 AND n.space = 'family' AND n.status != 'uploading'
+       ORDER BY n.rid`,
+    ).bind(familyId),
+  ]);
+  const row = family!.results[0] as { used_bytes: number } | undefined;
+  if (!row) return null;
+  return {
+    rows: tree!.results as unknown as TreeRow[],
+    used: row.used_bytes,
+    members: (members!.results as Array<{ user_id: string }>).map((m) => m.user_id),
+  };
+}
+
+/** Writes a family's index from D1; true when anything in it changed. */
+export async function writeFamilyIndex(ctx: Ctx, familyId: string): Promise<boolean> {
+  let gone = false;
+  const written = await changeIndex(ctx.env.BUCKET, { family: familyId }, async (doc) => {
+    const tree = await readFamilyTree(ctx, familyId);
+    gone = !tree;
+    if (tree) project(doc, tree.rows, tree.used, tree.members);
+    return doc.changed;
+  });
+  if (gone) await deleteFamilyIndex(ctx, familyId);
+  return written && !gone;
 }
 
 /** Writes the user's index from D1; true when anything in it changed. */
@@ -213,8 +280,27 @@ export async function writeUserIndex(ctx: Ctx, userId: string): Promise<boolean>
   });
 }
 
-/** Makes `doc` hold exactly the tree in `rows`, keeping the entry number of every node it had. */
-export function project(doc: IndexDoc, rows: TreeRow[], used: number): void {
+/**
+ * A family index's member list: everyone keeps their place, a leaver's place becomes null, and new
+ * members are added at the end. Positions in entries count from 1 (0 = nobody).
+ */
+export function memberSlots(before: unknown, now: string[]): Array<string | null> {
+  const slots = (Array.isArray(before) ? before : []).map((m) =>
+    typeof m === 'string' && now.includes(m) ? m : null,
+  );
+  for (const m of now) if (!slots.includes(m)) slots.push(m);
+  return slots;
+}
+
+/**
+ * Makes `doc` hold exactly the tree in `rows`, keeping the entry number of every node it had.
+ * `members` (current members, family owner first) makes it a family index.
+ */
+export function project(doc: IndexDoc, rows: TreeRow[], used: number, members?: string[]): void {
+  const slots = members ? memberSlots(doc.head.members, members) : null;
+  if (slots) doc.setMeta('members', slots);
+  const at = (userId: string | null | undefined) =>
+    slots && userId ? slots.indexOf(userId) + 1 : 0;
   const root = rows.find((r) => r.parent_id === null);
   doc.setMeta('root', root?.id);
   // The root isn't an entry; R2 reads (ADR-077) show it with this as its date.
@@ -256,9 +342,9 @@ export function project(doc: IndexDoc, rows: TreeRow[], used: number): void {
         folder && (r.decor_color || r.decor_icon || r.decor_cover_id)
           ? { color: r.decor_color, icon: r.decor_icon, cover: entryOf(r.decor_cover_id) }
           : null,
-      owner: 0,
-      canEdit: false,
-      trashedBy: 0,
+      owner: at(r.owner_id),
+      canEdit: Boolean(slots && r.family_can_edit === 1),
+      trashedBy: r.trashed_at === null ? 0 : at(r.trashed_by),
     };
     const before = had.get(r.id);
     if (!before || entryLine(before) !== entryLine(entry)) doc.set(entry);

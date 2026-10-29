@@ -149,7 +149,10 @@ export const DRIVE_TYPE_FILTERS: readonly DriveTypeFilter[] = [
 ];
 
 export interface DriveTreeOptions {
-  /** The index's user: owner and creator of everything in it. */
+  /**
+   * A personal index's user: owner and creator of everything in it. A family index (one whose
+   * header lists `members`, R4) names each entry's owner itself.
+   */
   ownerId: string;
   /** Trash retention, for purgeAt (trashed at + this many days). */
   trashDays: number;
@@ -183,10 +186,13 @@ function compareTuples(
   return 0;
 }
 
-/** One personal index, ready to answer the explorer's questions. */
+/** One index (a person's own, or a family's), ready to answer the explorer's questions. */
 export class DriveTree {
   readonly rootId: string;
   readonly rev: number;
+  readonly space: 'personal' | 'family';
+  /** Family index: member user ids by position (from 1); a leaver's place is null. */
+  readonly members: ReadonlyArray<string | null>;
   private readonly rootCreated: number;
   private readonly byId = new Map<string, IndexEntry>();
   private readonly byNumber = new Map<number, IndexEntry>();
@@ -201,6 +207,8 @@ export class DriveTree {
     this.rootId = typeof head.root === 'string' ? head.root : '';
     this.rev = head.rev;
     this.rootCreated = typeof head.rootAt === 'number' ? head.rootAt * 1000 : 0;
+    this.space = Array.isArray(head.members) ? 'family' : 'personal';
+    this.members = head.members ?? [];
     for (const e of entries) {
       this.byNumber.set(e.id, e);
       this.byId.set(DriveTree.idOf(e), e);
@@ -208,6 +216,15 @@ export class DriveTree {
       if (list) list.push(e);
       else this.kids.set(e.parent, [e]);
     }
+  }
+
+  /** The user at a member position (family index), or '' for nobody. */
+  memberAt(position: number): string {
+    return (position > 0 && this.members[position - 1]) || '';
+  }
+
+  private ownerOf(e: IndexEntry): string {
+    return this.space === 'family' ? this.memberAt(e.owner) : this.opts.ownerId;
   }
 
   /** The id the app and API use: the D1 id while there is one. */
@@ -234,9 +251,9 @@ export class DriveTree {
       mime: null,
       status: 'ready',
       scanStatus: null,
-      space: 'personal',
-      ownerId: this.opts.ownerId,
-      createdBy: this.opts.ownerId,
+      space: this.space,
+      ownerId: this.space === 'family' ? this.memberAt(1) : this.opts.ownerId,
+      createdBy: this.space === 'family' ? this.memberAt(1) : this.opts.ownerId,
       familyCanEdit: false,
       starred: false,
       hasThumb: false,
@@ -286,10 +303,11 @@ export class DriveTree {
           : e.status === 'scanning'
             ? 'pending'
             : 'clean',
-      space: 'personal',
-      ownerId: this.opts.ownerId,
-      createdBy: this.opts.ownerId,
-      familyCanEdit: false,
+      space: this.space,
+      // The index keeps the owner only; in a family space that is who made it (ADR-078).
+      ownerId: this.ownerOf(e),
+      createdBy: this.ownerOf(e),
+      familyCanEdit: this.space === 'family' && e.canEdit,
       starred: e.starred,
       hasThumb: e.thumb,
       trashedAt: e.trashedAt,
@@ -398,10 +416,14 @@ export class DriveTree {
       .slice(0, limit);
   }
 
-  /** What the person put in the Trash (the top of each trashed subtree), the latest first. */
-  trash(limit = 500): DriveNode[] {
+  /**
+   * What was put in the Trash (the top of each trashed subtree), the latest first. In a family
+   * index, `by` keeps it to what that member put there, as each member's Trash is their own.
+   */
+  trash(limit = 500, by?: string): DriveNode[] {
     return [...this.byNumber.values()]
       .filter((e) => e.trashedAt !== null && e.trashRoot === e.id)
+      .filter((e) => by === undefined || this.memberAt(e.trashedBy) === by)
       .map((e) => this.toNode(e))
       .sort((a, b) => b.trashedAt! - a.trashedAt! || (a.id < b.id ? 1 : -1))
       .slice(0, limit);

@@ -430,9 +430,10 @@ export async function decorateFolders(
         DB.prepare(`UPDATE nodes SET ${sets.join(', ')} WHERE id = ?1`).bind(f.id, ...values),
       ),
     );
+    // A family folder's owner is a member: their flush writes the family's index (ADR-078).
     await markIndexDirty(
       ctx,
-      folders.filter((f) => f.space === 'personal').map((f) => f.owner_id),
+      folders.map((f) => f.owner_id),
     );
   }
   return Promise.all(folders.map((f) => getNodeDto(ctx, userId, f.id)));

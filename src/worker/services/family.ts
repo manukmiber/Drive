@@ -2,7 +2,7 @@
 // keeps a private "Drive Saya" (invisible to the family owner) plus a shared "Drive Keluarga".
 // Pool changes (create, join, leave, dissolve) move nodes, blobs and usage counters in one batch.
 import { DAY_MS, SHARE_ID_LENGTH } from '../../shared/constants';
-import { markIndexDirty } from './drive-index-sync';
+import { deleteFamilyIndex, markIndexDirty } from './drive-index-sync';
 import { formatBytes, formatRupiah } from '../../shared/format';
 import { addBillingMonth } from '../../shared/time';
 import type { Ctx } from '../context';
@@ -639,7 +639,8 @@ export async function removeMember(ctx: Ctx, actorId: string, memberId: string):
       : []),
     poolLimitStmt(ctx, personal),
   ]);
-  await markIndexDirty(ctx, [memberId]);
+  // The leaver is no longer a member, so their flush won't reach the family's index; the owner's will.
+  await markIndexDirty(ctx, [memberId, target.ownerId]);
   await audit(ctx, actorId, 'family.leave', target.familyId, {
     userId: memberId,
     removedBy: actorId === memberId ? null : actorId,
@@ -694,6 +695,7 @@ export async function dissolveFamily(ctx: Ctx, ownerId: string): Promise<{ credi
     DB.prepare('DELETE FROM family_members WHERE family_id = ?1').bind(m.familyId),
     poolLimitStmt(ctx, personal),
   ]);
+  await deleteFamilyIndex(ctx, m.familyId);
   await markIndexDirty(ctx, [ownerId]);
   await audit(ctx, ownerId, 'family.dissolve', m.familyId, { creditIdr: convert.creditIdr });
   return { creditIdr: convert.creditIdr };

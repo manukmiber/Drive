@@ -8,13 +8,7 @@ import { rateLimit } from '../middleware/ratelimit';
 import { requireNode } from '../services/access';
 import { listRecent, listStarred, parseType, search, setStar } from '../services/browse';
 import { downloadPlan, downloadUrl, previewUrl } from '../services/download';
-import {
-  indexResponse,
-  openPersonalIndex,
-  readChildren,
-  readNode,
-  readTrash,
-} from '../services/drive-read';
+import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
 import {
   copyFile,
   createFolder,
@@ -85,10 +79,17 @@ export const nodes = new Hono<AppBindings>()
   .get('/files/:id/preview', async (c) =>
     c.json(await previewUrl(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),
   )
-  .get('/drive/index', async (c) => {
-    const idx = await openPersonalIndex(c.get('ctx'), c.get('user')!.id);
-    return indexResponse(idx, c.req.header('if-none-match'));
-  })
+  .get(
+    '/drive/index',
+    validate('query', z.object({ space: z.enum(['personal', 'family']).optional() })),
+    async (c) =>
+      indexAnswer(
+        c.get('ctx'),
+        c.get('user')!.id,
+        c.req.valid('query').space ?? 'personal',
+        c.req.header('if-none-match'),
+      ),
+  )
   .get('/nodes/:id', async (c) =>
     c.json(await readNode(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),
   )

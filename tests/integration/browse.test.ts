@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ftsQuery } from '../../src/worker/services/browse';
+import { queryWords } from '../../src/shared/drive-tree';
 import { APP, makeRuntime } from '../helpers/runtime';
 import { signIn } from '../helpers/session';
 import {
@@ -12,10 +12,11 @@ import {
 } from '../helpers/files';
 
 describe('search / starred / recent (SPEC §8)', () => {
-  it('builds safe FTS queries', () => {
-    expect(ftsQuery('Laporan keu')).toBe('"laporan"* AND "keu"*');
-    expect(ftsQuery('"; DROP TABLE nodes; --')).toBe('"drop"* AND "table"* AND "nodes"*');
-    expect(ftsQuery('   ')).toBeNull();
+  it('reads a query as words (the index search, ADR-077)', () => {
+    expect(queryWords('Laporan keu')).toEqual(['laporan', 'keu']);
+    expect(queryWords('"; DROP TABLE nodes; --')).toEqual(['drop', 'table', 'nodes']);
+    expect(queryWords('Café')).toEqual(['cafe']);
+    expect(queryWords('   ')).toEqual([]);
   });
 
   it("finds files by name prefix across folders, only within the user's own spaces", async () => {

@@ -46,8 +46,11 @@ lewat fase R di `docs/ROADMAP.md`.
   app menarik index dulu (`web/lib/drive-index.ts`). Keluarga, upload berjalan, dan Terbaru masih D1. Shim R2: tulis
   ulang atomik untuk pembaca.
 - [ ] Pemilik: migrasi `0020` di D1 remote + deploy, supaya index user production mulai ditulis dan dibaca.
-- [ ] R4 index keluarga · R5 share tanpa D1 ·
-  R6 sesi/token/OAuth tanpa D1 · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
+- [x] R4 index keluarga (ADR-078, 2026-10-29): `f/{familyId}/index.txt` (anggota di header, `o`/`e`/`tb` per entri),
+  ditulis oleh flush anggota mana pun, migrasi data `0021`; ruang keluarga dibaca dari index (detail, isi folder, cari,
+  Sampah per anggota, `GET /api/drive/index?space=family`). Bintang keluarga dan Terbaru masih D1.
+- [ ] Pemilik: migrasi `0021` di D1 remote (bersama `0020`) + deploy.
+- [ ] R5 share tanpa D1 · R6 sesi/token/OAuth tanpa D1 · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 
 ## Fase 0 — Fondasi

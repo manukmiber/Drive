@@ -1,6 +1,6 @@
 import type { DriveCrumb, DriveNode } from '../../shared/drive-tree';
 import { api, postJson, sendJson } from './api';
-import { personalTree } from './drive-index';
+import { treeHolding } from './drive-index';
 
 /** Shared with the Worker and the index reads (ADR-077). */
 export type NodeDto = DriveNode;
@@ -22,7 +22,7 @@ export const filesKeys = {
   trash: ['trash'] as const,
 };
 
-/** A folder: the person's own from their index (ADR-077), anything else from the API. */
+/** A folder: from the person's index or their family's (ADR-077, ADR-078), else from the API. */
 export async function listChildren(
   folderId: string,
   sort: SortKey,
@@ -30,7 +30,7 @@ export async function listChildren(
   cursor?: string | null,
 ): Promise<ChildrenPage> {
   if (!cursor) {
-    const tree = await personalTree();
+    const tree = await treeHolding(folderId);
     const folder = tree?.node(folderId);
     if (tree && folder?.kind === 'folder')
       return {

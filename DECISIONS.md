@@ -2120,3 +2120,44 @@ Test: `tests/unit/drive-tree.test.ts`, `tests/integration/drive-read.test.ts` (s
 arah, cursor, ETag/304, bacaan saat tertinggal lalu sesudah flush, user tanpa index, id orang lain, akun ditangguhkan,
 API v1 + OpenAPI), `tests/integration/idor.test.ts` (index orang lain), `tests/integration/shims.test.ts` (baca saat
 ditimpa).
+
+## ADR-078 — R4: index keluarga `f/{familyId}/index.txt`, dan ruang keluarga dibaca dari situ
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Langsung kerjain roadmap yang dependencynya udah dikerjakan"). R4
+membuka D2 dan R8.
+
+**Keputusan:**
+- **Proyeksi D1 seperti R3** (`drive-index-sync.ts`, `readFamilyTree`, `writeFamilyIndex`): node `space = 'family'`
+  milik keluarga itu, tanpa upload yang masih berjalan. Header: `root` (folder akar keluarga), `rootAt`, `used` (pool
+  keluarga), dan **`members`**: user id anggota, pemilik keluarga di urutan pertama. Posisi dihitung dari 1 (0 = tidak
+  ada). Anggota tidak pernah pindah posisi; yang keluar menjadi `null`, anggota baru ditambah di belakang
+  (`memberSlots`). Entri memakai kolom ADR-064: `o` pemilik node, `e` anggota lain boleh mengedit, `tb` siapa yang
+  membuangnya ke Sampah. Bintang tidak ada di index keluarga: bintang milik tiap anggota (tetap di D1 sampai pindah ke
+  index anggota itu).
+- **Tanpa tabel atau kolom D1 baru.** `manifest_dirty` hanya menerima user id (FK ke `users`), jadi index keluarga tidak
+  punya tanda sendiri: **flush seorang anggota juga menulis index keluarganya**. Setiap perubahan di ruang keluarga
+  sudah menandai seorang anggota (pemilik node, yang bertindak, atau pemilik keluarga): node keluarga selalu dimiliki
+  anggota (yang keluar menyerahkan miliknya ke pemilik keluarga). Yang ditambah: `markBlobOwnersDirty` dan dekorasi
+  folder kini menandai pemilik node keluarga juga, anggota yang keluar menandai pemilik keluarga (flush yang keluar tidak
+  lagi mencapai index keluarga), dan keluarga yang bubar menghapus indexnya. Dua anggota yang flush bersamaan aman lewat
+  tulis bersyarat etag. Migrasi data `0021` menandai pemilik setiap keluarga supaya index pertamanya ditulis.
+- **Dibaca dari index** (`drive-read.ts`): detail dan isi folder mencari node di index pribadi, lalu di index keluarga.
+  Satu query D1 memberi keanggotaan, peran, kunci pool keluarga (SPEC §12.5), dan "tertinggal" (ada anggota yang
+  bertanda). Hak akses dihitung seperti `nodeAccess`: pemilik keluarga atau pembuat node boleh semua; anggota lain boleh
+  melihat dan menambah, mengedit hanya kalau `e`. Index hanya menyimpan pemilik node, dan di ruang keluarga pemilik =
+  pembuatnya (upload dan pindah ke keluarga), kecuali file anggota yang keluar, yang pindah ke pemilik keluarga; di sana
+  hasil hak aksesnya tetap sama karena pemilik keluarga memang boleh semua. Test membandingkan setiap hak dengan
+  `nodeAccess` untuk setiap anggota.
+- **Cari** membaca index pribadi dan index keluarga (FTS5 D1 tidak dipakai lagi; `ftsQuery` dibuang, tabel `nodes_fts`
+  dihapus di R8). **Sampah** keluarga dari index: hanya yang dibuang anggota itu sendiri (`tb`), seperti dulu.
+  **Berbintang** keluarga tetap D1.
+- **`GET /api/drive/index?space=family`** (dan `/api/v1/drive/index?space=family`): index keluarga orang itu, 404 kalau
+  bukan anggota keluarga mana pun. App menarik index keluarga hanya saat folder yang dibuka tidak ada di index pribadi
+  (`treeHolding`), dengan ETag/304 yang sama.
+
+**Belum:** bintang keluarga dan Terbaru (masih D1); tanggal hapus otomatis dan riwayat versi (D12, D1) akan memakai index
+ini; R8 menghapus pengecekan `manifest_dirty` dan tabel D1.
+
+Test: `tests/integration/drive-family-index.test.ts` (urutan anggota, ditulis oleh anggota mana pun, pemilik/izin
+edit/pembuang, sama dengan D1 termasuk hak akses tiap anggota, cari, Sampah per anggota, 304, orang luar 404, anggota
+keluar, keluarga bubar), `tests/integration/browse.test.ts`.
