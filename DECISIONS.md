@@ -2053,3 +2053,70 @@ Test: `tests/integration/s3-part-number.test.ts`.
   semua objek; di sini itu terlalu mahal CPU.
 
 Test: `tests/unit/checksums.test.ts`, `tests/integration/s3-checksums.test.ts`.
+
+## ADR-077 — R2: Drive pribadi dibaca dari index R2; app menarik index dulu
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Kerjakan roadmap yang sangat dibutuhkan oleh plan lain"). R2 adalah
+langkah fase R berikutnya, dan D6, D11, R8 menunggunya (D7, D8, dan D10 lewat D6/D8).
+
+**Konteks.** Sejak R3 (ADR-074) setiap perubahan pohon pribadi ditulis ke `u/{userId}/index.txt`, tapi app, API v1, dan
+semua klien masih membaca D1. R2 memindahkan bacaan ke index: explorer, detail, breadcrumb, cari, bintang, Sampah, dan
+klien menarik index lebih dulu (ADR-064 keputusan 5).
+
+**Keputusan:**
+- **Satu implementasi tampilan untuk Worker dan app** (`src/shared/drive-tree.ts`, `DriveTree`): isi folder (folder
+  dulu, urut nama/diubah/ukuran/jenis, naik/turun, id sebagai pemecah seri seperti D1), halaman dengan cursor (format
+  cursor sama dengan D1), node dan jalur dari akar, cari, berbintang, Sampah. `NodeDto`/`Crumb` Worker dan app sekarang
+  alias tipe `DriveNode`/`DriveCrumb` di sana, dan `nameKey` dipindah ke sana. Id yang dipakai app dan API tetap id D1
+  (kolom `x`) sampai R8; nomor entri tidak pernah keluar.
+- **`GET /api/drive/index` dan `GET /api/v1/drive/index`** (scope `drive.read`, OpenAPI `text/plain`): index pribadi apa
+  adanya. Kalau index tidak tertinggal, ini R2 yang di-stream ke klien (CPU Worker hampir nol, Cloudflare yang
+  mengompres) dengan `ETag` R2; `If-None-Match` yang cocok → 304. Header `X-Drive-Owner` dan `X-Drive-Trash-Days`
+  memberi klien yang dibutuhkan untuk membaca index seperti API membacanya. Akun yang ditangguhkan (SPEC §12.5) ditolak
+  `ACCOUNT_SUSPENDED`, sama seperti `requireNode`.
+- **Tidak pernah tertinggal dari perubahan orang itu sendiri.** Index menyusul D1 sedetik kemudian (R3), jadi setiap
+  bacaan mengecek tanda user di `manifest_dirty` (satu query D1 bersama status langganan). Tanpa tanda: index di R2
+  dipakai. Ada tanda (menunggu atau sedang di-flush): index dibaca, pohon D1 diproyeksikan ke atasnya di memori
+  (`project` yang sama dengan flush), dan hasilnya dipakai untuk jawaban ini saja, **tanpa ETag dan tanpa tulis**.
+  Tulisnya tetap oleh flush perubahan itu, jadi batas 1 tulis/detik per key tidak terpakai oleh bacaan. Pengecekan ini
+  hilang di R8, saat perubahan langsung menulis index.
+- **Route yang membaca index** (`services/drive-read.ts`): `GET /nodes/:id` dan `/nodes/:id/children` (app dan v1)
+  memakai index bila node itu ada di index orang itu sendiri, jadi akses tidak perlu dicek ke D1 (index ada di
+  `u/{userId}/`). Selain itu (folder keluarga, upload yang masih berjalan, id orang lain) jalan lewat D1 seperti dulu,
+  termasuk 404 untuk id orang lain. Cari, Berbintang, dan Sampah menggabungkan hasil pribadi dari index dengan hasil
+  keluarga dari D1 (keluarga = R4). Terbaru tetap di D1 (ADR-064 mengusulkan pindah ke klien; belum diputuskan).
+  Mengosongkan Sampah dan semua tulis tetap di D1; jawaban tulis (DTO setelah perubahan) tetap dari D1.
+- **App menarik index dulu** (`src/web/lib/drive-index.ts`): `listChildren` di app menjawab folder pribadi dari index
+  (satu request, 304 kalau tidak berubah, permintaan bersamaan digabung), dipakai explorer, dialog pindah, dekorasi, dan
+  video. Folder keluarga, halaman berikutnya, dan index yang gagal dibaca jatuh ke API. Detail (panel Info) dan Sampah
+  tetap lewat API, yang juga membaca index.
+- **Rincian pindai menempel di isi, bukan di index** (ADR-064): index hanya tahu siap/dipindai/diblokir. Daftar memakai
+  `clean`/`pending`/`infected` dari situ; detail satu file (`/nodes/:id`) mengambil `scan_status` blob-nya, supaya label
+  "Tidak dipindai penuh" atau "Gagal dipindai" tetap benar. Di R8 ini pindah ke metadata objek isi.
+- **Header index mendapat `rootAt`** (detik folder akar dibuat): akar bukan entri, dan detail/akar di API v1 perlu
+  tanggalnya. Nama akar tetap `PERSONAL_ROOT_NAME` (app menampilkan kata-katanya sendiri).
+
+**Yang berubah bagi klien (sengaja):**
+- Waktu (`createdAt`, `updatedAt`, `trashedAt`, …) dari index dalam detik penuh (format ADR-064), bukan milidetik.
+- `purgeAt` = dibuang + masa simpan Sampah yang berlaku sekarang (index tidak menyimpan tanggal hapusnya sendiri).
+- Berbintang diurutkan dari yang terakhir berubah (index tidak menyimpan kapan bintang diberi).
+- File yang dikarantina takedown tampil `rejected` di daftar (dulu `ready` dengan `scanStatus` `quarantined`), sama
+  seperti di index (`st = 2`).
+- Cari meniru FTS5 `unicode61 remove_diacritics 2` di JavaScript: setiap kata query harus jadi awalan salah satu kata
+  nama, aksen diabaikan, paling banyak 8 kata.
+
+**Shim R2 dev diperbaiki.** Dulu `put` mengganti file data lalu file meta, jadi pembaca di tengahnya mendapat isi baru
+dengan ukuran lama ("drive index: truncated"). Bacaan index yang berbarengan dengan flush memunculkannya. Sekarang setiap
+versi punya file data sendiri, meta diganti dengan satu `rename`, dan data lama dihapus 30 detik kemudian. Sama seperti
+R2: pembaca mendapat objek lama atau baru, tidak pernah campuran.
+
+**Biaya.** Index tidak tertinggal: satu batch D1 kecil + satu baca R2 (304 tanpa body). Tertinggal: ditambah baca pohon
+D1, seperti flush tanpa tulis. Route API di Worker mengurai seluruh index (angka ADR-064: ±2,6 ms per 1.000 entri di HP
+pengembang); app mengurai di browser. Pohon yang sangat besar di Workers Free tetap dicatat di ADR-064.
+
+**Belum:** index keluarga (R4); Terbaru; menghapus pembacaan D1 yang tersisa dan pengecekan `manifest_dirty` (R8).
+
+Test: `tests/unit/drive-tree.test.ts`, `tests/integration/drive-read.test.ts` (sama dengan D1 untuk setiap urutan dan
+arah, cursor, ETag/304, bacaan saat tertinggal lalu sesudah flush, user tanpa index, id orang lain, akun ditangguhkan,
+API v1 + OpenAPI), `tests/integration/idor.test.ts` (index orang lain), `tests/integration/shims.test.ts` (baca saat
+ditimpa).

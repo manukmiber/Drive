@@ -291,6 +291,10 @@ describe('IDOR (SPEC §14.1)', () => {
 
     expect(leaks).toEqual([]);
     expect(JSON.parse(await snapshot())).toEqual(JSON.parse(before));
+    // The index a person pulls first (R2, ADR-077) is only ever their own.
+    const bIndex = await (await b.req('GET', '/api/drive/index')).text();
+    for (const secret of [folder.id, file.id, aRoot, 'ktp.txt', 'Pribadi'])
+      expect(bIndex).not.toContain(secret);
     // Guessing the anonymous download path without a signed token never yields the content.
     for (const path of [`/d/${file.id}`, `/d/${file.id}/ktp.txt`, `/d/x.y.z/ktp.txt`]) {
       expect(await (await rt.fetch(new Request(`${APP}${path}`))).text()).not.toContain(

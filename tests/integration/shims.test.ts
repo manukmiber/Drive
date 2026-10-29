@@ -60,6 +60,24 @@ describe('R2 shim', () => {
     expect(notModified && 'body' in notModified).toBe(false);
   });
 
+  it('never hands a reader half of an overwrite (reads race the index flush, ADR-077)', async () => {
+    const rt = await makeRuntime();
+    const b = rt.env.BUCKET;
+    const versions = Array.from({ length: 8 }, (_, i) => `${String(i)}`.repeat(1000 * (i + 1)));
+    await b.put('idx', versions[0]!);
+    const reads: Promise<string | null>[] = [];
+    const writes = versions.slice(1).map(async (v) => {
+      reads.push(b.get('idx').then((o) => (o && 'text' in o ? o.text() : null)));
+      await b.put('idx', v);
+      reads.push(b.get('idx').then((o) => (o && 'text' in o ? o.text() : null)));
+    });
+    await Promise.all(writes);
+    for (const text of await Promise.all(reads)) expect(versions).toContain(text);
+    expect(await ((await b.get('idx')) as R2ObjectBody).text()).toBe(versions[7]);
+    await b.delete('idx');
+    expect(await b.get('idx')).toBeNull();
+  });
+
   it('enforces uniform multipart part sizes', async () => {
     const rt = await makeRuntime();
     const b = rt.env.BUCKET;

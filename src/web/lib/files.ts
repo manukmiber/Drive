@@ -1,36 +1,10 @@
-import type { FolderColor, FolderDecor } from '../../shared/folder-decor';
+import type { DriveCrumb, DriveNode } from '../../shared/drive-tree';
 import { api, postJson, sendJson } from './api';
+import { personalTree } from './drive-index';
 
-export interface NodeDto {
-  id: string;
-  parentId: string | null;
-  kind: 'file' | 'folder';
-  name: string;
-  size: number;
-  mime: string | null;
-  status: 'uploading' | 'scanning' | 'ready' | 'rejected';
-  scanStatus: string | null;
-  space: 'personal' | 'family';
-  ownerId: string;
-  createdBy: string;
-  familyCanEdit: boolean;
-  starred: boolean;
-  hasThumb: boolean;
-  trashedAt: number | null;
-  purgeAt: number | null;
-  createdAt: number;
-  updatedAt: number;
-  clientModifiedAt: number | null;
-  /** Folders only (ADR-058); `coverId` only when this viewer may see that image. */
-  decor: FolderDecor | null;
-}
-
-export interface Crumb {
-  id: string;
-  name: string;
-  color: FolderColor | null;
-  icon: string | null;
-}
+/** Shared with the Worker and the index reads (ADR-077). */
+export type NodeDto = DriveNode;
+export type Crumb = DriveCrumb;
 
 export type SortKey = 'name' | 'updated' | 'size' | 'type';
 
@@ -48,12 +22,24 @@ export const filesKeys = {
   trash: ['trash'] as const,
 };
 
-export function listChildren(
+/** A folder: the person's own from their index (ADR-077), anything else from the API. */
+export async function listChildren(
   folderId: string,
   sort: SortKey,
   dir: 'asc' | 'desc',
   cursor?: string | null,
-) {
+): Promise<ChildrenPage> {
+  if (!cursor) {
+    const tree = await personalTree();
+    const folder = tree?.node(folderId);
+    if (tree && folder?.kind === 'folder')
+      return {
+        folder,
+        items: tree.children(folderId, sort, dir),
+        nextCursor: null,
+        path: tree.path(folderId),
+      };
+  }
   const q = new URLSearchParams({ sort, dir });
   if (cursor) q.set('cursor', cursor);
   return api<ChildrenPage>(`/api/nodes/${folderId}/children?${q}`);

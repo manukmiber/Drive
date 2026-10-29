@@ -27,6 +27,8 @@ export interface Endpoint {
   public?: boolean;
   /** The body may be application/x-www-form-urlencoded as well as JSON (OAuth, RFC 6749). */
   form?: boolean;
+  /** The successful answer is plain text (the Drive index), not JSON. */
+  text?: boolean;
 }
 
 /** /nodes/{id} → /nodes/:id */
@@ -85,9 +87,13 @@ export function openApiDocument(endpoints: readonly Endpoint[], serverUrl: strin
       responses[status] = schema
         ? {
             description: Number(status) < 300 ? 'OK' : 'Error',
-            content: { 'application/json': { schema: json(schema, 'output') } },
+            content: {
+              [ep.text && Number(status) < 300 ? 'text/plain' : 'application/json']: {
+                schema: json(schema, 'output'),
+              },
+            },
           }
-        : { description: 'No content' };
+        : { description: Number(status) === 304 ? 'Not modified' : 'No content' };
     if (!ep.public) {
       responses['401'] = {
         description: 'Missing, wrong, expired or revoked token',

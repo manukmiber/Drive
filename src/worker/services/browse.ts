@@ -1,11 +1,19 @@
-// Cross-folder views: search (FTS5), Berbintang, Terbaru (SPEC §8.1, §8.3).
+// Cross-folder views: search, Berbintang, Terbaru (SPEC §8.1, §8.3). The person's own files come
+// from their index (R2, ADR-077); family files from D1 (FTS5) until R4.
 import type { Ctx } from '../context';
+import type { DriveTypeFilter } from '../../shared/drive-tree';
 import { markIndexDirty } from './drive-index-sync';
+import { mergeSearch, personalTree } from './drive-read';
 import { AppError } from '../lib/errors';
 import { requireNode } from './access';
 import { COVER_SQL, toDto, type NodeDto } from './nodes';
 
-/** Nodes the user may see: own personal space + family spaces they belong to (§9.4). */
+/** Family nodes the user may see (§9.4); their own personal space is read from the index. */
+const FAMILY = `n.space = 'family'
+  AND n.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?1)
+  AND n.trashed_at IS NULL AND n.status != 'uploading' AND n.parent_id IS NOT NULL`;
+
+/** Every node the user may see (Terbaru stays on D1 until it moves to the app, ADR-064). */
 const VISIBLE = `((n.space = 'personal' AND n.owner_id = ?1)
   OR (n.space = 'family' AND n.family_id IN (SELECT family_id FROM family_members WHERE user_id = ?1)))
   AND n.trashed_at IS NULL AND n.status != 'uploading' AND n.parent_id IS NOT NULL`;
@@ -14,7 +22,7 @@ const SELECT = `SELECT n.*, b.scan_status, b.thumb_key, ${COVER_SQL},
   (SELECT 1 FROM node_stars s WHERE s.node_id = n.id AND s.user_id = ?1) AS starred FROM nodes n
   LEFT JOIN blobs b ON b.id = n.blob_id`;
 
-export type TypeFilter = 'folder' | 'image' | 'video' | 'audio' | 'document' | 'archive' | 'pdf';
+export type TypeFilter = DriveTypeFilter;
 
 const TYPE_SQL: Record<TypeFilter, string> = {
   folder: "n.kind = 'folder'",
@@ -51,24 +59,22 @@ export interface SearchOptions {
 export async function search(ctx: Ctx, userId: string, o: SearchOptions): Promise<NodeDto[]> {
   const match = ftsQuery(o.q);
   if (!match) return [];
-  const where = [VISIBLE, 'n.rid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?2)'];
-  const binds: unknown[] = [userId, match];
-  if (o.type) where.push(TYPE_SQL[o.type]);
-  if (o.modifiedAfter) {
-    binds.push(o.modifiedAfter);
-    where.push(`n.updated_at >= ?${binds.length}`);
-  }
-  if (o.space) {
-    binds.push(o.space);
-    where.push(`n.space = ?${binds.length}`);
-  }
-  const limit = Math.min(o.limit ?? 50, 100);
-  const { results } = await ctx.env.DB.prepare(
-    `${SELECT} WHERE ${where.join(' AND ')} ORDER BY (n.kind = 'folder') DESC, n.updated_at DESC LIMIT ${limit}`,
-  )
-    .bind(...binds)
-    .all<Parameters<typeof toDto>[0]>();
-  return results.map(toDto);
+  return mergeSearch(ctx, userId, o, async () => {
+    const where = [FAMILY, 'n.rid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?2)'];
+    const binds: unknown[] = [userId, match];
+    if (o.type) where.push(TYPE_SQL[o.type]);
+    if (o.modifiedAfter) {
+      binds.push(o.modifiedAfter);
+      where.push(`n.updated_at >= ?${binds.length}`);
+    }
+    const limit = Math.min(o.limit ?? 50, 100);
+    const { results } = await ctx.env.DB.prepare(
+      `${SELECT} WHERE ${where.join(' AND ')} ORDER BY (n.kind = 'folder') DESC, n.updated_at DESC LIMIT ${limit}`,
+    )
+      .bind(...binds)
+      .all<Parameters<typeof toDto>[0]>();
+    return results.map(toDto);
+  });
 }
 
 export async function setStar(
@@ -93,14 +99,20 @@ export async function setStar(
   if (node.space === 'personal' && node.owner_id === userId) await markIndexDirty(ctx, [userId]);
 }
 
+/** Starred: the person's own from the index, family ones from D1, the most recently changed first. */
 export async function listStarred(ctx: Ctx, userId: string): Promise<NodeDto[]> {
-  const { results } = await ctx.env.DB.prepare(
-    `${SELECT} JOIN node_stars st ON st.node_id = n.id AND st.user_id = ?1
-     WHERE ${VISIBLE} ORDER BY st.created_at DESC LIMIT 500`,
-  )
-    .bind(userId)
-    .all<Parameters<typeof toDto>[0]>();
-  return results.map(toDto);
+  const [{ tree }, { results }] = await Promise.all([
+    personalTree(ctx, userId),
+    ctx.env.DB.prepare(
+      `${SELECT} JOIN node_stars st ON st.node_id = n.id AND st.user_id = ?1
+       WHERE ${FAMILY} ORDER BY st.created_at DESC LIMIT 500`,
+    )
+      .bind(userId)
+      .all<Parameters<typeof toDto>[0]>(),
+  ]);
+  return [...tree.starred(), ...results.map(toDto)]
+    .sort((a, b) => b.updatedAt - a.updatedAt || (a.id < b.id ? 1 : -1))
+    .slice(0, 500);
 }
 
 /** Recently opened or changed files. */

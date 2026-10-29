@@ -14,7 +14,6 @@ import { apiHeaders } from '../middleware/base';
 import { errorBody } from '../middleware/errors';
 import { clientIp, enforceRateLimit } from '../middleware/ratelimit';
 import { API_RATE_PER_MINUTE, scope, tokenAuth } from '../middleware/token';
-import { requireNode } from '../services/access';
 import { ensurePersonalSpace } from '../services/accounts';
 import { parseType, search } from '../services/browse';
 import {
@@ -25,12 +24,15 @@ import {
 } from '../services/oauth';
 import { downloadUrl } from '../services/download';
 import {
-  breadcrumb,
+  indexResponse,
+  openPersonalIndex,
+  readChildren,
+  readNode,
+  readTrash,
+} from '../services/drive-read';
+import {
   copyFile,
   createFolder,
-  getNodeDto,
-  listChildren,
-  listTrash,
   moveNodes,
   renameNode,
   restoreNodes,
@@ -256,6 +258,23 @@ export const ENDPOINTS: readonly Op[] = [
   op(
     {
       method: 'get',
+      path: '/drive/index',
+      scope: 'drive.read',
+      tag: 'Drive',
+      summary:
+        'The whole of your own Drive in one text file, to read before anything else: line 1 is a JSON header (rev, root, cols), every other line one item as a JSON array in the order of cols. Send If-None-Match with the ETag to get 304 when nothing changed',
+      text: true,
+      responses: { 200: z.string(), 304: null },
+    },
+    async (c) =>
+      indexResponse(
+        await openPersonalIndex(c.get('ctx'), userId(c)),
+        c.req.header('if-none-match'),
+      ),
+  ),
+  op(
+    {
+      method: 'get',
       path: '/nodes/{id}',
       scope: 'drive.read',
       tag: 'Drive',
@@ -264,11 +283,8 @@ export const ENDPOINTS: readonly Op[] = [
       responses: { 200: z.object({ node: S.Node, path: z.array(S.Crumb) }) },
     },
     async (c, { params }) => {
-      const ctx = c.get('ctx');
-      // getNodeDto reads whatever it is given: access is checked here, as the app's route does.
-      await requireNode(ctx, userId(c), params.id);
-      const node = await getNodeDto(ctx, userId(c), params.id);
-      return c.json({ node, path: await breadcrumb(ctx, params.id) });
+      const { node, path } = await readNode(c.get('ctx'), userId(c), params.id);
+      return c.json({ node, path });
     },
   ),
   op(
@@ -288,7 +304,7 @@ export const ENDPOINTS: readonly Op[] = [
       responses: { 200: NODES.extend({ nextCursor: z.string().nullable() }) },
     },
     async (c, { params, query }) => {
-      const res = await listChildren(c.get('ctx'), userId(c), params.id, query);
+      const res = await readChildren(c.get('ctx'), userId(c), params.id, query);
       return c.json({ items: res.items, nextCursor: res.nextCursor });
     },
   ),
@@ -336,7 +352,7 @@ export const ENDPOINTS: readonly Op[] = [
       summary: 'What is in the Trash',
       responses: { 200: NODES },
     },
-    async (c) => c.json({ items: await listTrash(c.get('ctx'), userId(c)) }),
+    async (c) => c.json({ items: await readTrash(c.get('ctx'), userId(c)) }),
   ),
   op(
     {

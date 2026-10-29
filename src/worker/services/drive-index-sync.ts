@@ -147,7 +147,7 @@ export async function deleteUserIndex(ctx: Ctx, userId: string): Promise<void> {
   await ctx.env.BUCKET.delete(indexKey({ user: userId }));
 }
 
-interface TreeRow {
+export interface TreeRow {
   id: string;
   parent_id: string | null;
   kind: string;
@@ -169,7 +169,10 @@ interface TreeRow {
   starred: number;
 }
 
-async function readTree(ctx: Ctx, userId: string): Promise<{ rows: TreeRow[]; used: number }> {
+export async function readTree(
+  ctx: Ctx,
+  userId: string,
+): Promise<{ rows: TreeRow[]; used: number }> {
   const DB = ctx.env.DB;
   const [pool, tree] = await DB.batch([
     DB.prepare(
@@ -214,6 +217,8 @@ export async function writeUserIndex(ctx: Ctx, userId: string): Promise<boolean>
 export function project(doc: IndexDoc, rows: TreeRow[], used: number): void {
   const root = rows.find((r) => r.parent_id === null);
   doc.setMeta('root', root?.id);
+  // The root isn't an entry; R2 reads (ADR-077) show it with this as its date.
+  doc.setMeta('rootAt', root ? Math.floor(root.created_at / 1000) : undefined);
   doc.setMeta('used', used);
 
   const had = new Map<string, IndexEntry>();

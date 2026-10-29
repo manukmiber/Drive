@@ -2,12 +2,13 @@
 // renamed (opaque keys, SPEC §3). Bulk operations work on subtrees via recursive CTEs (ADR-020).
 import { DAY_MS } from '../../shared/constants';
 import { markIndexDirty } from './drive-index-sync';
+import { isFolderColor, isFolderIcon, type FolderDecor } from '../../shared/folder-decor';
 import {
-  isFolderColor,
-  isFolderIcon,
-  type FolderColor,
-  type FolderDecor,
-} from '../../shared/folder-decor';
+  decodeCursor as decodeSharedCursor,
+  encodeCursor,
+  type DriveCrumb,
+  type DriveNode,
+} from '../../shared/drive-tree';
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
@@ -15,29 +16,8 @@ import { nameKey, nameWithSuffix, sanitizeName } from '../lib/names';
 import { loadNode, nodeAccess, requireNode, type NodeRecord } from './access';
 import { addUsedIfFits, quotaFullError } from './quota';
 
-export interface NodeDto {
-  id: string;
-  parentId: string | null;
-  kind: 'file' | 'folder';
-  name: string;
-  size: number;
-  mime: string | null;
-  status: NodeRecord['status'];
-  scanStatus: string | null;
-  space: NodeRecord['space'];
-  ownerId: string;
-  createdBy: string;
-  familyCanEdit: boolean;
-  starred: boolean;
-  hasThumb: boolean;
-  trashedAt: number | null;
-  purgeAt: number | null;
-  createdAt: number;
-  updatedAt: number;
-  clientModifiedAt: number | null;
-  /** Folders only; null when undecorated (ADR-058). */
-  decor: FolderDecor | null;
-}
+/** A file or folder as the app and the API see it (shared with the index reads, ADR-077). */
+export type NodeDto = DriveNode;
 
 type Row = NodeRecord & {
   scan_status?: string | null;
@@ -168,25 +148,12 @@ export interface ListOptions {
   limit?: number;
 }
 
-function encodeCursor(v: unknown[]): string {
-  return btoa(JSON.stringify(v)).replace(/=+$/, '');
-}
-
 function decodeCursor(c: string): [number, string | number, string] {
   try {
-    const v = JSON.parse(atob(c)) as unknown;
-    if (
-      Array.isArray(v) &&
-      v.length === 3 &&
-      typeof v[0] === 'number' &&
-      typeof v[2] === 'string'
-    ) {
-      return v as [number, string | number, string];
-    }
+    return decodeSharedCursor(c);
   } catch {
-    // fall through
+    throw new AppError('BAD_REQUEST', 'invalid cursor');
   }
-  throw new AppError('BAD_REQUEST', 'invalid cursor');
 }
 
 /** Folder listing, folders first, keyset-paginated (SPEC §8.2: 100 items/page). */
@@ -234,13 +201,7 @@ export async function listChildren(
   return { folder: await getNodeDto(ctx, userId, node.id), items: page.map(toDto), nextCursor };
 }
 
-export interface Crumb {
-  id: string;
-  name: string;
-  /** The folder's colour and icon (ADR-058); a breadcrumb never shows a cover. */
-  color: FolderColor | null;
-  icon: string | null;
-}
+export type Crumb = DriveCrumb;
 
 export async function breadcrumb(ctx: Ctx, nodeId: string): Promise<Crumb[]> {
   const { results } = await ctx.env.DB.prepare(
@@ -755,12 +716,12 @@ export async function deleteForever(ctx: Ctx, userId: string, ids: string[]): Pr
   return total;
 }
 
-export async function listTrash(ctx: Ctx, userId: string): Promise<NodeDto[]> {
+/** The Trash in D1 (emptying it works there); the app's list is `readTrash` (ADR-077). */
+export async function listTrash(ctx: Ctx, userId: string, only?: 'family'): Promise<NodeDto[]> {
+  const personal = only ? '' : `(n.space = 'personal' AND n.owner_id = ?1) OR `;
   const { results } = await ctx.env.DB.prepare(
     `${SELECT_DTO}
-     WHERE n.trash_root_id = n.id AND (
-       (n.space = 'personal' AND n.owner_id = ?1)
-       OR (n.space = 'family' AND n.trashed_by = ?1))
+     WHERE n.trash_root_id = n.id AND (${personal}(n.space = 'family' AND n.trashed_by = ?1))
      ORDER BY n.trashed_at DESC LIMIT 500`,
   )
     .bind(userId)

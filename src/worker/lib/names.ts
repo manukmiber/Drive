@@ -27,10 +27,8 @@ export function sanitizeName(raw: string): string {
   return name;
 }
 
-/** Case-insensitive key used by the sibling uniqueness index. */
-export function nameKey(name: string): string {
-  return name.normalize('NFC').toLowerCase();
-}
+/** Case-insensitive key used by the sibling uniqueness index (shared with the index reads). */
+export { nameKey } from '../../shared/drive-tree';
 
 export function splitExt(name: string): { base: string; ext: string } {
   const i = name.lastIndexOf('.');

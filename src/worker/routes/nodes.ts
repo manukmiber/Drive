@@ -9,15 +9,18 @@ import { requireNode } from '../services/access';
 import { listRecent, listStarred, parseType, search, setStar } from '../services/browse';
 import { downloadPlan, downloadUrl, previewUrl } from '../services/download';
 import {
-  breadcrumb,
+  indexResponse,
+  openPersonalIndex,
+  readChildren,
+  readNode,
+  readTrash,
+} from '../services/drive-read';
+import {
   copyFile,
   createFolder,
   decorateFolders,
   deleteForever,
   emptyTrash,
-  getNodeDto,
-  listChildren,
-  listTrash,
   moveNodes,
   renameNode,
   restoreNodes,
@@ -46,6 +49,7 @@ export const nodes = new Hono<AppBindings>()
   .use('/search', requireUser)
   .use('/starred', requireUser)
   .use('/recent', requireUser)
+  .use('/drive/*', requireUser)
   .get(
     '/search',
     validate(
@@ -81,24 +85,18 @@ export const nodes = new Hono<AppBindings>()
   .get('/files/:id/preview', async (c) =>
     c.json(await previewUrl(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),
   )
-  .get('/nodes/:id', async (c) => {
-    const ctx = c.get('ctx');
-    const userId = c.get('user')!.id;
-    const { access } = await requireNode(ctx, userId, c.req.param('id'));
-    const [node, path] = await Promise.all([
-      getNodeDto(ctx, userId, c.req.param('id')),
-      breadcrumb(ctx, c.req.param('id')),
-    ]);
-    return c.json({ node, path, access });
+  .get('/drive/index', async (c) => {
+    const idx = await openPersonalIndex(c.get('ctx'), c.get('user')!.id);
+    return indexResponse(idx, c.req.header('if-none-match'));
   })
-  .get('/nodes/:id/children', validate('query', listQuery), async (c) => {
-    const ctx = c.get('ctx');
-    const userId = c.get('user')!.id;
-    const q = c.req.valid('query');
-    const res = await listChildren(ctx, userId, c.req.param('id'), q);
-    const path = q.cursor ? undefined : await breadcrumb(ctx, c.req.param('id'));
-    return c.json({ ...res, path });
-  })
+  .get('/nodes/:id', async (c) =>
+    c.json(await readNode(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),
+  )
+  .get('/nodes/:id/children', validate('query', listQuery), async (c) =>
+    c.json(
+      await readChildren(c.get('ctx'), c.get('user')!.id, c.req.param('id'), c.req.valid('query')),
+    ),
+  )
   .post(
     '/folders',
     validate(
@@ -192,7 +190,7 @@ export const nodes = new Hono<AppBindings>()
     const ctx = c.get('ctx');
     const cfg = await ctx.config();
     return c.json({
-      items: await listTrash(ctx, c.get('user')!.id),
+      items: await readTrash(ctx, c.get('user')!.id),
       retentionDays: cfg.trash_retention_days,
     });
   })

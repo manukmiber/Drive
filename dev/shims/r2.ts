@@ -25,6 +25,8 @@ interface HttpMetadata {
 interface StoredMeta {
   key: string;
   size: number;
+  /** The data file in the objects folder (named per version); absent: `{hash}.bin` (older data). */
+  file?: string;
   etag: string;
   uploaded: number;
   version: string;
@@ -197,7 +199,11 @@ export class ShimR2Bucket {
 
   private paths(key: string) {
     const h = hashKey(key);
-    return { data: join(this.objDir, `${h}.bin`), meta: join(this.objDir, `${h}.json`) };
+    return { hash: h, meta: join(this.objDir, `${h}.json`) };
+  }
+
+  private dataPath(meta: StoredMeta): string {
+    return join(this.objDir, meta.file ?? `${hashKey(meta.key)}.bin`);
   }
 
   private async readMeta(key: string): Promise<StoredMeta | null> {
@@ -236,7 +242,7 @@ export class ShimR2Bucket {
         range = { offset, length };
       }
     }
-    return new ShimR2ObjectBody(meta, this.paths(key).data, range);
+    return new ShimR2ObjectBody(meta, this.dataPath(meta), range);
   }
 
   async put(
@@ -304,6 +310,7 @@ export class ShimR2Bucket {
     options?: { httpMetadata?: HttpMetadata | Headers; customMetadata?: Record<string, string> },
   ): Promise<ShimR2Object> {
     const p = this.paths(key);
+    const before = await this.readMeta(key);
     const hm = options?.httpMetadata;
     const httpMetadata: HttpMetadata =
       hm instanceof Headers
@@ -315,25 +322,38 @@ export class ShimR2Bucket {
             ].filter(([, v]) => v),
           )
         : (hm ?? {});
+    const version = crypto.randomUUID().replace(/-/g, '');
     const meta: StoredMeta = {
       key,
       size,
+      file: `${p.hash}.${version}.bin`,
       etag,
       uploaded: this.now(),
-      version: crypto.randomUUID().replace(/-/g, ''),
+      version,
       httpMetadata,
       customMetadata: options?.customMetadata ?? {},
     };
-    await rename(tmpPath, p.data);
-    await writeFile(p.meta, JSON.stringify(meta));
+    // Like R2, a reader sees the old object or the new one, never a mix: the data goes to a file of
+    // its own, the metadata naming it is swapped in one rename, and the old data stays a while for
+    // readers that already hold the old metadata.
+    await rename(tmpPath, this.dataPath(meta));
+    const metaTmp = join(this.tmpDir, `${crypto.randomUUID()}.json`);
+    await writeFile(metaTmp, JSON.stringify(meta));
+    await rename(metaTmp, p.meta);
+    if (before) this.dropLater(this.dataPath(before));
     return new ShimR2Object(meta);
+  }
+
+  private dropLater(path: string): void {
+    setTimeout(() => void rm(path, { force: true }).catch(() => undefined), 30_000).unref();
   }
 
   async delete(keys: string | string[]): Promise<void> {
     for (const key of Array.isArray(keys) ? keys : [keys]) {
       const p = this.paths(key);
-      await rm(p.data, { force: true });
+      const meta = await this.readMeta(key);
       await rm(p.meta, { force: true });
+      if (meta) await rm(this.dataPath(meta), { force: true });
     }
   }
 

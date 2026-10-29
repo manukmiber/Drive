@@ -40,8 +40,13 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] R3 tulis ke index (ADR-074, 2026-10-29): setiap perubahan pohon pribadi ditulis ke `u/{userId}/index.txt` sebagai
   proyeksi D1 (kolom `x` = id D1, `st = 2` diblokir), digabung lewat klaim `manifest_dirty` (satu gelombang = satu
   tulis), cron jam-an `drive_index_flush` sebagai cadangan, migrasi data `0020` menandai user lama. App masih membaca D1.
-- [ ] Pemilik: migrasi `0020` di D1 remote + deploy, supaya index user production mulai ditulis.
-- [ ] R2 baca dari index · R4 index keluarga · R5 share tanpa D1 ·
+- [x] R2 baca dari index (ADR-077, 2026-10-29): `shared/drive-tree.ts` (isi folder, cursor, jalur, cari, bintang,
+  Sampah; dipakai Worker dan app), `services/drive-read.ts` (index R2 apa adanya kalau tidak tertinggal, diproyeksikan
+  dari D1 di memori kalau `manifest_dirty` bertanda), `GET /api/drive/index` + `GET /api/v1/drive/index` (ETag, 304),
+  app menarik index dulu (`web/lib/drive-index.ts`). Keluarga, upload berjalan, dan Terbaru masih D1. Shim R2: tulis
+  ulang atomik untuk pembaca.
+- [ ] Pemilik: migrasi `0020` di D1 remote + deploy, supaya index user production mulai ditulis dan dibaca.
+- [ ] R4 index keluarga · R5 share tanpa D1 ·
   R6 sesi/token/OAuth tanpa D1 · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 
