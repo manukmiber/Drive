@@ -120,3 +120,23 @@ Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai 
      `s3Indexes` di `deploy/<env>.json`, lalu `node scripts/gen-wrangler.mjs > wrangler.jsonc` dan deploy;
   3. `PUT /api/ops/s3/accounts/<userId>/index {"binding": "S3_DB_<NAMA>", "reason": "…"}` selagi akunnya kosong.
   Jangan hapus entri `s3Indexes` yang masih dipakai: deploy tanpa binding itu membuat akunnya `ServiceUnavailable`.
+
+## D1 khusus akses `zeiko-access` (ADR-064, ADR-079)
+
+Link share (R5) dan nanti sesi, token API, dan OAuth (R6) tinggal di D1 sendiri, terpisah dari pohon file dan dari
+Zeiko S3. Selama database itu belum dibuat, Worker membaca tabel yang sama dari D1 utama, jadi deploy tanpa langkah ini
+tetap jalan. Langkah ini membuat sesuatu di Cloudflare dan memindahkan data production: **tanya pemilik dulu**.
+
+1. Buat database: `npx wrangler d1 create zeiko-access-production` (staging: `zeiko-access-staging`), lalu tulis id-nya
+   ke `deploy/production.json` sebagai `"accessDb": { "id": "<id>" }`.
+2. Buat tabelnya: `npm run db:migrate:access:production` (`migrations-access/`).
+3. Salin link yang sudah ada dari D1 utama, **sebelum** deploy Worker yang memakai binding baru:
+   ```
+   for t in shares share_items share_sends; do
+     npx wrangler d1 export zeiko-production --remote --table $t --no-schema --output $t.sql
+     npx wrangler d1 execute zeiko-access-production --remote --file $t.sql
+   done
+   ```
+   Cek jumlah barisnya sama di kedua database.
+4. Deploy (`npm run deploy:production`). Sejak itu link dibaca dan ditulis di `zeiko-access`; tabel lama di D1 utama
+   dibiarkan sampai R8 menghapusnya.

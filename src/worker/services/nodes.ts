@@ -15,6 +15,7 @@ import { ulid } from '../lib/ids';
 import { nameKey, nameWithSuffix, sanitizeName } from '../lib/names';
 import { loadNode, nodeAccess, requireNode, type NodeRecord } from './access';
 import { addUsedIfFits, quotaFullError } from './quota';
+import { forgetSharedNodes, revokeSharesOfNodes } from './shares';
 
 /** A file or folder as the app and the API see it (shared with the index reads, ADR-077). */
 export type NodeDto = DriveNode;
@@ -513,15 +514,20 @@ async function changeSpace(
       reason: 'FOREIGN_ITEMS',
     });
   }
-  await DB.batch([
-    DB.prepare(
-      `${subtree(1)} UPDATE shares SET revoked_at = ?3 WHERE created_by != ?2 AND revoked_at IS NULL
-         AND id IN (SELECT share_id FROM share_items WHERE node_id IN (SELECT id FROM sub))`,
-    ).bind(node.id, userId, ctx.now()),
-    DB.prepare(
-      `${subtree(1)} UPDATE nodes SET space = 'personal', family_id = NULL, owner_id = ?2 WHERE id IN (SELECT id FROM sub)`,
-    ).bind(node.id, userId),
-  ]);
+  // Other members' links to these items die first (they live in the access database, ADR-079).
+  const { results: sub } = await DB.prepare(`${subtree(1)} SELECT id FROM sub`)
+    .bind(node.id)
+    .all<{ id: string }>();
+  await revokeSharesOfNodes(
+    ctx,
+    sub.map((r) => r.id),
+    { keepBy: userId },
+  );
+  await DB.prepare(
+    `${subtree(1)} UPDATE nodes SET space = 'personal', family_id = NULL, owner_id = ?2 WHERE id IN (SELECT id FROM sub)`,
+  )
+    .bind(node.id, userId)
+    .run();
 }
 
 /** "Buat salinan": new node, same blob (refcount+1), quota counted per node (SPEC §4). */
@@ -649,6 +655,9 @@ export async function deleteSubtree(ctx: Ctx, rootId: string): Promise<DeleteRes
   )
     .bind(rootId)
     .all<{ blob_id: string }>();
+  const { results: gone } = await DB.prepare(`${subtree(1)} SELECT id FROM sub`)
+    .bind(rootId)
+    .all<{ id: string }>();
   const { results: activeUploads } = await DB.prepare(
     `${subtree(1)} SELECT id, r2_key, r2_upload_id FROM uploads
      WHERE status = 'active' AND node_id IN (SELECT id FROM sub)`,
@@ -680,6 +689,10 @@ export async function deleteSubtree(ctx: Ctx, rootId: string): Promise<DeleteRes
     DB.prepare(`${subtree(1)} DELETE FROM nodes WHERE id IN (SELECT id FROM sub)`).bind(rootId),
   ]);
   const deleted = results[3]?.meta.changes ?? 0;
+  await forgetSharedNodes(
+    ctx,
+    gone.map((r) => r.id),
+  );
 
   for (const u of activeUploads) {
     if (!u.r2_upload_id) continue;

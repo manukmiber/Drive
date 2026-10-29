@@ -14,6 +14,9 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
   berubah: 1 user, 1 D1 pengganti index.txt, ADR-044), plus satu **D1 khusus akses** terpisah untuk sesi login, token
   API/OAuth, dan link share (jawaban R0, ADR-064). Pohon file dan nama file tidak pernah masuk D1. Notifikasi,
   saklar email, dan berhenti berlangganan disimpan relay (ADR-065, `adapters/notices.ts`).
+- **D1 khusus akses** (R5, ADR-079): link share di `ACCESS_DB` (`lib/access-db.ts` → `accessDb(env)`, migrasi di
+  `migrations-access/`). Query ke tabel share selalu lewat `accessDb`, dan tidak pernah di-join dengan `nodes`/`users`
+  (ambil id dulu, lalu `json_each`). Di test databasenya terpisah (`rt.access`).
 - **Kode sekarang belum begitu:** Drive masih memakai D1 (`nodes`, `blobs`, `shares`, sesi, token, dll.). Pindahnya
   bertahap lewat **fase R di `docs/ROADMAP.md`**, R0 sudah dijawab semua (ADR-064).
   Sampai pindah selesai: **jangan menambah tabel atau kolom D1 untuk Drive**, dan fitur Drive baru di roadmap dibekukan sampai R3

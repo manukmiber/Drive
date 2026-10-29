@@ -13,11 +13,12 @@ import {
   base64UrlDecode,
   timingSafeEqual,
 } from '../lib/crypto';
+import { accessDb } from '../lib/access-db';
 import { AppError } from '../lib/errors';
 import { verifyTurnstile } from '../lib/turnstile';
 import { ulid } from '../lib/ids';
 import { shareEmail } from './email-templates';
-import { requireOwnShare, shareState, shareUrl } from './shares';
+import { requireOwnShare, shareNodeIds, shareState, shareUrl } from './shares';
 import { appUrl } from '../lib/paths';
 
 const SPAM =
@@ -58,10 +59,11 @@ async function insertSend(
   },
 ): Promise<string> {
   const id = ulid(ctx.now());
-  await ctx.env.DB.prepare(
-    `INSERT INTO share_sends (id, share_id, user_id, channel, mode, recipient_masked, recipient_hash, message, status, created_at)
+  await accessDb(ctx.env)
+    .prepare(
+      `INSERT INTO share_sends (id, share_id, user_id, channel, mode, recipient_masked, recipient_hash, message, status, created_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
-  )
+    )
     .bind(
       id,
       p.shareId,
@@ -207,20 +209,21 @@ interface SendRow {
 }
 
 async function loadSendContext(ctx: Ctx, sendId: string) {
-  const send = await ctx.env.DB.prepare('SELECT * FROM share_sends WHERE id = ?1')
+  const A = accessDb(ctx.env);
+  const send = await A.prepare('SELECT * FROM share_sends WHERE id = ?1')
     .bind(sendId)
     .first<SendRow>();
   if (!send || send.status !== 'queued') return null;
-  const share = await ctx.env.DB.prepare('SELECT * FROM shares WHERE id = ?1')
+  const share = await A.prepare('SELECT * FROM shares WHERE id = ?1')
     .bind(send.share_id)
     .first<{ id: string; title: string; expires_at: number | null }>();
   const sender = await ctx.env.DB.prepare('SELECT name, email, locale FROM users WHERE id = ?1')
     .bind(send.user_id)
     .first<{ name: string; email: string; locale: string }>();
   const size = await ctx.env.DB.prepare(
-    'SELECT COALESCE(SUM(n.size), 0) AS total FROM share_items i JOIN nodes n ON n.id = i.node_id WHERE i.share_id = ?1',
+    'SELECT COALESCE(SUM(size), 0) AS total FROM nodes WHERE id IN (SELECT value FROM json_each(?1))',
   )
-    .bind(send.share_id)
+    .bind(JSON.stringify(await shareNodeIds(ctx, send.share_id)))
     .first<{ total: number }>();
   if (!share || !sender) return null;
   return {
@@ -233,7 +236,8 @@ async function loadSendContext(ctx: Ctx, sendId: string) {
 }
 
 async function markSend(ctx: Ctx, id: string, status: string, ref: string | null): Promise<void> {
-  await ctx.env.DB.prepare('UPDATE share_sends SET status = ?2, provider_ref = ?3 WHERE id = ?1')
+  await accessDb(ctx.env)
+    .prepare('UPDATE share_sends SET status = ?2, provider_ref = ?3 WHERE id = ?1')
     .bind(id, status, ref)
     .run();
 }

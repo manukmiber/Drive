@@ -3,6 +3,7 @@
 import { DAY_MS } from '../../shared/constants';
 import { deleteUserIndex } from './drive-index-sync';
 import type { Ctx } from '../context';
+import { accessDb } from '../lib/access-db';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
 import { log } from '../lib/log';
@@ -14,6 +15,14 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
   const q = async (sql: string, ...binds: unknown[]) =>
     (
       await DB.prepare(sql)
+        .bind(...binds)
+        .all()
+    ).results;
+  // Share links are in the access database (ADR-079).
+  const qa = async (sql: string, ...binds: unknown[]) =>
+    (
+      await accessDb(ctx.env)
+        .prepare(sql)
         .bind(...binds)
         .all()
     ).results;
@@ -61,11 +70,11 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
        WHERE owner_id = ?1 AND space = 'personal' ORDER BY created_at LIMIT 100000`,
       userId,
     ),
-    shares: await q(
+    shares: await qa(
       'SELECT title, kind, expires_at, download_count, revoked_at, created_at FROM shares WHERE created_by = ?1',
       userId,
     ),
-    shareSends: await q(
+    shareSends: await qa(
       'SELECT channel, mode, recipient_masked, status, created_at FROM share_sends WHERE user_id = ?1',
       userId,
     ),
@@ -196,12 +205,13 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
     if (!(await purgeS3Account(ctx, id)))
       await ctx.env.CLEANUP_QUEUE.send({ type: 's3_purge', userId: id });
     const now = ctx.now();
+    await accessDb(ctx.env)
+      .prepare(`UPDATE shares SET revoked_at = ?2 WHERE created_by = ?1 AND revoked_at IS NULL`)
+      .bind(id, now)
+      .run();
     await DB.batch([
       DB.prepare(
         `UPDATE subscriptions SET status = 'cancelled', status_changed_at = ?2, updated_at = ?2 WHERE payer_user_id = ?1 AND status != 'cancelled'`,
-      ).bind(id, now),
-      DB.prepare(
-        `UPDATE shares SET revoked_at = ?2 WHERE created_by = ?1 AND revoked_at IS NULL`,
       ).bind(id, now),
       DB.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
       // Access tokens and app connections (ADR-061).

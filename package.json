@@ -24,6 +24,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate:staging": "wrangler d1 migrations apply DB --env staging --remote",
     "db:migrate:production": "wrangler d1 migrations apply DB --env production --remote",
+    "db:migrate:access:staging": "wrangler d1 migrations apply ACCESS_DB --env staging --remote",
+    "db:migrate:access:production": "wrangler d1 migrations apply ACCESS_DB --env production --remote",
     "deploy:dry": "npm run build && wrangler deploy --dry-run --outdir .wrangler/dry-run --env staging",
     "deploy:staging": "npm run build && wrangler deploy --env staging",
     "deploy:dry:nodocker": "npm run build && wrangler deploy --dry-run --outdir .wrangler/dry-run --env staging --containers-rollout=none",

@@ -65,7 +65,7 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 | R2  | Baca dari index: explorer, detail, breadcrumb, cari, bintang, Sampah; klien tarik index dulu                                           | L      | R1         | selesai (ADR-077) |
 | R3  | Tulis ke index: upload + kuota, hasil pindai, ganti nama/pindah/salin/Sampah/hapus, dekorasi; gabung tulis (R2: 1 tulis/detik per key) | L      | R2         | selesai (ADR-074) |
 | R4  | Index keluarga `f/{familyId}/index.txt` (kepemilikan, anggota, izin)                                                                   | M      | R3         | selesai (ADR-078) |
-| R5  | Link share dan unduhan publik ke D1 khusus akses                                                                                       | M      | R3         | belum             |
+| R5  | Link share dan unduhan publik ke D1 khusus akses                                                                                       | M      | R3         | selesai (ADR-079) |
 | R6  | Sesi, token API, OAuth, idempotency ke D1 khusus akses                                                                                 | M      | R0         | belum             |
 | R7  | Akun, paket, pembayaran, katalog, data operator ke relay (repo Relay + ops API dibalik)                                                | L      | R0         | belum             |
 | R8  | Pindahkan data production, hapus tabel Drive dari D1 (D1 utama tinggal untuk S3)                                                       | M      | R2–R7      | belum             |

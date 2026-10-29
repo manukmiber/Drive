@@ -142,7 +142,7 @@ describe('IDOR (SPEC §14.1)', () => {
             'SELECT id, parent_id, name, trashed_at, status, blob_id, decor_color, decor_icon, decor_cover_id FROM nodes WHERE owner_id = ? ORDER BY id',
           )
           .all(a.userId),
-        rt.d1.sqlite
+        rt.access.sqlite
           .prepare('SELECT id, revoked_at, expires_at, password_hash FROM shares ORDER BY id')
           .all(),
         rt.d1.sqlite

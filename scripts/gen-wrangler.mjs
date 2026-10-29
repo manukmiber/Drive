@@ -104,6 +104,18 @@ function bindings(env, nsBase, ids) {
         database_id: ids.d1,
         migrations_dir: 'migrations',
       },
+      // Share links, sessions and tokens (ADR-064, ADR-079), once the database is made: deploy/{env}.json
+      // `accessDb: { id }`. Without it the Worker reads the same tables from DB.
+      ...(ids.accessDb
+        ? [
+            {
+              binding: 'ACCESS_DB',
+              database_name: `zeiko-access-${env}`,
+              database_id: ids.accessDb.id,
+              migrations_dir: 'migrations-access',
+            },
+          ]
+        : []),
       // Zeiko S3 accounts with an index of their own (ADR-044): one D1 each, named S3_DB_*. The list
       // lives in deploy/{env}.json (`s3Indexes`) so a deploy keeps every one the relay added.
       ...(ids.s3Indexes ?? []).map((x) => ({
@@ -165,6 +177,8 @@ function envBlock(env, nsBase, defaults) {
   const app = d.appOrigin;
   const uc = d.usercontentOrigin;
   const s3 = d.s3Origin;
+  if (d.accessDb && !/^[0-9a-f-]{36}$/.test(d.accessDb.id ?? ''))
+    throw new Error(`deploy/${env}.json: accessDb needs the database's id`);
   for (const x of d.s3Indexes ?? []) {
     if (!/^S3_DB_[A-Z0-9_]{1,40}$/.test(x.binding) || !x.id || !x.name)
       throw new Error(`deploy/${env}.json: bad s3Indexes entry ${JSON.stringify(x)}`);
@@ -185,6 +199,7 @@ function envBlock(env, nsBase, defaults) {
       uc,
       s3,
       s3Indexes: d.s3Indexes,
+      accessDb: d.accessDb,
       s3Replicas: d.s3Replicas,
       s3SubdomainSuffix: d.s3SubdomainSuffix,
       s3CnameTarget: d.s3CnameTarget,

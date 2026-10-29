@@ -91,6 +91,8 @@ export interface Env {
 
   // ── bindings ──
   DB: D1Database;
+  /** Share links, sessions, tokens (ADR-079, lib/access-db.ts); absent until made, then DB answers. */
+  ACCESS_DB?: D1Database;
   BUCKET: R2Bucket;
   /** Zeiko S3's 3-copy plans (ADR-047): two more buckets in other regions. Without both, no 3x. */
   S3_REPLICA_A?: R2Bucket;

@@ -50,7 +50,11 @@ lewat fase R di `docs/ROADMAP.md`.
   ditulis oleh flush anggota mana pun, migrasi data `0021`; ruang keluarga dibaca dari index (detail, isi folder, cari,
   Sampah per anggota, `GET /api/drive/index?space=family`). Bintang keluarga dan Terbaru masih D1.
 - [ ] Pemilik: migrasi `0021` di D1 remote (bersama `0020`) + deploy.
-- [ ] R5 share tanpa D1 · R6 sesi/token/OAuth tanpa D1 · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
+- [x] R5 link share di D1 khusus akses (ADR-079, 2026-10-29): `ACCESS_DB` (`zeiko-access`), `migrations-access/`,
+  tanpa join lintas database; tanpa binding, D1 utama yang menjawab.
+- [ ] Pemilik: buat `zeiko-access-production`, migrasi access, salin baris share, isi `accessDb` di
+  `deploy/production.json`, deploy (`DEPLOY.md`).
+- [ ] R6 sesi/token/OAuth tanpa D1 · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 
 ## Fase 0 — Fondasi

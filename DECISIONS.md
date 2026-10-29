@@ -2161,3 +2161,32 @@ ini; R8 menghapus pengecekan `manifest_dirty` dan tabel D1.
 Test: `tests/integration/drive-family-index.test.ts` (urutan anggota, ditulis oleh anggota mana pun, pemilik/izin
 edit/pembuang, sama dengan D1 termasuk hak akses tiap anggota, cari, Sampah per anggota, 304, orang luar 404, anggota
 keluar, keluarga bubar), `tests/integration/browse.test.ts`.
+
+## ADR-079 — R5: link share pindah ke D1 khusus akses `zeiko-access`
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Langsung kerjain roadmap yang dependencynya udah dikerjakan"; tujuan
+dari jawaban R0 no. 1, ADR-064). R5 membuka D2 dan D3, dan merupakan bagian dari R8.
+
+**Keputusan:**
+- **Database sendiri, binding `ACCESS_DB`** (`lib/access-db.ts`), tabel `shares`, `share_items`, `share_sends` dengan
+  kolom yang sama (`migrations-access/0001_access_shares.sql`, urutan migrasinya sendiri). Tanpa foreign key ke `nodes`
+  atau `users`, yang ada di database lain. Nama per lingkungan `zeiko-access-{env}`; `deploy/{env}.json`
+  `accessDb: { id }` menambahkan binding lewat `gen-wrangler.mjs`.
+- **Expand dulu:** selama `ACCESS_DB` tidak ada, `accessDb(env)` mengembalikan D1 utama, yang masih punya tabel yang
+  sama. Deploy tanpa membuat database tetap aman. Pemilik membuat database, menyalin baris lama, lalu deploy (langkah di
+  `DEPLOY.md`). Tabel lama di D1 utama dihapus di R8.
+- **Tidak ada join lintas database.** Setiap query yang dulu `share_items JOIN nodes` sekarang mengambil id node dari
+  access DB (`shareNodeIds`, `sharesOfNodes`) lalu membaca node di D1 utama dengan `json_each`. Pencabutan link waktu
+  item keluarga pindah ke ruang pribadi (punya anggota lain) dan waktu anggota keluar (miliknya sendiri) memakai
+  `revokeSharesOfNodes`; dijalankan **sebelum** perubahan pohon, jadi kalau langkah berikutnya gagal, yang tersisa
+  hanya link yang sudah dicabut (arah yang aman). Hapus permanen menghapus item share dari node yang hilang
+  (`forgetSharedNodes`), menggantikan `ON DELETE CASCADE` yang dulu dikerjakan foreign key. Daftar id dikirim per 1.000
+  dalam satu parameter (`idSlices`).
+- **Yang ikut pindah:** pembuatan, daftar, ubah, cabut, buat ulang, hitungan unduhan, halaman publik (OG, daftar file,
+  ZIP), kirim link, laporan dan takedown (cek target, matikan dan pulihkan link), ekspor data, hapus akun, pembersihan
+  `share_sends` di cron.
+- **Dev dan test** memakai sqlite terpisah untuk `ACCESS_DB` (`rt.access`), jadi join lintas database yang terlewat
+  langsung gagal di test.
+
+Test: `tests/integration/access-db.test.ts` (baris ada di access DB dan tidak di D1 utama, hapus permanen membersihkan
+item share, jalan dari D1 utama tanpa `ACCESS_DB`), suite share, takedown, keluarga, IDOR, dan API v1 membaca access DB.

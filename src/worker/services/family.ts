@@ -3,6 +3,7 @@
 // Pool changes (create, join, leave, dissolve) move nodes, blobs and usage counters in one batch.
 import { DAY_MS, SHARE_ID_LENGTH } from '../../shared/constants';
 import { deleteFamilyIndex, markIndexDirty } from './drive-index-sync';
+import { revokeSharesOfNodes } from './shares';
 import { formatBytes, formatRupiah } from '../../shared/format';
 import { addBillingMonth } from '../../shared/time';
 import type { Ctx } from '../context';
@@ -603,6 +604,17 @@ export async function removeMember(ctx: Ctx, actorId: string, memberId: string):
     `SELECT code FROM plans WHERE kind = 'personal' AND active = 1 ORDER BY price_idr LIMIT 1`,
   ).first<{ code: string }>();
   const hasSub = await currentSubscription(ctx, personal);
+  // The leaver's links to family items die first (links are in the access database, ADR-079).
+  const { results: familyNodes } = await DB.prepare(
+    `SELECT id FROM nodes WHERE family_id = ?1 AND space = 'family'`,
+  )
+    .bind(target.familyId)
+    .all<{ id: string }>();
+  await revokeSharesOfNodes(
+    ctx,
+    familyNodes.map((n) => n.id),
+    { onlyBy: memberId },
+  );
   await DB.batch([
     DB.prepare(
       `UPDATE blobs SET pool_id = ?2 WHERE pool_id = ?1 AND id IN (SELECT blob_id FROM nodes WHERE pool_id = ?1 AND space = 'personal' AND owner_id = ?3 AND blob_id IS NOT NULL)`,
@@ -619,10 +631,6 @@ export async function removeMember(ctx: Ctx, actorId: string, memberId: string):
     DB.prepare(
       `UPDATE nodes SET owner_id = ?3 WHERE family_id = ?1 AND space = 'family' AND owner_id = ?2`,
     ).bind(target.familyId, memberId, target.ownerId),
-    DB.prepare(
-      `UPDATE shares SET revoked_at = ?3 WHERE created_by = ?1 AND revoked_at IS NULL
-         AND id IN (SELECT si.share_id FROM share_items si JOIN nodes n ON n.id = si.node_id WHERE n.family_id = ?2)`,
-    ).bind(memberId, target.familyId, now),
     DB.prepare('DELETE FROM family_members WHERE family_id = ?1 AND user_id = ?2').bind(
       target.familyId,
       memberId,

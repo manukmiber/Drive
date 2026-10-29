@@ -49,7 +49,7 @@ describe('share links (SPEC §6.1)', () => {
     expect(res.headers.get('content-disposition')).toContain('attachment');
     await visit(rt, sh.url); // same visitor within the dedupe window
     await visit(rt, sh.url, { headers: { range: 'bytes=4-' } }); // resume, never counted
-    const row = rt.d1.sqlite
+    const row = rt.access.sqlite
       .prepare('SELECT download_count FROM shares WHERE id = ?')
       .get(sh.id) as { download_count: number };
     expect(row.download_count).toBe(1);
@@ -178,16 +178,20 @@ describe('share links (SPEC §6.1)', () => {
     expect(html).not.toContain('class="decor"');
     // A decorated folder shows its colour and icon, never a cover (ADR-058).
     rt.d1.sqlite
-      .prepare("UPDATE nodes SET decor_color = 'teal', decor_icon = 'camera', decor_cover_id = ? WHERE id = ?")
+      .prepare(
+        "UPDATE nodes SET decor_color = 'teal', decor_icon = 'camera', decor_cover_id = ? WHERE id = ?",
+      )
       .run(a.id, folder.id);
     const decorated = await (await visit(rt, sh.url)).text();
-    expect(decorated).toMatch(/<span class="decor" style="--dl:#0f766e;--dd:#2dd4bf"><svg [^>]+>.*<\/svg><\/span>Album/);
+    expect(decorated).toMatch(
+      /<span class="decor" style="--dl:#0f766e;--dd:#2dd4bf"><svg [^>]+>.*<\/svg><\/span>Album/,
+    );
     expect(decorated).not.toContain('thumbnail');
     rt.d1.sqlite.prepare("UPDATE nodes SET decor_icon = '🏖️' WHERE id = ?").run(folder.id);
     expect(await (await visit(rt, sh.url)).text()).toContain('<span aria-hidden="true">🏖️</span>');
     const count = () =>
       (
-        rt.d1.sqlite.prepare('SELECT download_count FROM shares WHERE id = ?').get(sh.id) as {
+        rt.access.sqlite.prepare('SELECT download_count FROM shares WHERE id = ?').get(sh.id) as {
           download_count: number;
         }
       ).download_count;
@@ -294,7 +298,7 @@ describe('sending links (SPEC §6.3–6.5)', () => {
       recipients: ['teman@example.com'],
     });
     expect(await again.json()).toEqual({ queued: 0, suppressed: 1 });
-    const row = rt.d1.sqlite
+    const row = rt.access.sqlite
       .prepare("SELECT recipient_masked FROM share_sends WHERE channel = 'email' LIMIT 1")
       .get() as { recipient_masked: string };
     expect(row.recipient_masked).toBe('te***@example.com');

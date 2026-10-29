@@ -21,6 +21,7 @@ import { escapeHtml } from '../services/email-templates';
 import {
   countDownload,
   getShareRow,
+  shareNodeIds,
   shareState,
   verifyPassword,
   verifyShareSignature,
@@ -88,9 +89,10 @@ ${error ? `<p class="err">${escapeHtml(tr.share.passwordWrong)}</p>` : ''}<butto
 
 async function ogPage(c: Context<AppBindings>, s: ShareRow, url: string): Promise<Response> {
   const size = await c.env.DB.prepare(
-    `SELECT COALESCE(SUM(n.size), 0) AS total, COUNT(*) AS n FROM share_items i JOIN nodes n ON n.id = i.node_id WHERE i.share_id = ?1`,
+    `SELECT COALESCE(SUM(size), 0) AS total, COUNT(*) AS n FROM nodes
+     WHERE id IN (SELECT value FROM json_each(?1))`,
   )
-    .bind(s.id)
+    .bind(JSON.stringify(await shareNodeIds(c.get('ctx'), s.id)))
     .first<{ total: number; n: number }>();
   const lang = requestLang(c.req.raw);
   const tr = strings(lang);
@@ -105,15 +107,10 @@ async function ogPage(c: Context<AppBindings>, s: ShareRow, url: string): Promis
 const LISTING_MAX_ROWS = 500;
 
 async function shareFiles(c: Context<AppBindings>, share: ShareRow) {
-  const { results: items } = await c.env.DB.prepare(
-    'SELECT node_id FROM share_items WHERE share_id = ?1',
-  )
-    .bind(share.id)
-    .all<{ node_id: string }>();
   const cfg = await c.get('ctx').config();
   return collectFiles(
     c.get('ctx'),
-    items.map((i) => i.node_id),
+    await shareNodeIds(c.get('ctx'), share.id),
     cfg.archive_max_items,
   );
 }
@@ -159,10 +156,10 @@ function listingPage(
 /** A shared folder's colour and icon (ADR-058); never its cover. */
 async function folderDecorBadge(c: Context<AppBindings>, shareId: string): Promise<string> {
   const row = await c.env.DB.prepare(
-    `SELECT n.decor_color, n.decor_icon FROM share_items i JOIN nodes n ON n.id = i.node_id
-     WHERE i.share_id = ?1 AND n.kind = 'folder' LIMIT 1`,
+    `SELECT decor_color, decor_icon FROM nodes
+     WHERE id IN (SELECT value FROM json_each(?1)) AND kind = 'folder' LIMIT 1`,
   )
-    .bind(shareId)
+    .bind(JSON.stringify(await shareNodeIds(c.get('ctx'), shareId)))
     .first<{ decor_color: string | null; decor_icon: string | null }>();
   return row ? folderBadge(row.decor_color, row.decor_icon) : '';
 }
@@ -268,10 +265,10 @@ export const sharePublic = new Hono<AppBindings>()
     if (share.kind === 'file') {
       const row = await c.env.DB.prepare(
         `SELECT n.id, n.name, n.mime, n.status, b.id AS blob_id, b.r2_key, b.size, b.scan_status, b.sniffed_mime
-         FROM share_items i JOIN nodes n ON n.id = i.node_id JOIN blobs b ON b.id = n.blob_id
-         WHERE i.share_id = ?1 AND n.trashed_at IS NULL`,
+         FROM nodes n JOIN blobs b ON b.id = n.blob_id
+         WHERE n.id IN (SELECT value FROM json_each(?1)) AND n.trashed_at IS NULL`,
       )
-        .bind(share.id)
+        .bind(JSON.stringify(await shareNodeIds(ctx, share.id)))
         .first<{
           id: string;
           name: string;
@@ -315,15 +312,7 @@ export const sharePublic = new Hono<AppBindings>()
     }
 
     // Folder (live content) or bundle (fixed items) → ZIP store, Range-capable.
-    const { results: items } = await c.env.DB.prepare(
-      'SELECT node_id FROM share_items WHERE share_id = ?1',
-    )
-      .bind(share.id)
-      .all<{ node_id: string }>();
-    const content = await collectEntries(
-      ctx,
-      items.map((i) => i.node_id),
-    );
+    const content = await collectEntries(ctx, await shareNodeIds(ctx, share.id));
     if (!content.fileCount && !content.entries.length) return dead(c, 'not_found', r64);
     const plan = planZip(content.entries);
     const etag = `"z${(await sha256Hex(JSON.stringify(content.entries.map((e) => [e.path, e.key, e.size])))).slice(0, 32)}"`;

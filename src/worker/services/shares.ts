@@ -2,9 +2,13 @@
 // r64 = 64 base62 chars (CSPRNG, primary key); s32 = base62(HMAC-SHA256(SHARE_LINK_SECRET, r64))[:32],
 // verified in constant time BEFORE any D1 query. SHARE_LINK_SECRET_PREV keeps old links alive during
 // a secret rotation.
+//
+// The links live in the access database (R5, ADR-079: lib/access-db.ts), apart from the tree: a
+// share item names its node by id, and nothing here joins the two.
 import { SHARE_ID_LENGTH, SHARE_SIG_LENGTH, HOUR_MS } from '../../shared/constants';
 import type { Ctx } from '../context';
 import { base64UrlDecode, base64UrlEncode, hmacBase62, timingSafeEqual } from '../lib/crypto';
+import { accessDb, idSlices } from '../lib/access-db';
 import { AppError } from '../lib/errors';
 import { isBase62, randomBase62 } from '../lib/ids';
 import { requireNode } from './access';
@@ -113,12 +117,62 @@ export interface ShareDto {
   showListing: boolean;
 }
 
-export async function toShareDto(ctx: Ctx, s: ShareRow): Promise<ShareDto> {
-  const { results } = await ctx.env.DB.prepare(
-    'SELECT node_id FROM share_items WHERE share_id = ?1',
-  )
-    .bind(s.id)
+/** The nodes a link holds (ids in the tree's D1 until R8). */
+export async function shareNodeIds(ctx: Ctx, shareId: string): Promise<string[]> {
+  const { results } = await accessDb(ctx.env)
+    .prepare('SELECT node_id FROM share_items WHERE share_id = ?1')
+    .bind(shareId)
     .all<{ node_id: string }>();
+  return results.map((r) => r.node_id);
+}
+
+/** Links that hold any of these nodes. */
+export async function sharesOfNodes(ctx: Ctx, nodeIds: readonly string[]): Promise<ShareRow[]> {
+  const out = new Map<string, ShareRow>();
+  for (const ids of idSlices(nodeIds)) {
+    const { results } = await accessDb(ctx.env)
+      .prepare(
+        `SELECT * FROM shares WHERE id IN (SELECT share_id FROM share_items
+           WHERE node_id IN (SELECT value FROM json_each(?1)))`,
+      )
+      .bind(ids)
+      .all<ShareRow>();
+    for (const r of results) out.set(r.id, r);
+  }
+  return [...out.values()];
+}
+
+/**
+ * Revokes the live links that hold any of these nodes; `keepBy` spares the ones that person made.
+ * (Was one statement joined to `nodes`; the links are in another database now.)
+ */
+export async function revokeSharesOfNodes(
+  ctx: Ctx,
+  nodeIds: readonly string[],
+  opts: { keepBy?: string; onlyBy?: string } = {},
+): Promise<void> {
+  const A = accessDb(ctx.env);
+  for (const ids of idSlices(nodeIds))
+    await A.prepare(
+      `UPDATE shares SET revoked_at = ?2 WHERE revoked_at IS NULL
+         AND (?3 IS NULL OR created_by != ?3) AND (?4 IS NULL OR created_by = ?4)
+         AND id IN (SELECT share_id FROM share_items WHERE node_id IN (SELECT value FROM json_each(?1)))`,
+    )
+      .bind(ids, ctx.now(), opts.keepBy ?? null, opts.onlyBy ?? null)
+      .run();
+}
+
+/** Nodes deleted for good leave the links that held them (the foreign key's cascade, before R5). */
+export async function forgetSharedNodes(ctx: Ctx, nodeIds: readonly string[]): Promise<void> {
+  const A = accessDb(ctx.env);
+  for (const ids of idSlices(nodeIds))
+    await A.prepare('DELETE FROM share_items WHERE node_id IN (SELECT value FROM json_each(?1))')
+      .bind(ids)
+      .run();
+}
+
+export async function toShareDto(ctx: Ctx, s: ShareRow): Promise<ShareDto> {
+  const nodeIds = await shareNodeIds(ctx, s.id);
   return {
     id: s.id,
     url: await shareUrl(ctx.env, s.id, s.title),
@@ -132,7 +186,7 @@ export async function toShareDto(ctx: Ctx, s: ShareRow): Promise<ShareDto> {
     disabledReason: s.disabled_reason,
     lastDownloadAt: s.last_download_at,
     createdAt: s.created_at,
-    nodeIds: results.map((r) => r.node_id),
+    nodeIds,
     showListing: Boolean(s.show_listing),
   };
 }
@@ -184,8 +238,9 @@ export async function createShare(
   const passwordHash = input.password ? await hashPassword(input.password) : null;
   // A single file has nothing to list: its link always downloads it.
   const listing = kind !== 'file' && input.showListing ? 1 : 0;
-  await ctx.env.DB.batch([
-    ctx.env.DB.prepare(
+  const A = accessDb(ctx.env);
+  await A.batch([
+    A.prepare(
       `INSERT INTO shares (id, created_by, kind, title, expires_at, max_downloads, password_hash, created_at, show_listing)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
     ).bind(
@@ -200,17 +255,14 @@ export async function createShare(
       listing,
     ),
     ...nodes.map((n) =>
-      ctx.env.DB.prepare('INSERT INTO share_items (share_id, node_id) VALUES (?1, ?2)').bind(
-        id,
-        n.id,
-      ),
+      A.prepare('INSERT INTO share_items (share_id, node_id) VALUES (?1, ?2)').bind(id, n.id),
     ),
   ]);
   return toShareDto(ctx, (await getShareRow(ctx, id))!);
 }
 
 export async function getShareRow(ctx: Ctx, id: string): Promise<ShareRow | null> {
-  return ctx.env.DB.prepare('SELECT * FROM shares WHERE id = ?1').bind(id).first<ShareRow>();
+  return accessDb(ctx.env).prepare('SELECT * FROM shares WHERE id = ?1').bind(id).first<ShareRow>();
 }
 
 export async function requireOwnShare(ctx: Ctx, userId: string, id: string): Promise<ShareRow> {
@@ -220,14 +272,15 @@ export async function requireOwnShare(ctx: Ctx, userId: string, id: string): Pro
 }
 
 export async function listMyShares(ctx: Ctx, userId: string, nodeId?: string): Promise<ShareDto[]> {
+  const A = accessDb(ctx.env);
   const { results } = nodeId
-    ? await ctx.env.DB.prepare(
+    ? await A.prepare(
         `SELECT s.* FROM shares s JOIN share_items i ON i.share_id = s.id
          WHERE s.created_by = ?1 AND i.node_id = ?2 ORDER BY s.created_at DESC LIMIT 50`,
       )
         .bind(userId, nodeId)
         .all<ShareRow>()
-    : await ctx.env.DB.prepare(
+    : await A.prepare(
         'SELECT * FROM shares WHERE created_by = ?1 ORDER BY created_at DESC LIMIT 500',
       )
         .bind(userId)
@@ -263,7 +316,8 @@ export async function updateShare(
   if (patch.showListing !== undefined)
     set('show_listing', s.kind !== 'file' && patch.showListing ? 1 : 0);
   if (sets.length)
-    await ctx.env.DB.prepare(`UPDATE shares SET ${sets.join(', ')} WHERE id = ?1`)
+    await accessDb(ctx.env)
+      .prepare(`UPDATE shares SET ${sets.join(', ')} WHERE id = ?1`)
       .bind(...binds)
       .run();
   return toShareDto(ctx, (await getShareRow(ctx, id))!);
@@ -271,7 +325,8 @@ export async function updateShare(
 
 export async function revokeShare(ctx: Ctx, userId: string, id: string): Promise<void> {
   await requireOwnShare(ctx, userId, id);
-  await ctx.env.DB.prepare('UPDATE shares SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL')
+  await accessDb(ctx.env)
+    .prepare('UPDATE shares SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL')
     .bind(id, ctx.now())
     .run();
 }
@@ -281,15 +336,16 @@ export async function regenerateShare(ctx: Ctx, userId: string, id: string): Pro
   const s = await requireOwnShare(ctx, userId, id);
   const newId = randomBase62(SHARE_ID_LENGTH);
   const now = ctx.now();
-  await ctx.env.DB.batch([
-    ctx.env.DB.prepare(
+  const A = accessDb(ctx.env);
+  await A.batch([
+    A.prepare(
       `INSERT INTO shares (id, created_by, kind, title, expires_at, max_downloads, password_hash, created_at, show_listing)
        SELECT ?2, created_by, kind, title, expires_at, max_downloads, password_hash, ?3, show_listing FROM shares WHERE id = ?1`,
     ).bind(id, newId, now),
-    ctx.env.DB.prepare(
+    A.prepare(
       'INSERT INTO share_items (share_id, node_id) SELECT ?2, node_id FROM share_items WHERE share_id = ?1',
     ).bind(id, newId),
-    ctx.env.DB.prepare('UPDATE shares SET revoked_at = ?2 WHERE id = ?1').bind(id, now),
+    A.prepare('UPDATE shares SET revoked_at = ?2 WHERE id = ?1').bind(id, now),
   ]);
   void s;
   return toShareDto(ctx, (await getShareRow(ctx, newId))!);
@@ -310,9 +366,9 @@ export async function shareState(ctx: Ctx, s: ShareRow | null): Promise<DeadReas
   if (creator?.status !== 'active') return 'disabled';
   // Owner in read-only/suspended phase → links off (SPEC §6.1, §12.5).
   const pool = await ctx.env.DB.prepare(
-    `SELECT n.pool_id FROM share_items i JOIN nodes n ON n.id = i.node_id WHERE i.share_id = ?1 LIMIT 1`,
+    'SELECT pool_id FROM nodes WHERE id IN (SELECT value FROM json_each(?1)) LIMIT 1',
   )
-    .bind(s.id)
+    .bind(JSON.stringify(await shareNodeIds(ctx, s.id)))
     .first<{ pool_id: string }>();
   if (!pool) return 'not_found';
   const sub = await getActiveSubscription(ctx, pool.pool_id);
@@ -328,10 +384,11 @@ export async function countDownload(ctx: Ctx, s: ShareRow, fingerprint: string):
   const cfg = await ctx.config();
   const key = `sd:${s.id.slice(0, 24)}:${fingerprint}`;
   if (await ctx.env.CONFIG_KV.get(key)) return true;
-  const res = await ctx.env.DB.prepare(
-    `UPDATE shares SET download_count = download_count + 1, last_download_at = ?2
+  const res = await accessDb(ctx.env)
+    .prepare(
+      `UPDATE shares SET download_count = download_count + 1, last_download_at = ?2
      WHERE id = ?1 AND (max_downloads IS NULL OR download_count < max_downloads)`,
-  )
+    )
     .bind(s.id, ctx.now())
     .run();
   if (res.meta.changes === 0) return false;
@@ -347,9 +404,10 @@ export async function disableSharesForNode(
   nodeId: string,
   reason: string,
 ): Promise<void> {
-  await ctx.env.DB.prepare(
-    `UPDATE shares SET disabled_reason = ?2 WHERE id IN (SELECT share_id FROM share_items WHERE node_id = ?1)`,
-  )
+  await accessDb(ctx.env)
+    .prepare(
+      `UPDATE shares SET disabled_reason = ?2 WHERE id IN (SELECT share_id FROM share_items WHERE node_id = ?1)`,
+    )
     .bind(nodeId, reason)
     .run();
 }

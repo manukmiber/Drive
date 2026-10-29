@@ -27,7 +27,7 @@ import {
   ShimSendEmail,
   unsupportedBinding,
 } from './shims/misc';
-import { applyMigrations, migrationsFingerprint } from './migrate';
+import { ACCESS_MIGRATIONS_DIR, applyMigrations, migrationsFingerprint } from './migrate';
 import { DEV_DEFAULTS } from './vars';
 
 const ROOT = join(import.meta.dirname, '..');
@@ -80,6 +80,8 @@ type QueueBinding = keyof typeof QUEUES;
 export interface DevRuntime {
   env: Env;
   d1: ShimD1Database;
+  /** The access database (share links; ADR-079). */
+  access: ShimD1Database;
   kv: ShimKV;
   r2: ShimR2Bucket;
   queues: Record<QueueBinding, ShimQueue<QueueMessage>>;
@@ -103,7 +105,7 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
     // Migrations may still be edited before the first remote deploy (ADR-011): if an applied one
     // changed, the local data no longer matches the schema — start over (dev data only).
     const stamp = join(dir, 'migrations.sha256');
-    const fp = migrationsFingerprint();
+    const fp = migrationsFingerprint() + migrationsFingerprint(ACCESS_MIGRATIONS_DIR);
     if (existsSync(stamp) && readFileSync(stamp, 'utf8') !== fp) {
       console.warn('[zeiko] migrasi berubah → data dev lokal direset');
       for (const f of readdirSync(dir)) rmSync(join(dir, f), { recursive: true, force: true });
@@ -115,6 +117,10 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
   const sqlite = openSqlite(temp ? ':memory:' : join(dir, 'd1.sqlite'));
   applyMigrations(sqlite);
   const d1 = new ShimD1Database(sqlite);
+  // The access database is a D1 of its own (ADR-079), so code that joins across them fails here too.
+  const accessSqlite = openSqlite(temp ? ':memory:' : join(dir, 'access.sqlite'));
+  applyMigrations(accessSqlite, ACCESS_MIGRATIONS_DIR);
+  const access = new ShimD1Database(accessSqlite);
   const kv = new ShimKV(openSqlite(temp ? ':memory:' : join(dir, 'kv.sqlite')), now);
   const r2 = await new ShimR2Bucket(join(dir, 'r2'), now).init();
   // Zeiko S3's replica buckets (ADR-047), so 3-copy plans work locally.
@@ -150,6 +156,7 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
     ...opts.vars,
     ...extraD1,
     DB: d1,
+    ACCESS_DB: access,
     BUCKET: r2,
     S3_REPLICA_A: replicaA,
     S3_REPLICA_B: replicaB,
@@ -184,6 +191,7 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
   return {
     env,
     d1,
+    access,
     kv,
     r2,
     queues,
@@ -209,6 +217,7 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
     runCron: (cron) => runScheduled(cron, env),
     close: () => {
       sqlite.close();
+      accessSqlite.close();
       if (temp) rmSync(dir, { recursive: true, force: true });
     },
   };

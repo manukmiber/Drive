@@ -257,7 +257,7 @@ describe('API v1 (ADR-062)', () => {
     const snapshot = () =>
       JSON.stringify([
         rt.d1.sqlite.prepare('SELECT id, name, parent_id, trashed_at FROM nodes ORDER BY id').all(),
-        rt.d1.sqlite.prepare('SELECT id, revoked_at FROM shares ORDER BY id').all(),
+        rt.access.sqlite.prepare('SELECT id, revoked_at FROM shares ORDER BY id').all(),
         rt.d1.sqlite.prepare('SELECT id, status FROM uploads ORDER BY id').all(),
       ]);
     const before = snapshot();

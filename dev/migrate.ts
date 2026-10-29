@@ -5,6 +5,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const MIGRATIONS_DIR = join(import.meta.dirname, '..', 'migrations');
+/** The access database's own (ADR-079). */
+export const ACCESS_MIGRATIONS_DIR = join(import.meta.dirname, '..', 'migrations-access');
 
 export function applyMigrations(db: DatabaseSync, dir: string = MIGRATIONS_DIR): string[] {
   db.exec(`CREATE TABLE IF NOT EXISTS d1_migrations (

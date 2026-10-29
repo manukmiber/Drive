@@ -5,9 +5,10 @@
 // what it switched off. The operator works from the relay's Zeiko Drive screen (ops API, ADR-057).
 import type { Ctx } from '../context';
 import { markBlobOwnersDirty } from './drive-index-sync';
+import { accessDb } from '../lib/access-db';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
-import { disableSharesForNode } from './shares';
+import { disableSharesForNode, shareNodeIds } from './shares';
 
 export const REPORT_CATEGORIES = [
   'csam',
@@ -47,15 +48,12 @@ async function resolveTarget(ctx: Ctx, type: string, id: string): Promise<Target
   const DB = ctx.env.DB;
   let nodeIds: string[] = [];
   if (type === 'share') {
-    const { results } = await DB.prepare('SELECT node_id FROM share_items WHERE share_id = ?1')
-      .bind(id)
-      .all<{ node_id: string }>();
     // Folder shares: everything inside counts.
-    for (const r of results) {
+    for (const nodeId of await shareNodeIds(ctx, id)) {
       const { results: sub } = await DB.prepare(
         `WITH RECURSIVE t(id) AS (SELECT ?1 UNION ALL SELECT n.id FROM nodes n JOIN t ON n.parent_id = t.id) SELECT id FROM t LIMIT 5000`,
       )
-        .bind(r.node_id)
+        .bind(nodeId)
         .all<{ id: string }>();
       nodeIds.push(...sub.map((x) => x.id));
     }
@@ -121,7 +119,10 @@ export async function createReport(
 ): Promise<{ id: string; priority: string; slaDueAt: number }> {
   const cfg = await ctx.config();
   const table = { share: 'shares', node: 'nodes', ad: 'ad_creatives' }[input.targetType];
-  const exists = await ctx.env.DB.prepare(`SELECT 1 AS x FROM ${table} WHERE id = ?1`)
+  // A link is in the access database (ADR-079), the rest in the main one.
+  const db = input.targetType === 'share' ? accessDb(ctx.env) : ctx.env.DB;
+  const exists = await db
+    .prepare(`SELECT 1 AS x FROM ${table} WHERE id = ?1`)
     .bind(input.targetId)
     .first();
   if (!exists) throw new AppError('NOT_FOUND', 'reported item not found');
@@ -190,7 +191,8 @@ export async function applyActions(
     switch (action) {
       case 'disable_links':
         if (report.target_type === 'share')
-          await DB.prepare(`UPDATE shares SET disabled_reason = ?2 WHERE id = ?1`)
+          await accessDb(ctx.env)
+            .prepare(`UPDATE shares SET disabled_reason = ?2 WHERE id = ?1`)
             .bind(report.target_id, mark)
             .run();
         for (const n of target.nodeIds.slice(0, 500)) await disableSharesForNode(ctx, n, mark);
@@ -260,17 +262,20 @@ export async function applyActions(
         ).bind(reportId, action === 'resolve' ? 'resolved' : 'rejected', now, note.slice(0, 500));
         if (action === 'resolve') await close.run();
         // A rejected report was wrong: put back what it switched off (only its own marks).
-        else
+        else {
+          // The links are in the access database (ADR-079): put them back first, then the rest.
+          await accessDb(ctx.env)
+            .prepare(`UPDATE shares SET disabled_reason = NULL WHERE disabled_reason = ?1`)
+            .bind(mark)
+            .run();
           await DB.batch([
             close,
-            DB.prepare(`UPDATE shares SET disabled_reason = NULL WHERE disabled_reason = ?1`).bind(
-              mark,
-            ),
             DB.prepare(
               `UPDATE blobs SET scan_status = 'clean', scan_detail = NULL WHERE scan_detail = ?1 AND scan_status = 'quarantined'`,
             ).bind(mark),
             DB.prepare(`DELETE FROM legal_holds WHERE reason = ?1`).bind(`report:${reportId}`),
           ]);
+        }
         if (action !== 'resolve') await markBlobOwnersDirty(ctx, target.blobIds);
         break;
       }

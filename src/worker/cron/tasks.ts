@@ -25,6 +25,7 @@ import { refreshPendingUrls, releaseLapsedUrls } from '../services/s3-urls';
 import { cleanupVirusTotal } from '../services/virustotal';
 import { moveNoticesToRelay } from '../services/notify';
 import { registerCronTask } from '.';
+import { accessDb } from '../lib/access-db';
 
 // Drive indexes a request didn't finish writing (R3, ADR-074).
 registerCronTask(CRON.hourly, {
@@ -126,8 +127,11 @@ registerCronTask(CRON.nightly, {
     const cfg = await ctx.config();
     const cutoff = ctx.now() - cfg.log_retention_days * DAY_MS;
     const DB = ctx.env.DB;
+    await accessDb(ctx.env)
+      .prepare('DELETE FROM share_sends WHERE created_at < ?1')
+      .bind(cutoff)
+      .run();
     await DB.batch([
-      DB.prepare('DELETE FROM share_sends WHERE created_at < ?1').bind(cutoff),
       DB.prepare('DELETE FROM notifications WHERE created_at < ?1 AND read_at IS NOT NULL').bind(
         cutoff,
       ),
