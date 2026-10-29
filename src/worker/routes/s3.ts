@@ -6,7 +6,17 @@ import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
 import { createBucket, createKey, revokeKey, s3Overview, setBucketPublic } from '../services/s3';
 import { deleteBucket } from '../services/s3-objects';
-import { browseObjects, deleteKeys, objectLink, uploadObject } from '../services/s3-browse';
+import {
+  browseObjects,
+  cancelWebUpload,
+  deleteKeys,
+  finishWebUpload,
+  objectLink,
+  sendWebPart,
+  startWebUpload,
+  uploadObject,
+  webUploadParts,
+} from '../services/s3-browse';
 import { CORS_METHODS, getBucketCors, MAX_CORS_RULES, setBucketCors } from '../services/s3-cors';
 import { setBucketLifecycle } from '../services/s3-lifecycle';
 import { contentLength } from '../lib/http';
@@ -169,6 +179,100 @@ export const s3 = new Hono<AppBindings>()
         ),
       );
       return c.json({ object }, 201);
+    },
+  )
+  // Bigger files in parts (S4, ADR-075): start, send parts (any order, again after a failure), see
+  // what is stored, finish, or cancel.
+  .post(
+    '/buckets/:name/uploads',
+    rateLimit('RL_UPLOAD', 's3-web-upload'),
+    validate(
+      'json',
+      z.object({
+        key: objectKey,
+        size: z.number().int().min(0),
+        contentType: z.string().max(255).nullable().default(null),
+      }),
+    ),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      const b = c.req.valid('json');
+      return c.json(
+        await s3Call(() =>
+          startWebUpload(ctx, acc, c.req.param('name'), b.key, b.size, b.contentType),
+        ),
+        201,
+      );
+    },
+  )
+  .put(
+    '/buckets/:name/uploads/:id/parts/:n{[0-9]+}',
+    validate('query', z.object({ key: objectKey })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      return c.json(
+        await s3Call(() =>
+          sendWebPart(
+            ctx,
+            acc,
+            c.req.param('name'),
+            c.req.valid('query').key,
+            c.req.param('id'),
+            Number(c.req.param('n')),
+            contentLength(c.req.header('content-length')),
+            c.req.raw.body,
+          ),
+        ),
+      );
+    },
+  )
+  .get('/buckets/:name/uploads/:id', validate('query', z.object({ key: objectKey })), async (c) => {
+    const ctx = c.get('ctx');
+    const acc = await activeAccount(ctx, c.get('user')!.id);
+    const parts = await s3Call(() =>
+      webUploadParts(ctx, acc, c.req.param('name'), c.req.valid('query').key, c.req.param('id')),
+    );
+    return c.json({ parts });
+  })
+  .post(
+    '/buckets/:name/uploads/:id/complete',
+    validate(
+      'json',
+      z.object({
+        key: objectKey,
+        parts: z
+          .array(
+            z.object({
+              partNumber: z.number().int().min(1).max(10_000),
+              etag: z.string().max(200),
+            }),
+          )
+          .min(1)
+          .max(10_000),
+      }),
+    ),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      const b = c.req.valid('json');
+      const object = await s3Call(() =>
+        finishWebUpload(ctx, acc, c.req.param('name'), b.key, c.req.param('id'), b.parts),
+      );
+      return c.json({ object }, 201);
+    },
+  )
+  .delete(
+    '/buckets/:name/uploads/:id',
+    validate('query', z.object({ key: objectKey })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      await s3Call(() =>
+        cancelWebUpload(ctx, acc, c.req.param('name'), c.req.valid('query').key, c.req.param('id')),
+      );
+      return c.body(null, 204);
     },
   )
   .get('/buckets/:name/cors', async (c) => {

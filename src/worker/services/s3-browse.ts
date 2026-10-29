@@ -8,10 +8,15 @@ import { awsEncode, presignUrl } from '../lib/s3-sigv4';
 import { base64UrlDecode, base64UrlEncode } from '../lib/crypto';
 import { listKeys, lookupKey, ownBucket, S3_REGION, type S3Account } from './s3';
 import {
+  abortUpload,
+  completeUpload,
+  createUpload,
   deleteObjects,
   getObjectRow,
   listObjects,
+  listParts,
   putObject,
+  uploadPart,
   validateKey,
   type ListCursor,
 } from './s3-objects';
@@ -192,4 +197,113 @@ export async function uploadObject(
     meta: {},
   });
   return { key: row.key, size: row.size, etag: row.etag, modifiedAt: row.modified_at };
+}
+
+// ── Files bigger than one request, in parts through the app (S4, ADR-075) ──
+// The page never talks to the S3 host, so it needs no CORS on the bucket and no key: each part is
+// one request to /api/s3, on the same multipart upload an S3 client would make.
+
+const MAX_PARTS = 10_000;
+const MIB = 1024 * 1024;
+
+/** The part size for a file: the config's, raised (to whole MiB) when it would take too many parts. */
+export function webPartSize(size: number, partBytes: number, requestMax: number): number {
+  const needed = Math.ceil(size / MAX_PARTS / MIB) * MIB;
+  return Math.min(Math.max(partBytes, needed), requestMax);
+}
+
+export async function startWebUpload(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+  size: number,
+  contentType: string | null,
+): Promise<{ uploadId: string; partSize: number; parts: number }> {
+  writable(account);
+  await ownBucket(ctx, account.userId, bucket);
+  validateKey(key);
+  const cfg = await ctx.config();
+  if (size > cfg.s3_web_multipart_max_bytes)
+    throw new AppError('PAYLOAD_TOO_LARGE', 'too big to upload from the page', {
+      max: cfg.s3_web_multipart_max_bytes,
+    });
+  const partSize = webPartSize(size, cfg.s3_web_part_bytes, cfg.s3_web_upload_max_bytes);
+  const parts = Math.max(1, Math.ceil(size / partSize));
+  if (parts > MAX_PARTS)
+    throw new AppError('PAYLOAD_TOO_LARGE', 'too many parts', { max: partSize * MAX_PARTS });
+  const up = await createUpload(
+    ctx,
+    account,
+    bucket,
+    key,
+    contentType && contentType !== 'application/octet-stream' ? contentType : null,
+    {},
+  );
+  return { uploadId: up.id, partSize, parts };
+}
+
+export async function sendWebPart(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+  uploadId: string,
+  partNumber: number,
+  size: number | null,
+  body: ReadableStream<Uint8Array> | null,
+): Promise<{ etag: string }> {
+  writable(account);
+  await ownBucket(ctx, account.userId, bucket);
+  const cfg = await ctx.config();
+  if (size === null) throw new AppError('VALIDATION', 'Content-Length is required');
+  if (size > cfg.s3_web_upload_max_bytes)
+    throw new AppError('PAYLOAD_TOO_LARGE', 'part too big', { max: cfg.s3_web_upload_max_bytes });
+  const etag = await uploadPart(ctx, account, bucket, key, uploadId, partNumber, body, size);
+  return { etag };
+}
+
+/** The parts already stored, so a paused or broken upload carries on where it was. */
+export async function webUploadParts(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+  uploadId: string,
+): Promise<Array<{ partNumber: number; etag: string; size: number }>> {
+  readable(account);
+  await ownBucket(ctx, account.userId, bucket);
+  const out: Array<{ partNumber: number; etag: string; size: number }> = [];
+  for (let marker = 0; ;) {
+    const page = await listParts(ctx, account, bucket, key, uploadId, marker, 1000);
+    for (const p of page.parts) out.push({ partNumber: p.part_number, etag: p.etag, size: p.size });
+    if (!page.truncated || !page.parts.length) return out;
+    marker = page.parts[page.parts.length - 1]!.part_number;
+  }
+}
+
+export async function finishWebUpload(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+  uploadId: string,
+  parts: Array<{ partNumber: number; etag: string }>,
+) {
+  writable(account);
+  await ownBucket(ctx, account.userId, bucket);
+  const row = await completeUpload(ctx, account, bucket, key, uploadId, parts);
+  return { key: row.key, size: row.size, etag: row.etag, modifiedAt: row.modified_at };
+}
+
+export async function cancelWebUpload(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+  uploadId: string,
+): Promise<void> {
+  readable(account);
+  await ownBucket(ctx, account.userId, bucket);
+  await abortUpload(ctx, account, bucket, key, uploadId);
 }

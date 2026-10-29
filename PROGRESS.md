@@ -265,6 +265,11 @@ lewat fase R di `docs/ROADMAP.md`.
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Upload multipart dari `/s3` (S4, ADR-075, 2026-10-29)
+- [x] File di atas satu part (32 MiB) naik per part lewat `/api/s3/buckets/:name/uploads/*`: paralel, coba ulang per
+  part, jeda/lanjut (part tersimpan ditanya ke server), batal (reservasi kembali); batas 50 GiB per file.
+- [x] Dicek di Chrome dev: 230 MB, jeda/lanjut, jaringan putus lalu pulih, batal; desktop gelap, 360 px terang.
+
 ## Subtitle di pratinjau video (D13, ADR-073, 2026-10-29)
 - [x] `.srt`/`.vtt` di folder yang sama dipasang otomatis (nama dasar sama), bisa dipilih, dimatikan, atau diambil dari
   perangkat; SRT → WebVTT di browser (BOM, UTF-16, Windows-1252); ukuran teks kecil/sedang/besar.

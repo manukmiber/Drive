@@ -17,12 +17,16 @@ export function asAppError(e: S3Error): AppError {
       return new AppError('VALIDATION', e.message, { field: 'name', reason: e.code });
     case 'NoSuchBucket':
     case 'NoSuchKey':
+    case 'NoSuchUpload':
       return new AppError('NOT_FOUND', e.message, { reason: e.code });
     case 'MalformedXML':
     case 'InvalidTargetBucketForLogging':
     case 'InvalidRequest':
     case 'KeyTooLongError':
     case 'InvalidArgument':
+    case 'InvalidPart':
+    case 'InvalidPartOrder':
+    case 'EntityTooSmall':
       return new AppError('VALIDATION', e.message, { reason: e.code });
     case 'QuotaExceeded':
       return new AppError('QUOTA_FULL', e.message, { reason: e.code });

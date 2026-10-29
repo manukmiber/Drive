@@ -1,6 +1,7 @@
-// A bucket's objects on the /s3 page (ADR-055): one folder level at a time, upload (one request
-// per file, a few at once by the device's own setting), new folder, download, temporary link, delete.
-// Downloads and links are ordinary presigned URLs; bigger uploads are for S3 tools (multipart).
+// A bucket's objects on the /s3 page (ADR-055): one folder level at a time, upload (one request per
+// file, a few at once by the device's own setting; files bigger than a part go up in parts with
+// pause, resume and cancel, S4/ADR-075), new folder, download, temporary link, delete. Downloads and
+// links are ordinary presigned URLs.
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronRight,
@@ -9,7 +10,10 @@ import {
   Folder,
   FolderPlus,
   Link2,
+  Pause,
+  Play,
   RefreshCw,
+  RotateCcw,
   Trash2,
   Upload,
   X,
@@ -25,6 +29,7 @@ import { useCatalog } from '../lib/catalog';
 import { cn } from '../lib/cn';
 import { t } from '../lib/i18n';
 import { transfer } from '../lib/transfer';
+import { S3MultipartUpload, type S3UploadState } from '../lib/s3-upload';
 import { putWithProgress } from '../upload/xhr';
 
 interface Page {
@@ -40,6 +45,9 @@ interface Sending {
   size: number;
   loaded: number;
   error: string | null;
+  /** Big files only (S4): the upload in parts, and where it stands. */
+  job?: S3MultipartUpload;
+  state?: S3UploadState;
 }
 
 const LINK_CHOICES = [3600, 86400, 604800];
@@ -81,7 +89,10 @@ export function S3Browser({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const maxUpload = Number(useCatalog().data?.config.s3_web_upload_max_bytes ?? 95 * 1024 * 1024);
+  const config = useCatalog().data?.config;
+  const maxUpload = Number(config?.s3_web_upload_max_bytes ?? 95 * 1024 * 1024);
+  const partBytes = Number(config?.s3_web_part_bytes ?? 32 * 1024 * 1024);
+  const maxMultipart = Number(config?.s3_web_multipart_max_bytes ?? 50 * 1024 ** 3);
   const [prefix, setPrefix] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState<Sending[]>([]);
@@ -119,6 +130,24 @@ export function S3Browser({
     .filter(Boolean)
     .map((part, i, all) => ({ name: part, prefix: `${all.slice(0, i + 1).join('/')}/` }));
 
+  const patch = (id: string, p: Partial<Sending>) =>
+    setSending((s) => s.map((r) => (r.id === id ? { ...r, ...p } : r)));
+
+  /** A file bigger than one part: in parts, until done, paused, failed or cancelled. */
+  function inParts(file: File, row: Sending): Promise<S3UploadState> {
+    return new Promise((resolve) => {
+      const job = new S3MultipartUpload(base(bucket), prefix + file.name, file, {
+        progress: (loaded) => patch(row.id, { loaded }),
+        state: (state, error) => {
+          patch(row.id, { state, error: state === 'failed' ? errorText(error) : null });
+          if (state !== 'running') resolve(state);
+        },
+      });
+      patch(row.id, { job });
+      void job.start();
+    });
+  }
+
   async function upload(files: File[]) {
     const items = files.map((f) => ({
       file: f,
@@ -127,18 +156,24 @@ export function S3Browser({
         name: f.name,
         size: f.size,
         loaded: 0,
-        error: f.size > maxUpload ? t.s3.uploadTooBig(formatBytes(maxUpload)) : null,
-      },
+        error: f.size > maxMultipart ? t.s3.uploadTooBig(formatBytes(maxMultipart)) : null,
+      } as Sending,
     }));
     setSending((s) => [...items.map((i) => i.row), ...s]);
-    const patch = (id: string, p: Partial<Sending>) =>
-      setSending((s) => s.map((r) => (r.id === id ? { ...r, ...p } : r)));
     const queue = items.filter((i) => !i.row.error);
     let ok = 0;
     // As many at once as the device's own upload setting (ADR-053).
     const worker = async () => {
       for (let it = queue.shift(); it; it = queue.shift()) {
         const { file, row } = it;
+        if (file.size > partBytes || file.size > maxUpload) {
+          // Paused or failed ones wait for the person; the next file goes on.
+          if ((await inParts(file, row)) === 'done') {
+            ok++;
+            setSending((s) => s.filter((r) => r.id !== row.id));
+          }
+          continue;
+        }
         const h = putWithProgress(
           `${base(bucket)}/objects?${new URLSearchParams({ key: prefix + file.name })}`,
           file,
@@ -148,7 +183,7 @@ export function S3Browser({
         try {
           await h.promise;
           ok++;
-          patch(row.id, { loaded: file.size });
+          setSending((s) => s.filter((r) => r.id !== row.id));
         } catch (e) {
           patch(row.id, { error: errorText(e) });
         }
@@ -158,8 +193,26 @@ export function S3Browser({
       Array.from({ length: Math.min(transfer.get().uploadFiles, queue.length) }, worker),
     );
     if (ok) toast(t.s3.uploaded(ok));
-    setSending((s) => s.filter((r) => r.error || !items.some((i) => i.row.id === r.id)));
     void refresh();
+  }
+
+  /** Resume after a pause or a failure; the list refreshes when it is done. */
+  async function carryOn(row: Sending) {
+    const job = row.job;
+    if (!job) return;
+    // start() comes back when this run stops: done, paused again, failed, or cancelled.
+    await job.start();
+    if (job.state === 'done') {
+      setSending((s) => s.filter((r) => r.id !== row.id));
+      toast(t.s3.uploaded(1));
+      void refresh();
+    }
+  }
+
+  async function cancel(row: Sending) {
+    await row.job?.cancel();
+    setSending((s) => s.filter((r) => r.id !== row.id));
+    toast(t.s3.uploadCancelled);
   }
 
   async function newFolder(name: string) {
@@ -330,22 +383,61 @@ export function S3Browser({
             <li key={r.id} className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate">{r.name}</span>
               {r.error ? (
-                <span className="truncate text-red-600" title={r.error}>
+                <span className="min-w-0 truncate text-red-600" title={r.error}>
                   {t.s3.uploadFailed}: {r.error}
                 </span>
               ) : (
                 <span className="tabular-nums text-[var(--fg-muted)]">
+                  {r.state === 'paused' && `${t.s3.uploadPaused} · `}
                   {r.size ? Math.round((r.loaded / r.size) * 100) : 100}%
                 </span>
               )}
-              {r.error && (
+              {r.job && r.state === 'running' && (
                 <button
                   type="button"
-                  aria-label={t.common.close}
-                  onClick={() => setSending((s) => s.filter((x) => x.id !== r.id))}
+                  className="rounded-full p-1 hover:bg-[var(--bg-subtle)]"
+                  aria-label={t.s3.uploadPause}
+                  title={t.s3.uploadPause}
+                  onClick={() => r.job!.pause()}
                 >
-                  <X className="h-3 w-3" />
+                  <Pause className="h-3.5 w-3.5" />
                 </button>
+              )}
+              {r.job && (r.state === 'paused' || r.state === 'failed') && (
+                <button
+                  type="button"
+                  className="rounded-full p-1 hover:bg-[var(--bg-subtle)]"
+                  aria-label={r.state === 'paused' ? t.s3.uploadResume : t.s3.uploadRetry}
+                  title={r.state === 'paused' ? t.s3.uploadResume : t.s3.uploadRetry}
+                  onClick={() => void carryOn(r)}
+                >
+                  {r.state === 'paused' ? (
+                    <Play className="h-3.5 w-3.5" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              )}
+              {r.job ? (
+                <button
+                  type="button"
+                  className="rounded-full p-1 hover:bg-[var(--bg-subtle)]"
+                  aria-label={t.s3.uploadCancel}
+                  title={t.s3.uploadCancel}
+                  onClick={() => void cancel(r)}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              ) : (
+                r.error && (
+                  <button
+                    type="button"
+                    aria-label={t.common.close}
+                    onClick={() => setSending((s) => s.filter((x) => x.id !== r.id))}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )
               )}
             </li>
           ))}

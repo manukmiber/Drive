@@ -1949,3 +1949,39 @@ lebih besar butuh Workers Paid atau flush bertahap (dicatat, belum dibuat).
 Test: `tests/integration/drive-index-sync.test.ts` (semua jenis perubahan dengan nomor entri tetap, pindai →
 scanning/ready/blocked, user lain dan node keluarga tidak masuk, gelombang 12 perubahan ≤ 2 tulis, klaim/klaim basi/
 perubahan di tengah flush, flush gagal lalu cron, backfill, akun dihapus) dan `tests/unit/drive-index.test.ts`.
+
+## ADR-075 — Zeiko S3: upload multipart dari halaman `/s3` (S4)
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: roadmap S4).
+
+- **Lewat API app, bukan host S3.** Setiap part adalah satu request ke `/api/s3/buckets/:name/uploads/...` (sesi + CSRF
+  seperti route `/s3` lain). Upload multipart-nya sama dengan yang dibuat klien S3 (`createUpload`/`uploadPart`/
+  `completeUpload`/`abortUpload` di `services/s3-objects.ts`), jadi tidak butuh CORS bucket, tidak butuh access key, dan
+  kuota (reservasi per part), scan, serta replika memakai jalur yang sama.
+  - `POST …/uploads` `{key, size, contentType}` → `{uploadId, partSize, parts}`;
+  - `PUT …/uploads/:id/parts/:n?key=` → `{etag}`;
+  - `GET …/uploads/:id?key=` → part yang sudah tersimpan (untuk melanjutkan);
+  - `POST …/uploads/:id/complete` `{key, parts}`;
+  - `DELETE …/uploads/:id?key=`.
+- **Ukuran part** dari config `s3_web_part_bytes` (32 MiB). Kalau file butuh lebih dari 10.000 part, ukurannya dinaikkan
+  ke MiB utuh, paling besar `s3_web_upload_max_bytes` (95 MiB, batas body request Cloudflare). Semua part kecuali yang
+  terakhir sama besar (aturan R2). Batas total per file: `s3_web_multipart_max_bytes` (50 GiB); kuota akun tetap
+  berlaku per part.
+- **Di halaman** (`src/web/lib/s3-upload.ts`): file yang lebih besar dari satu part dikirim per part. Jumlah part
+  paralel memakai pilihan perangkat `uploadParts`, dan jumlah file paralel `uploadFiles` (ADR-053). Error jaringan, 429,
+  dan 5xx dicoba ulang per part (5 kali: 1–16 detik). Jeda menghentikan request yang sedang berjalan. Lanjut dan Coba lagi
+  menanyakan part yang tersimpan ke server dulu, karena server yang menentukan. Batal meng-abort upload, jadi
+  reservasinya kembali. Progres, jeda/lanjut, coba lagi, dan batal tampil di baris upload `/s3`, bukan di panel upload
+  Drive (antrean itu khusus file Drive).
+- **Izin:** mulai, kirim part, dan selesai butuh akun yang boleh menulis (`readonly` → 403 `s3_readonly`). Melihat part
+  dan batal tetap boleh saat `readonly`, karena batal membebaskan ruang. Upload dicari per akun, jadi ID upload milik
+  orang lain menjawab 404.
+- `NoSuchUpload` → 404; `InvalidPart`, `InvalidPartOrder`, `EntityTooSmall` → 400 di API app.
+
+**Tidak dibangun:** melanjutkan setelah halaman dimuat ulang. ID upload hanya ada di memori tab; upload yang
+ditinggalkan dibersihkan cron `s3_expire_uploads` setelah `s3_multipart_ttl_hours`.
+
+Test: `tests/integration/s3-web-multipart.test.ts` (urutan bebas, part dikirim ulang, daftar part, objek utuh, urutan
+salah, batal, kuota, batas ukuran, readonly, ukuran part) dan suite IDOR. Dicek di Chrome dev dengan file 230 MB (8 part):
+jeda/lanjut, jaringan diputus 4 detik (12 request gagal lalu pulih, ETag sama), batal (reservasi 0), desktop gelap dan
+360 px terang.

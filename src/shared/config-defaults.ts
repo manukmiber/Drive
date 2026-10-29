@@ -178,6 +178,16 @@ export const configSchema = z.object({
   s3_web_upload_max_bytes: nonNeg()
     .max(100 * 1000 * 1000)
     .default(95 * MIB),
+  /**
+   * Bigger files from the /s3 page go up in parts through the app (S4, ADR-075): this size per part
+   * (raised when a file would need more than 10,000), each part one request.
+   */
+  s3_web_part_bytes: int()
+    .min(5 * MIB)
+    .max(100 * 1000 * 1000)
+    .default(32 * MIB),
+  /** Largest file the /s3 page uploads in parts. */
+  s3_web_multipart_max_bytes: nonNeg().default(50 * GIB),
   /** Longest a "copy link" from the /s3 page lasts (S3's own limit is 7 days). */
   s3_link_max_seconds: int()
     .min(60)
@@ -413,5 +423,7 @@ export const PUBLIC_CONFIG_KEYS = [
   's3_url_zeiko_idr',
   's3_url_custom_idr',
   's3_web_upload_max_bytes',
+  's3_web_part_bytes',
+  's3_web_multipart_max_bytes',
   's3_link_max_seconds',
 ] as const satisfies readonly ConfigKey[];

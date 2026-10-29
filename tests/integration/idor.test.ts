@@ -110,6 +110,13 @@ describe('IDOR (SPEC §14.1)', () => {
     ).key;
     expect((await a.req('POST', '/api/s3/buckets', { name: 'milik-a' })).status).toBe(201);
     expect((await b.req('POST', '/api/s3/buckets', { name: 'milik-b' })).status).toBe(201);
+    // S4: A's upload in parts from the /s3 page.
+    const started = await a.req('POST', '/api/s3/buckets/milik-a/uploads', {
+      key: 'besar.bin',
+      size: 10,
+    });
+    expect(started.status).toBe(201);
+    const aUpload = ((await started.json()) as { uploadId: string }).uploadId;
     // ADR-061: A's access token.
     const aToken = (
       (await (
@@ -148,6 +155,8 @@ describe('IDOR (SPEC §14.1)', () => {
         (await noticesOf(rt, a.userId)).map((n) => ({ id: n.id, read_at: n.read_at })),
         rt.d1.sqlite.prepare('SELECT node_id FROM node_stars WHERE user_id = ?').all(b.userId),
         rt.d1.sqlite.prepare('SELECT id, revoked_at FROM s3_keys ORDER BY id').all(),
+        rt.d1.sqlite.prepare('SELECT id, key FROM s3_uploads ORDER BY id').all(),
+        rt.d1.sqlite.prepare('SELECT upload_id, part_number FROM s3_upload_parts').all(),
         rt.d1.sqlite
           .prepare('SELECT id, user_id, revoked_at, scopes FROM api_tokens ORDER BY id')
           .all(),
@@ -244,6 +253,29 @@ describe('IDOR (SPEC §14.1)', () => {
       ['GET', '/api/s3/buckets/milik-a/stats'],
       ['PUT', '/api/s3/buckets/milik-a/logging', { target: 'milik-b', prefix: '' }],
       ['DELETE', '/api/s3/buckets/milik-a/logging'],
+      // S4: A's upload in parts, by A's bucket or through B's own.
+      ['POST', '/api/s3/buckets/milik-a/uploads', { key: 'b.bin', size: 10 }],
+      [
+        'PUT',
+        `/api/s3/buckets/milik-a/uploads/${aUpload}/parts/1?key=besar.bin`,
+        undefined,
+        body(new Uint8Array(10)),
+      ],
+      [
+        'PUT',
+        `/api/s3/buckets/milik-b/uploads/${aUpload}/parts/1?key=besar.bin`,
+        undefined,
+        body(new Uint8Array(10)),
+      ],
+      ['GET', `/api/s3/buckets/milik-a/uploads/${aUpload}?key=besar.bin`],
+      ['GET', `/api/s3/buckets/milik-b/uploads/${aUpload}?key=besar.bin`],
+      [
+        'POST',
+        `/api/s3/buckets/milik-b/uploads/${aUpload}/complete`,
+        { key: 'besar.bin', parts: [{ partNumber: 1, etag: 'x' }] },
+      ],
+      ['DELETE', `/api/s3/buckets/milik-a/uploads/${aUpload}?key=besar.bin`],
+      ['DELETE', `/api/s3/buckets/milik-b/uploads/${aUpload}?key=besar.bin`],
       // ADR-061: A's token cannot be revoked by B.
       ['DELETE', `/api/tokens/${aToken.id}`],
     ];
