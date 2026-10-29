@@ -407,6 +407,16 @@ export class DriveTree {
       .slice(0, limit);
   }
 
+  /**
+   * Files not in the Trash that the scanner cleared, each with its content object (D11). Entries made
+   * with "Make a copy" name the same object, so they are one copy, not two.
+   */
+  contents(): Array<{ node: DriveNode; blob: number | string }> {
+    return this.live()
+      .filter((e) => e.kind === 'file' && e.status === 'ready' && e.blob !== 0)
+      .map((e) => ({ node: this.toNode(e), blob: e.blob }));
+  }
+
   /** Starred and not in the Trash, the most recently changed first (the index keeps no star time). */
   starred(limit = 500): DriveNode[] {
     return this.live()

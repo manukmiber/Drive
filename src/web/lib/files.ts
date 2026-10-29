@@ -67,6 +67,14 @@ export const decorateFolders = (
   ids: string[],
   patch: { color?: string | null; icon?: string | null; coverId?: string | null },
 ) => postJson<{ nodes: NodeDto[] }>('/api/nodes/decor', { ids, ...patch });
+/** D11: files with the same content in the person's own pool, the biggest saving first. */
+export interface DuplicateGroup {
+  size: number;
+  saving: number;
+  items: Array<NodeDto & { path: Crumb[]; canRemove: boolean }>;
+}
+export const findDuplicates = () =>
+  api<{ groups: DuplicateGroup[]; saving: number }>('/api/drive/duplicates');
 export const listTrash = () => api<{ items: NodeDto[]; retentionDays: number }>('/api/trash');
 export const emptyTrash = () => sendJson<{ count: number }>('POST', '/api/trash/empty');
 

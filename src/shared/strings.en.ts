@@ -1717,6 +1717,21 @@ export const en: Strings = {
     disconnected: 'App disconnected',
     tooMany: 'You have the most tokens allowed. Revoke one first.',
   },
+  duplicates: {
+    title: 'Duplicate files',
+    find: 'Find duplicate files',
+    hint: 'Find files with exactly the same content and free up space.',
+    intro:
+      'Files with exactly the same content in your Drive and your Family Drive. Pick the one to keep and the rest go to the Trash. The space comes back once the Trash is emptied.',
+    none: 'No duplicate files. Nice!',
+    total: (bytes: string) => `Save up to ${bytes}`,
+    group: (count: number, size: string) => `${count} files · ${size} each`,
+    keep: 'Keep this one',
+    kept: 'Kept',
+    notYours: 'Not made by you, can’t be moved',
+    trashOthers: (n: number) => `Move the other ${n} to the Trash`,
+    trashed: (n: number) => `${n} files moved to the Trash.`,
+  },
   settings: {
     profile: 'Profile',
     profileSaved: 'Profile saved.',

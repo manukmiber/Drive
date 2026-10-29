@@ -25,6 +25,7 @@ import {
 } from '../services/oauth';
 import { downloadUrl } from '../services/download';
 import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
+import { findDuplicates } from '../services/duplicates';
 import {
   copyFile,
   createFolder,
@@ -351,6 +352,29 @@ export const ENDPOINTS: readonly Op[] = [
       responses: { 200: NODES },
     },
     async (c) => c.json({ items: await readTrash(c.get('ctx'), userId(c)) }),
+  ),
+  op(
+    {
+      method: 'get',
+      path: '/drive/duplicates',
+      scope: 'drive.read',
+      tag: 'Drive',
+      summary:
+        'Files with the same content in your own Drive and your family\'s, the biggest saving first. Copies made with "Make a copy" share their content and are not counted; saving is the bytes back once all but one copy are gone from the Trash too',
+      responses: {
+        200: z.strictObject({
+          groups: z.array(
+            z.strictObject({
+              size: z.number().int(),
+              saving: z.number().int(),
+              items: z.array(S.Node.extend({ path: z.array(S.Crumb), canRemove: z.boolean() })),
+            }),
+          ),
+          saving: z.number().int(),
+        }),
+      },
+    },
+    async (c) => c.json(await findDuplicates(c.get('ctx'), userId(c))),
   ),
   op(
     {

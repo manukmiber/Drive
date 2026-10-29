@@ -2209,3 +2209,25 @@ Tanggal: 2026-10-29. Status: diterima (pemilik: "Langsung kerjain roadmap yang d
   Pembersihan cron untuk kode OAuth dan Idempotency-Key ikut pindah.
 
 Test: suite token, OAuth, API v1, akun, dan IDOR membaca tabel itu dari access DB (`rt.access`).
+
+## ADR-081 — D11: cari file kembar dari index, hash tetap di konten
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Langsung kerjain roadmap yang dependencynya udah dikerjakan").
+
+**Keputusan:**
+- `GET /api/drive/duplicates` (dan `/api/v1/drive/duplicates`, scope `drive.read`) mengelompokkan file yang isinya sama
+  di pohon yang memang dilihat orang itu: index pribadinya dan index keluarganya (`DriveTree.contents()`: file di luar
+  Sampah yang sudah lolos pindai, beserta objek kontennya). File pribadi anggota lain di pool keluarga yang sama tidak
+  pernah ikut, jadi kelompok tidak pernah memberi tanda bahwa orang lain menyimpan file yang sama.
+- Hash tidak masuk index (64 karakter per file akan hampir menggandakan ukurannya, padahal index harus seringan
+  mungkin). Hash tetap di konten: `blobs.sha256` (diisi pemindai), dibaca hanya untuk objek yang ukurannya dipakai
+  objek lain, lewat `r2_key` dari index dan dibatasi ke pool orang itu sendiri. Tanpa tabel atau kolom D1 baru. Saat R8
+  membuang `blobs` dari D1, hash harus ikut pindah bersama metadata konten (misalnya metadata objek R2).
+- Entri yang menunjuk objek yang sama (hasil "Buat salinan") dihitung satu salinan. Hemat per kelompok =
+  (jumlah objek berbeda − 1) × ukuran; ruangnya kembali setelah Sampah dikosongkan.
+- User memilih satu yang disimpan, sisanya dipindah lewat `POST /api/nodes/trash` biasa (izin dari service yang sama).
+  Di ruang keluarga, file buatan orang lain ditandai `canRemove: false` (SPEC §9.2) dan tidak ikut dipindah.
+- Halaman `/kembar`, dibuka dari kartu penyimpanan di sidebar dan dari Pengaturan.
+
+Test: kelompok benar dan salinan berbagi objek tidak dihitung, tidak pernah lintas orang, keluarga (file pribadi
+pemilik di pool keluarga tidak terlihat oleh anggota, izin pindah ke Sampah), bentuk jawaban v1.

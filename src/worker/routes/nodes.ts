@@ -9,6 +9,7 @@ import { requireNode } from '../services/access';
 import { listRecent, listStarred, parseType, search, setStar } from '../services/browse';
 import { downloadPlan, downloadUrl, previewUrl } from '../services/download';
 import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
+import { findDuplicates } from '../services/duplicates';
 import {
   copyFile,
   createFolder,
@@ -89,6 +90,10 @@ export const nodes = new Hono<AppBindings>()
         c.req.valid('query').space ?? 'personal',
         c.req.header('if-none-match'),
       ),
+  )
+  // D11: files with the same content, in the person's own pool.
+  .get('/drive/duplicates', async (c) =>
+    c.json(await findDuplicates(c.get('ctx'), c.get('user')!.id)),
   )
   .get('/nodes/:id', async (c) =>
     c.json(await readNode(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),

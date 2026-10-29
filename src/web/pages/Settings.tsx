@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowDownUp, Brain, CircleUser, Languages, MapPin } from 'lucide-react';
+import { ArrowDownUp, Brain, CircleUser, CopyCheck, Languages, MapPin } from 'lucide-react';
 import { useState } from 'react';
 import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
@@ -48,6 +48,7 @@ export function Settings() {
       <ZeikoAccount />
       <Language />
       <Transfers />
+      <DuplicateFiles />
 
       <section className={card} aria-labelledby="profil">
         <h2 id="profil" className="font-medium">
@@ -125,6 +126,24 @@ function Transfers() {
       </h2>
       <p className="mt-1 mb-4 text-sm text-[var(--fg-muted)]">{t.transfer.settingsBody}</p>
       <TransferSettingsForm />
+    </section>
+  );
+}
+
+/** D11: the duplicate finder lives with the storage settings. */
+function DuplicateFiles() {
+  return (
+    <section className={card} aria-labelledby="kembar">
+      <h2 id="kembar" className="flex items-center gap-2 font-medium">
+        <CopyCheck className="h-4 w-4" aria-hidden="true" /> {t.duplicates.title}
+      </h2>
+      <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.duplicates.hint}</p>
+      <Link
+        to="/kembar"
+        className="mt-3 inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium"
+      >
+        {t.duplicates.find}
+      </Link>
     </section>
   );
 }

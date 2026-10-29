@@ -56,6 +56,8 @@ lewat fase R di `docs/ROADMAP.md`.
   `deploy/production.json`, deploy (`DEPLOY.md`).
 - [x] R6 sebagian (ADR-080, 2026-10-29): token API, OAuth (grant, code), Idempotency-Key di D1 khusus akses. Sesi
   Better Auth tetap di D1 utama bersama `users` sampai R7.
+- [x] D11 cari file kembar (ADR-081, 2026-10-29): `/kembar`, `GET /api/drive/duplicates` (+ v1), dari index pribadi
+  dan keluarga, hash dari `blobs.sha256`, hanya di pool sendiri.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

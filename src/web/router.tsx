@@ -28,6 +28,7 @@ const SignIn = page(() => import('./pages/SignIn'), 'SignIn');
 const AppShell = page(() => import('./components/AppShell'), 'AppShell');
 const Drive = page(() => import('./pages/Drive'), 'Drive');
 const Trash = page(() => import('./pages/Trash'), 'Trash');
+const Duplicates = page(() => import('./pages/Duplicates'), 'Duplicates');
 const Recent = page(() => import('./pages/Lists'), 'Recent');
 const Search = page(() => import('./pages/Lists'), 'Search');
 const Shared = page(() => import('./pages/Lists'), 'Shared');
@@ -130,6 +131,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => appRoute, path: '/berbintang', component: Starred }),
     searchRoute,
     createRoute({ getParentRoute: () => appRoute, path: '/sampah', component: Trash }),
+    createRoute({ getParentRoute: () => appRoute, path: '/kembar', component: Duplicates }),
     createRoute({ getParentRoute: () => appRoute, path: '/paket', component: Billing }),
     // Invoices are not shown any more (ADR-041); links in older emails land on Paket.
     createRoute({

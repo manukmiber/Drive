@@ -164,6 +164,12 @@ export function AppShell() {
           >
             {t.storage.addSpace}
           </Link>
+          <Link
+            to="/kembar"
+            className="mt-2 block text-center text-xs text-[var(--fg-muted)] hover:text-[var(--fg)]"
+          >
+            {t.duplicates.find}
+          </Link>
         </div>
         <AdCard placement="explorer_sidebar" />
         <nav className="flex flex-col gap-0.5" aria-label={t.a11y.productsNav}>

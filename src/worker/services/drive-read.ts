@@ -219,7 +219,7 @@ export async function personalTree(ctx: Ctx, userId: string): Promise<LoadedTree
 }
 
 /** Family rights (SPEC §9.2), as `nodeAccess` gives them; in the index the owner is the maker. */
-function familyAccess(node: DriveNode, userId: string, role: LoadedTree['role']): Access {
+export function familyAccess(node: DriveNode, userId: string, role: LoadedTree['role']): Access {
   const privileged = role === 'owner' || node.createdBy === userId;
   return {
     view: true,

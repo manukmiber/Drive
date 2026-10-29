@@ -1744,6 +1744,21 @@ export const t = {
     disconnected: 'Aplikasi diputuskan',
     tooMany: 'Jumlah tokenmu sudah maksimal. Cabut salah satu dulu.',
   },
+  duplicates: {
+    title: 'File kembar',
+    find: 'Cari file kembar',
+    hint: 'Temukan file yang isinya sama persis supaya ruangmu lega.',
+    intro:
+      'File yang isinya sama persis di Drive kamu dan Drive Keluarga. Pilih satu yang disimpan, sisanya dipindah ke Sampah. Ruangnya kembali setelah Sampah dikosongkan.',
+    none: 'Tidak ada file kembar. Mantap!',
+    total: (bytes: string) => `Bisa hemat ${bytes}`,
+    group: (count: number, size: string) => `${count} file · masing-masing ${size}`,
+    keep: 'Simpan yang ini',
+    kept: 'Disimpan',
+    notYours: 'Bukan buatanmu, tidak bisa dipindah',
+    trashOthers: (n: number) => `Pindahkan ${n} lainnya ke Sampah`,
+    trashed: (n: number) => `${n} file dipindah ke Sampah.`,
+  },
   settings: {
     profile: 'Profil',
     profileSaved: 'Profil disimpan.',
