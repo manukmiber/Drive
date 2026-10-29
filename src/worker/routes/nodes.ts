@@ -10,6 +10,7 @@ import { listRecent, listStarred, parseType, search, setStar } from '../services
 import { downloadPlan, downloadUrl, previewUrl } from '../services/download';
 import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
 import { findDuplicates } from '../services/duplicates';
+import { setExpiry } from '../services/expiry';
 import {
   copyFile,
   createFolder,
@@ -169,6 +170,28 @@ export const nodes = new Hono<AppBindings>()
       nodes: await restoreNodes(c.get('ctx'), c.get('user')!.id, c.req.valid('json').ids),
     });
   })
+  // D12: the day it goes to the Trash by itself (a WIB date); null clears it.
+  .put(
+    '/nodes/:id/expiry',
+    validate(
+      'json',
+      z.object({
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable(),
+      }),
+    ),
+    async (c) =>
+      c.json({
+        node: await setExpiry(
+          c.get('ctx'),
+          c.get('user')!.id,
+          c.req.param('id'),
+          c.req.valid('json').date,
+        ),
+      }),
+  )
   // Folder decoration (ADR-058): any of colour, icon, cover; null clears, left out keeps.
   .post(
     '/nodes/decor',

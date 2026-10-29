@@ -47,6 +47,7 @@ function tree(n: number): IndexEntry[] {
       owner: 0,
       canEdit: false,
       trashedBy: 0,
+      expiresAt: null,
       starred: rnd() < 0.03,
     } as const;
     if (rnd() < 0.05) {

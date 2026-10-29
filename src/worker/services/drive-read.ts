@@ -24,7 +24,7 @@ import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { requireNode, type Access } from './access';
 import { FAMILY_ROOT_NAME, PERSONAL_ROOT_NAME } from './accounts';
-import { indexKey, readIndex, type IndexOwner } from './drive-index';
+import { indexKey, readIndex, type IndexDoc, type IndexOwner } from './drive-index';
 import { project, readFamilyTree, readTree } from './drive-index-sync';
 import { breadcrumb, getNodeDto, listChildren, type Crumb, type NodeDto } from './nodes';
 
@@ -81,24 +81,31 @@ async function familyState(ctx: Ctx, userId: string): Promise<IndexState | null>
   };
 }
 
-/** The index brought up to D1 in memory (nothing is written; the change's own flush does that). */
-async function freshText(ctx: Ctx, owner: IndexOwner): Promise<string | null> {
-  const { doc } = await readIndex(ctx.env.BUCKET, owner);
+/** Brings `doc` up to D1 (false: the family is gone). Writes nothing; callers decide that. */
+export async function catchUp(ctx: Ctx, doc: IndexDoc, owner: IndexOwner): Promise<boolean> {
   if ('user' in owner) {
     const tree = await readTree(ctx, owner.user);
     project(doc, tree.rows, tree.used);
-  } else {
-    const tree = await readFamilyTree(ctx, owner.family);
-    if (!tree) return null;
-    project(doc, tree.rows, tree.used, tree.members);
+    return true;
   }
-  return doc.toText();
+  const tree = await readFamilyTree(ctx, owner.family);
+  if (!tree) return false;
+  project(doc, tree.rows, tree.used, tree.members);
+  return true;
+}
+
+/** The index brought up to D1 in memory (nothing is written; the change's own flush does that). */
+async function freshText(ctx: Ctx, owner: IndexOwner): Promise<string | null> {
+  const { doc } = await readIndex(ctx.env.BUCKET, owner);
+  return (await catchUp(ctx, doc, owner)) ? doc.toText() : null;
 }
 
 export interface DriveIndex {
   /** R2's etag of the stored index; null when this answer was brought up to D1 in memory. */
   etag: string | null;
   body: ReadableStream | string;
+  /** Whose index it is. */
+  index: IndexOwner;
   locked: boolean;
   /** Who asked, and the Trash retention: what a client needs to read it as the API does. */
   owner: string;
@@ -121,6 +128,7 @@ export async function openIndex(
   ]);
   if (!state) return null;
   const about = {
+    index: state.owner,
     locked: state.locked,
     owner: userId,
     trashDays: cfg.trash_retention_days,
@@ -174,6 +182,7 @@ export async function indexAnswer(
 
 interface LoadedTree {
   tree: DriveTree;
+  index: IndexOwner;
   locked: boolean;
   role: 'owner' | 'member' | null;
 }
@@ -202,7 +211,7 @@ export function driveTree(
           trashDays: idx.trashDays,
           rootName: space === 'family' ? FAMILY_ROOT_NAME : PERSONAL_ROOT_NAME,
         });
-        return { tree, locked: idx.locked, role: idx.role };
+        return { tree, index: idx.index, locked: idx.locked, role: idx.role };
       } catch (e) {
         if (e instanceof IndexFormatError) throw new AppError('INTERNAL', e.message);
         throw e;
@@ -231,14 +240,14 @@ export function familyAccess(node: DriveNode, userId: string, role: LoadedTree['
 }
 
 /** The node in one of the person's trees, their own first; locked files answer as requireNode does. */
-async function treeNode(ctx: Ctx, userId: string, id: string) {
+export async function treeNode(ctx: Ctx, userId: string, id: string) {
   for (const space of ['personal', 'family'] as const) {
     const t = await driveTree(ctx, userId, space);
     const node = t?.tree.node(id);
     if (!t || !node) continue;
     if (t.locked) throw new AppError('ACCOUNT_SUSPENDED', 'file access is locked until payment');
     const access = space === 'personal' ? OWNER : familyAccess(node, userId, t.role);
-    return { tree: t.tree, node, access };
+    return { tree: t.tree, index: t.index, node, access };
   }
   return null;
 }

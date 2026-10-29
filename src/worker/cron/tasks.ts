@@ -10,6 +10,7 @@ import {
 } from '../services/billing';
 import { purgeExpiredTrash } from '../services/nodes';
 import { flushDirtyIndexes } from '../services/drive-index-sync';
+import { runExpiries } from '../services/expiry';
 import { deletionReminders, processAccountDeletions } from '../services/account';
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
@@ -151,6 +152,15 @@ registerCronTask(CRON.nightly, {
       A.prepare('DELETE FROM api_idempotency WHERE created_at < ?1').bind(ctx.now() - DAY_MS),
       A.prepare('DELETE FROM oauth_codes WHERE expires_at < ?1').bind(ctx.now() - DAY_MS),
     ]);
+  },
+});
+
+// D12 (ADR-082): reminders for tomorrow, and items whose day came to the Trash. Before the purge.
+registerCronTask(CRON.nightly, {
+  name: 'drive_expiry',
+  async run(ctx) {
+    const r = await runExpiries(ctx);
+    if (r.expired || r.reminded) log.info('drive_expiry', r);
   },
 });
 

@@ -39,6 +39,7 @@ function file(id: number, parent: number, name: string, extra: Partial<IndexEntr
     owner: 0,
     canEdit: false,
     trashedBy: 0,
+    expiresAt: null,
     ...extra,
   } satisfies IndexEntry;
 }

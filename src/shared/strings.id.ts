@@ -1599,6 +1599,7 @@ export const t = {
       archive_ready: 'Arsip siap diunduh',
       compress_done: 'Kompres selesai',
       ad_status: 'Status iklan',
+      file_expiring: 'Pengingat hapus otomatis',
     } as Record<string, string>,
   },
   family: {
@@ -1758,6 +1759,16 @@ export const t = {
     notYours: 'Bukan buatanmu, tidak bisa dipindah',
     trashOthers: (n: number) => `Pindahkan ${n} lainnya ke Sampah`,
     trashed: (n: number) => `${n} file dipindah ke Sampah.`,
+  },
+  expiry: {
+    title: 'Hapus otomatis',
+    hint: 'Pada tanggal ini item pindah ke Sampah sendiri. Kami ingatkan sehari sebelumnya.',
+    none: 'Belum dipasang',
+    on: (date: string) => `Pindah ke Sampah ${date}`,
+    set: 'Pasang',
+    clear: 'Hapus tanggal',
+    saved: 'Tanggal hapus otomatis disimpan.',
+    cleared: 'Tanggal hapus otomatis dihapus.',
   },
   settings: {
     profile: 'Profil',
@@ -1925,6 +1936,7 @@ export const t = {
     ctaRenewPlan: 'Perpanjang paket',
     ctaRenew: 'Perpanjang',
     ctaOpenS3: 'Buka Zeiko S3',
+    ctaOpenDrive: 'Buka Drive',
     ctaAddSpace: 'Tambah ruang',
     ctaSettings: 'Buka Pengaturan',
     ctaDownloads: 'Buka Unduhan',
@@ -1984,6 +1996,11 @@ export const t = {
     archiveTitle: 'Arsip siap diunduh',
     archiveBody: (name: string, size: string) =>
       `"${name}" (${size}) sudah jadi. Link unduhannya berlaku 24 jam.`,
+    expiringTitle: (n: number) =>
+      n === 1 ? 'Satu item pindah ke Sampah besok' : `${n} item pindah ke Sampah besok`,
+    expiringBody: (names: string, date: string) =>
+      `${names} dijadwalkan pindah ke Sampah pada ${date}. Kalau masih mau disimpan, hapus atau ubah tanggalnya di panel Detail.`,
+    expiringMore: (n: number) => `dan ${n} lainnya`,
     adApproved: (title: string) => `Iklan "${title}" disetujui`,
     adAwaiting: (title: string) => `Iklan "${title}" disetujui, tinggal dibayar`,
     adPaid: (title: string) => `Iklan "${title}" disetujui dan sudah dibayar`,

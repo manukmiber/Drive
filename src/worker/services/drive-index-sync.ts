@@ -345,6 +345,8 @@ export function project(doc: IndexDoc, rows: TreeRow[], used: number, members?: 
       owner: at(r.owner_id),
       canEdit: Boolean(slots && r.family_can_edit === 1),
       trashedBy: r.trashed_at === null ? 0 : at(r.trashed_by),
+      // D12 (ADR-082): only the index keeps it, so it outlives every projection of the D1 row.
+      expiresAt: had.get(r.id)?.expiresAt ?? null,
     };
     const before = had.get(r.id);
     if (!before || entryLine(before) !== entryLine(entry)) doc.set(entry);

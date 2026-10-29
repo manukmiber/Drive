@@ -1,6 +1,7 @@
 // List/grid of nodes with Drive-like selection (click, Ctrl/⌘, Shift, long-press), context menu,
 // kebab menu and keyboard shortcuts. Used by Drive, Cari, Terbaru, Berbintang.
 import {
+  Clock,
   Download,
   MoreVertical,
   Share2,
@@ -309,6 +310,7 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
                         aria-label={t.files.star}
                       />
                     )}
+                    <ExpiryMark node={node} />
                   </span>
                   <span className="block truncate text-xs text-[var(--fg-muted)] md:hidden">
                     {formatDate(node.updatedAt)}
@@ -356,6 +358,7 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
               <div className="flex items-center gap-2 px-3 py-2">
                 <FileIcon node={node} className="h-4 w-4 shrink-0" />
                 <span className="min-w-0 flex-1 truncate text-sm">{node.name}</span>
+                <ExpiryMark node={node} />
                 {kebab(node)}
               </div>
               {node.kind === 'file' && (
@@ -384,6 +387,17 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
       {actions.ui}
       {archiving && <ArchiveDialog ids={archiving} onClose={() => setArchiving(null)} />}
     </div>
+  );
+}
+
+/** D12: a clock on items that go to the Trash by themselves. */
+function ExpiryMark({ node }: { node: NodeDto }) {
+  if (node.expiresAt === null || node.trashedAt !== null) return null;
+  const label = t.expiry.on(formatDate(node.expiresAt));
+  return (
+    <span title={label} className="shrink-0">
+      <Clock className="h-3 w-3 text-[var(--fg-muted)]" aria-label={label} />
+    </span>
   );
 }
 

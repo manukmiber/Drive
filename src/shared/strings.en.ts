@@ -1573,6 +1573,7 @@ export const en: Strings = {
       archive_ready: 'Archive ready to download',
       compress_done: 'Compressing finished',
       ad_status: 'Ad status',
+      file_expiring: 'Auto-delete reminders',
     } as Record<string, string>,
   },
   family: {
@@ -1731,6 +1732,16 @@ export const en: Strings = {
     notYours: 'Not made by you, can’t be moved',
     trashOthers: (n: number) => `Move the other ${n} to the Trash`,
     trashed: (n: number) => `${n} files moved to the Trash.`,
+  },
+  expiry: {
+    title: 'Auto-delete',
+    hint: 'On this day the item moves to the Trash by itself. We remind you the day before.',
+    none: 'Not set',
+    on: (date: string) => `Moves to the Trash ${date}`,
+    set: 'Set',
+    clear: 'Remove date',
+    saved: 'Auto-delete date saved.',
+    cleared: 'Auto-delete date removed.',
   },
   settings: {
     profile: 'Profile',
@@ -1898,6 +1909,7 @@ export const en: Strings = {
     ctaRenewPlan: 'Renew your plan',
     ctaRenew: 'Renew',
     ctaOpenS3: 'Open Zeiko S3',
+    ctaOpenDrive: 'Open Drive',
     ctaAddSpace: 'Add space',
     ctaSettings: 'Open Settings',
     ctaDownloads: 'Open Downloads',
@@ -1954,6 +1966,11 @@ export const en: Strings = {
     archiveTitle: 'Your archive is ready to download',
     archiveBody: (name: string, size: string) =>
       `"${name}" (${size}) is ready. Its download link works for 24 hours.`,
+    expiringTitle: (n: number) =>
+      n === 1 ? 'One item goes to the Trash tomorrow' : `${n} items go to the Trash tomorrow`,
+    expiringBody: (names: string, date: string) =>
+      `${names} will move to the Trash on ${date}. To keep it, remove or change the date in the Details panel.`,
+    expiringMore: (n: number) => `and ${n} more`,
     adApproved: (title: string) => `Your ad "${title}" is approved`,
     adAwaiting: (title: string) => `Your ad "${title}" is approved and waiting for payment`,
     adPaid: (title: string) => `Your ad "${title}" is approved and paid`,

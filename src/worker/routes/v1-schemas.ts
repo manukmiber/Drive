@@ -37,6 +37,7 @@ export const Node = z.strictObject({
       coverId: z.string().nullable(),
     })
     .nullable(),
+  expiresAt: ms.nullable().describe('When it goes to the Trash by itself (00:00 WIB that day)'),
 });
 
 export const Crumb = z.strictObject({

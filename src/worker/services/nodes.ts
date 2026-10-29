@@ -69,6 +69,8 @@ export function toDto(r: Row): NodeDto {
     updatedAt: r.updated_at,
     clientModifiedAt: r.client_modified_at,
     decor: decorOf(r),
+    // D12 (ADR-082): kept only in the index; reads from D1 don't know it.
+    expiresAt: null,
   };
 }
 

@@ -98,6 +98,9 @@ export const nodeInfo = (id: string) =>
     path: Crumb[];
     access: { view: boolean; edit: boolean; remove: boolean; isOwner: boolean };
   }>(`/api/nodes/${id}`);
+/** D12: the day a node goes to the Trash by itself (YYYY-MM-DD, WIB), or null to clear it. */
+export const setExpiry = (id: string, date: string | null) =>
+  sendJson<{ node: NodeDto }>('PUT', `/api/nodes/${id}/expiry`, { date });
 export const setStar = (id: string, on: boolean) =>
   api<void>(`/api/nodes/${id}/star`, { method: on ? 'PUT' : 'DELETE' });
 export const searchNodes = (q: string, type?: string) =>

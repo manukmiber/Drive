@@ -2231,3 +2231,35 @@ Tanggal: 2026-10-29. Status: diterima (pemilik: "Langsung kerjain roadmap yang d
 
 Test: kelompok benar dan salinan berbagi objek tidak dihitung, tidak pernah lintas orang, keluarga (file pribadi
 pemilik di pool keluarga tidak terlihat oleh anggota, izin pindah ke Sampah), bentuk jawaban v1.
+
+## ADR-082 — D12: tanggal hapus otomatis, kolom pertama yang hanya ada di index
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Langsung kerjain roadmap yang dependencynya udah dikerjakan").
+
+**Keputusan:**
+- Prompt D12 meminta kolom baru di `nodes`; ADR-064 melarangnya. Tanggalnya jadi kolom index `ex` (detik unix,
+  00:00 WIB hari itu; 0 = tidak ada), ditaruh paling belakang supaya baris tanpa tanggal tidak bertambah panjang. Header
+  menamai kolomnya, jadi index lama dan klien lama tetap terbaca; index lama ditulis ulang penuh sekali saat berubah.
+- Ini **kolom pertama yang hanya ada di index**: D1 tidak tahu. `project()` (R3) membawa nilai `ex` dari entri lama ke
+  entri hasil proyeksi, jadi ganti nama, pindah folder, dan flush apa pun tidak menghapusnya. Kolom index-only
+  berikutnya harus dibawa dengan cara yang sama. Jawaban yang dibuat dari D1 (Terbaru, jawaban tulis) memberi
+  `expiresAt: null`; bacaan dari index memberi nilai sebenarnya. Item yang pindah antar ruang (pribadi ↔ keluarga)
+  mendapat entri baru di index lain, jadi tanggalnya tidak ikut.
+- `PUT /api/nodes/:id/expiry {date: "YYYY-MM-DD" | null}` (dan v1, scope `drive.write`): perlu izin remove (SPEC §9.2),
+  tanggal mulai besok sampai 10 tahun, bukan root, bukan item di Sampah. Ditulis lewat `changeIndex`; kalau index
+  belum menyusul D1 (folder yang baru dibuat), index diproyeksikan dulu di dalam tulisan yang sama.
+- Cron tidak bisa membaca semua index. Memasang tanggal juga menaruh objek penanda kosong
+  `sys/expiry/{YYYY-MM-DD}/{u|f}/{id}`. Cron malam (02:00 WIB, sebelum `purge_trash`) membaca penanda berurutan sampai
+  besok: penanda besok → satu notifikasi `file_expiring` per orang (H-1, bisa dimatikan emailnya); penanda hari ini
+  atau yang terlewat → item yang jatuh tempo dipindah ke Sampah lewat `trashNodes`, tanggalnya dihapus dari index,
+  penandanya dihapus. Penanda untuk tanggal yang sudah diganti atau dihapus tidak berbahaya: index itu tidak punya
+  yang jatuh tempo. Kalau ada item yang belum bisa dipindah (misalnya pool terkunci), penandanya tetap dan dicoba lagi
+  besok.
+- Pelakunya: di Drive pribadi, user itu sendiri; di keluarga, anggota yang membuat item (posisi `o`), atau pemilik
+  keluarga kalau pembuatnya sudah keluar. Jadi item masuk ke Sampah pembuatnya, dan pengingat H-1 juga dikirim ke dia.
+- Ikon jam di explorer (daftar dan grid), bagian "Hapus otomatis" di panel Detail.
+
+Test: jam palsu (H-2 tidak ada apa-apa, H-1 pengingat, hari H pindah ke Sampah, dipulihkan tidak dipindah lagi), tetap
+kena setelah ganti nama dan pindah folder, folder beserta isinya, tanggal yang dihapus, izin (orang lain 404, root 403,
+tanggal tidak sah 400, item di Sampah 400), keluarga (anggota hanya item buatannya, Sampah dan pengingat milik pembuat).
+

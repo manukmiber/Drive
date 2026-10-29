@@ -2,7 +2,7 @@
 // (ADR-041). Since ADR-064 the relay keeps them (adapters/notices.ts): `notify` queues the notice
 // with its content, and the notify consumer files it with the relay (once per id), then mails it
 // unless the person switched that kind off. Words are rendered here, at delivery and in the bell.
-import { formatBytes, formatDateTime, formatRupiah } from '../../shared/format';
+import { formatBytes, formatDate, formatDateTime, formatRupiah } from '../../shared/format';
 import { AD_CONTACT } from '../../shared/constants';
 import type { Ctx } from '../context';
 import { ulid } from '../lib/ids';
@@ -27,7 +27,8 @@ export type NotificationType =
   | 'account_delete'
   | 's3_reminder'
   | 's3_dunning'
-  | 's3_url_released';
+  | 's3_url_released'
+  | 'file_expiring';
 
 /** Queue a notice. It reaches the bell once the relay has it (the queue retries until then). */
 export async function notify(
@@ -147,6 +148,20 @@ export function renderNotice(
         paragraphs: [m.deleteBody(formatDateTime(Number(p.deleteAt))), m.deleteUndo],
         cta: { label: m.ctaSettings, url: `${app}/pengaturan` },
       };
+    case 'file_expiring': {
+      const names = (p.names as string[]).map((n) => `"${n}"`).join(', ');
+      const more = Number(p.count) - (p.names as string[]).length;
+      return {
+        title: m.expiringTitle(Number(p.count)),
+        paragraphs: [
+          m.expiringBody(
+            more > 0 ? `${names} ${m.expiringMore(more)}` : names,
+            formatDate(Number(p.date)),
+          ),
+        ],
+        cta: { label: m.ctaOpenDrive, url: `${app}/` },
+      };
+    }
     case 'archive_ready':
       return {
         title: m.archiveTitle,
@@ -211,7 +226,9 @@ export function renderNotice(
       if (skipped) parts.push(m.compressSkipped(skipped));
       if (failed) parts.push(m.compressFailed(failed));
       return {
-        title: done ? m.compressTitleSaved(formatBytes(Number(p.savedBytes ?? 0))) : m.compressTitle,
+        title: done
+          ? m.compressTitleSaved(formatBytes(Number(p.savedBytes ?? 0)))
+          : m.compressTitle,
         paragraphs: [m.compressBody(parts.join(', '))],
         cta: { label: m.ctaResults, url: `${app}/kompres` },
       };
@@ -318,6 +335,7 @@ export const PREF_TYPES = [
   'archive_ready',
   'compress_done',
   'ad_status',
+  'file_expiring',
 ] as const;
 
 export async function getPrefs(ctx: Ctx, userId: string) {

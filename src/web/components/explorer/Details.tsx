@@ -1,12 +1,16 @@
 // Right-hand Detail panel (SPEC §8.1).
-import { useQuery } from '@tanstack/react-query';
-import { X } from 'lucide-react';
-import { formatBytes, formatDateTime } from '../../../shared/format';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Clock, X } from 'lucide-react';
+import { useState } from 'react';
+import { formatBytes, formatDate, formatDateTime } from '../../../shared/format';
+import { addDaysWib, wibDate } from '../../../shared/time';
 import { useCatalog } from '../../lib/catalog';
 import { t } from '../../lib/i18n';
-import { nodeInfo } from '../../lib/files';
+import { nodeInfo, setExpiry, type NodeDto } from '../../lib/files';
 import { useMe } from '../../lib/session';
+import { Button } from '../Button';
 import { FileIcon } from '../FileIcon';
+import { toast } from '../ui/Toast';
 
 export function Details({ id, onClose }: { id: string; onClose: () => void }) {
   const me = useMe();
@@ -70,8 +74,77 @@ export function Details({ id, onClose }: { id: string; onClose: () => void }) {
             {row(t.files.modified, formatDateTime(n.updatedAt))}
             {n.kind === 'file' && row(t.files.scanStatus, t.files.scanLabels[scan] ?? '—')}
           </dl>
+          <Expiry
+            key={n.id}
+            node={n}
+            canSet={Boolean(q.data?.access.remove) && n.trashedAt === null}
+          />
         </>
       )}
     </aside>
+  );
+}
+
+/** D12 (ADR-082): the day it goes to the Trash by itself, set by whoever may remove it. */
+function Expiry({ node, canSet }: { node: NodeDto; canSet: boolean }) {
+  const qc = useQueryClient();
+  const [tomorrow] = useState(() => addDaysWib(wibDate(Date.now()), 1));
+  const [date, setDate] = useState(() => (node.expiresAt ? wibDate(node.expiresAt) : ''));
+  const save = useMutation({
+    mutationFn: (value: string | null) => setExpiry(node.id, value),
+    onSuccess: async (r) => {
+      toast(r.node.expiresAt ? t.expiry.saved : t.expiry.cleared);
+      if (!r.node.expiresAt) setDate('');
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['node', node.id] }),
+        qc.invalidateQueries({ queryKey: ['children'] }),
+      ]);
+    },
+    onError: () => toast(t.errors.generic, { tone: 'error' }),
+  });
+  if (!canSet && node.expiresAt === null) return null;
+  return (
+    <section className="mt-5 border-t border-[var(--border)] pt-4" aria-labelledby="expiry">
+      <h3 id="expiry" className="flex items-center gap-2 text-sm font-medium">
+        <Clock className="h-4 w-4" aria-hidden="true" /> {t.expiry.title}
+      </h3>
+      <p className="mt-1 text-sm">
+        {node.expiresAt ? t.expiry.on(formatDate(node.expiresAt)) : t.expiry.none}
+      </p>
+      {canSet && (
+        <>
+          <p className="mt-1 text-xs text-[var(--fg-muted)]">{t.expiry.hint}</p>
+          <form
+            className="mt-3 flex flex-wrap gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (date) save.mutate(date);
+            }}
+          >
+            <input
+              type="date"
+              min={tomorrow}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              aria-label={t.expiry.title}
+              className="h-9 min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 text-sm"
+            />
+            <Button type="submit" variant="secondary" disabled={!date || save.isPending}>
+              {t.expiry.set}
+            </Button>
+            {node.expiresAt !== null && (
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={save.isPending}
+                onClick={() => save.mutate(null)}
+              >
+                {t.expiry.clear}
+              </Button>
+            )}
+          </form>
+        </>
+      )}
+    </section>
   );
 }

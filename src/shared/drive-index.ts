@@ -16,7 +16,8 @@ export const INDEX_VERSION = 1;
  * scanner or a takedown refused it) · c / u / cm: created, updated (0 = same as created), modified on the uploader's device, in unix
  * seconds · th: has a thumbnail · f: starred · t: moved to Trash at · tr: the entry the person
  * trashed · d: folder decoration [colour, icon, cover entry] · o / e / tb: family only: owner,
- * others may edit, trashed by (member positions in the header).
+ * others may edit, trashed by (member positions in the header) · ex: goes to the Trash on this day
+ * (D12, ADR-082; kept only here, not in D1).
  */
 export const INDEX_COLUMNS = [
   'id',
@@ -39,6 +40,7 @@ export const INDEX_COLUMNS = [
   'o',
   'e',
   'tb',
+  'ex',
 ] as const;
 type Column = (typeof INDEX_COLUMNS)[number];
 
@@ -83,6 +85,8 @@ export interface IndexEntry {
   owner: number;
   canEdit: boolean;
   trashedBy: number;
+  /** D12: when it goes to the Trash by itself; the index is the only place that keeps it. */
+  expiresAt: number | null;
 }
 
 type Cell = number | string | Array<string | number>;
@@ -155,6 +159,7 @@ export function entryToRow(e: IndexEntry): Row {
     e.owner,
     e.canEdit ? 1 : 0,
     e.trashedBy,
+    e.expiresAt === null ? 0 : sec(e.expiresAt),
   ];
   let end = row.length;
   while (end > 4 && (row[end - 1] === 0 || row[end - 1] === '')) end--;
@@ -200,6 +205,7 @@ export function rowToEntry(row: unknown, map: Record<Column, number>): IndexEntr
   } else if (d !== 0) throw new IndexFormatError(`bad decoration for ${id}`);
   const cm = int(at('cm'), 'clientModified');
   const t = int(at('t'), 'trashedAt');
+  const ex = int(at('ex'), 'expiresAt');
   return {
     id,
     parent: int(at('p'), 'parent'),
@@ -221,6 +227,7 @@ export function rowToEntry(row: unknown, map: Record<Column, number>): IndexEntr
     owner: int(at('o'), 'owner'),
     canEdit: at('e') === 1,
     trashedBy: int(at('tb'), 'trashedBy'),
+    expiresAt: ex ? ex * 1000 : null,
   };
 }
 

@@ -31,6 +31,8 @@ export interface DriveNode {
   clientModifiedAt: number | null;
   /** Folders only; null when undecorated (ADR-058). */
   decor: FolderDecor | null;
+  /** D12 (ADR-082): the day it goes to the Trash by itself (00:00 WIB). Only the index knows it. */
+  expiresAt: number | null;
 }
 
 export interface DriveCrumb {
@@ -263,6 +265,7 @@ export class DriveTree {
       updatedAt: this.rootCreated,
       clientModifiedAt: null,
       decor: null,
+      expiresAt: null,
     };
   }
 
@@ -316,6 +319,7 @@ export class DriveTree {
       updatedAt: e.updated,
       clientModifiedAt: e.clientModified,
       decor,
+      expiresAt: e.expiresAt,
     };
     this.nodes.set(e.id, node);
     return node;

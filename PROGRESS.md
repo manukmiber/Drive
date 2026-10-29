@@ -58,6 +58,8 @@ lewat fase R di `docs/ROADMAP.md`.
   Better Auth tetap di D1 utama bersama `users` sampai R7.
 - [x] D11 cari file kembar (ADR-081, 2026-10-29): `/kembar`, `GET /api/drive/duplicates` (+ v1), dari index pribadi
   dan keluarga, hash dari `blobs.sha256`, hanya di pool sendiri.
+- [x] D12 tanggal hapus otomatis (ADR-082, 2026-10-29): kolom index `ex` (hanya di index, dibawa proyeksi D1),
+  `PUT /api/nodes/:id/expiry` (+ v1), penanda `sys/expiry/…` untuk cron malam, pengingat H-1 `file_expiring`.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

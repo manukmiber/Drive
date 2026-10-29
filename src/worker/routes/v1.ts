@@ -26,6 +26,7 @@ import {
 import { downloadUrl } from '../services/download';
 import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
 import { findDuplicates } from '../services/duplicates';
+import { setExpiry } from '../services/expiry';
 import {
   copyFile,
   createFolder,
@@ -418,6 +419,26 @@ export const ENDPOINTS: readonly Op[] = [
     },
     async (c, { params, body }) =>
       c.json({ node: await renameNode(c.get('ctx'), userId(c), params.id, body.name) }),
+  ),
+  op(
+    {
+      method: 'put',
+      path: '/nodes/{id}/expiry',
+      scope: 'drive.write',
+      tag: 'Drive',
+      summary:
+        'Set the day a file or folder moves to the Trash by itself (a WIB date from tomorrow on; a reminder comes the day before), or clear it with null. Needs the right to remove it',
+      params: nodeParam,
+      body: z.object({
+        date: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .nullable(),
+      }),
+      responses: { 200: NODE },
+    },
+    async (c, { params, body }) =>
+      c.json({ node: await setExpiry(c.get('ctx'), userId(c), params.id, body.date) }),
   ),
   op(
     {
