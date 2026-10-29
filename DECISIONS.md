@@ -2190,3 +2190,22 @@ dari jawaban R0 no. 1, ADR-064). R5 membuka D2 dan D3, dan merupakan bagian dari
 
 Test: `tests/integration/access-db.test.ts` (baris ada di access DB dan tidak di D1 utama, hapus permanen membersihkan
 item share, jalan dari D1 utama tanpa `ACCESS_DB`), suite share, takedown, keluarga, IDOR, dan API v1 membaca access DB.
+
+## ADR-080 — R6 (sebagian): token API, OAuth, dan Idempotency-Key di D1 khusus akses; sesi ikut R7
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Langsung kerjain roadmap yang dependencynya udah dikerjakan").
+
+**Keputusan:**
+- `api_tokens`, `oauth_grants`, `oauth_codes`, `api_idempotency` pindah ke `ACCESS_DB` (`migrations-access/0002`,
+  kolom sama, tanpa foreign key ke `users`), dengan aturan ADR-079: `accessDb(env)`, D1 utama menjawab selama database
+  itu belum dibuat, dan tidak ada join lintas database. Satu-satunya join (`findToken`: token + pemiliknya) menjadi dua
+  bacaan; hash rahasia tetap dibandingkan dalam waktu konstan sebelum pemilik dibaca. Penukaran kode OAuth (klaim kode +
+  buat grant) tetap satu batch, karena kedua tabelnya di database yang sama.
+- **Sesi belum pindah.** Sesi dikelola Better Auth lewat satu adapter Drizzle di D1 utama, dan Better Auth membaca sesi
+  bersama `users` (yang baru pindah ke relay di R7). Memecah adapter per model sebelum `users` pergi berarti adapter
+  buatan sendiri di jalur login. Sesi dipindah bersama R7, saat `users` keluar dari D1. Status R6 di roadmap:
+  sebagian. D9 dan A6, yang butuh token di D1 khusus akses, sudah bisa jalan.
+- Hapus akun mencabut link dan menghapus token, grant, dan kode di access DB dalam satu batch, sebelum batch D1 utama.
+  Pembersihan cron untuk kode OAuth dan Idempotency-Key ikut pindah.
+
+Test: suite token, OAuth, API v1, akun, dan IDOR membaca tabel itu dari access DB (`rt.access`).

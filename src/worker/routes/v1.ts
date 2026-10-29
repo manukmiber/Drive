@@ -8,6 +8,7 @@ import { z, type ZodObject, type ZodType } from 'zod';
 import { DAY_MS, JSON_BODY_MAX_BYTES } from '../../shared/constants';
 import { sha256Hex } from '../lib/crypto';
 import { AppError } from '../lib/errors';
+import { accessDb } from '../lib/access-db';
 import { contentLength } from '../lib/http';
 import { honoPath, openApiDocument, type Endpoint } from '../lib/openapi';
 import { apiHeaders } from '../middleware/base';
@@ -794,7 +795,8 @@ const idempotency: MiddlewareHandler<AppBindings> = async (c, next) => {
   if (!key || key.length > 255)
     throw new AppError('VALIDATION', 'Idempotency-Key must be 1–255 characters');
   const tokenId = c.get('token')!.token.id;
-  const DB = c.env.DB;
+  // Kept beside the tokens, in the access database (ADR-080).
+  const DB = accessDb(c.env);
   const now = c.get('ctx').now();
   const hash = await sha256Hex(`${c.req.method} ${c.req.path}\n${await c.req.raw.clone().text()}`);
   const prev = await DB.prepare(

@@ -143,10 +143,13 @@ registerCronTask(CRON.nightly, {
         `DELETE FROM compress_jobs WHERE updated_at < ?1 AND status IN ('done', 'failed', 'skipped') AND source_key IS NULL AND out_key IS NULL`,
       ).bind(cutoff),
       DB.prepare(`DELETE FROM archive_jobs WHERE updated_at < ?1 AND out_key IS NULL`).bind(cutoff),
-      // Idempotency-Key answers are kept a day (ADR-062).
-      DB.prepare('DELETE FROM api_idempotency WHERE created_at < ?1').bind(ctx.now() - DAY_MS),
-      // OAuth codes live a minute (ADR-063); the rows go after a day.
-      DB.prepare('DELETE FROM oauth_codes WHERE expires_at < ?1').bind(ctx.now() - DAY_MS),
+    ]);
+    // In the access database (ADR-080): Idempotency-Key answers are kept a day (ADR-062); OAuth
+    // codes live a minute (ADR-063) and the rows go after a day.
+    const A = accessDb(ctx.env);
+    await A.batch([
+      A.prepare('DELETE FROM api_idempotency WHERE created_at < ?1').bind(ctx.now() - DAY_MS),
+      A.prepare('DELETE FROM oauth_codes WHERE expires_at < ?1').bind(ctx.now() - DAY_MS),
     ]);
   },
 });

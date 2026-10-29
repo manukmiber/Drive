@@ -123,7 +123,7 @@ Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai 
 
 ## D1 khusus akses `zeiko-access` (ADR-064, ADR-079)
 
-Link share (R5) dan nanti sesi, token API, dan OAuth (R6) tinggal di D1 sendiri, terpisah dari pohon file dan dari
+Link share (R5), token API, OAuth, dan Idempotency-Key (R6) tinggal di D1 sendiri (sesi menyusul di R7), terpisah dari pohon file dan dari
 Zeiko S3. Selama database itu belum dibuat, Worker membaca tabel yang sama dari D1 utama, jadi deploy tanpa langkah ini
 tetap jalan. Langkah ini membuat sesuatu di Cloudflare dan memindahkan data production: **tanya pemilik dulu**.
 
@@ -132,7 +132,7 @@ tetap jalan. Langkah ini membuat sesuatu di Cloudflare dan memindahkan data prod
 2. Buat tabelnya: `npm run db:migrate:access:production` (`migrations-access/`).
 3. Salin link yang sudah ada dari D1 utama, **sebelum** deploy Worker yang memakai binding baru:
    ```
-   for t in shares share_items share_sends; do
+   for t in shares share_items share_sends api_tokens api_idempotency oauth_grants oauth_codes; do
      npx wrangler d1 export zeiko-production --remote --table $t --no-schema --output $t.sql
      npx wrangler d1 execute zeiko-access-production --remote --file $t.sql
    done

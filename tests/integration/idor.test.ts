@@ -157,7 +157,7 @@ describe('IDOR (SPEC §14.1)', () => {
         rt.d1.sqlite.prepare('SELECT id, revoked_at FROM s3_keys ORDER BY id').all(),
         rt.d1.sqlite.prepare('SELECT id, key FROM s3_uploads ORDER BY id').all(),
         rt.d1.sqlite.prepare('SELECT upload_id, part_number FROM s3_upload_parts').all(),
-        rt.d1.sqlite
+        rt.access.sqlite
           .prepare('SELECT id, user_id, revoked_at, scopes FROM api_tokens ORDER BY id')
           .all(),
         rt.d1.sqlite

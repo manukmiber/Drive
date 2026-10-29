@@ -4,6 +4,7 @@
 // work on /api/v1 (and the WebDAV host); the cookie API never reads them, and nothing reaches ops.
 import { DAY_MS } from '../../shared/constants';
 import type { Ctx } from '../context';
+import { accessDb } from '../lib/access-db';
 import { sha256Hex, timingSafeEqual } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { randomBase62, ulid } from '../lib/ids';
@@ -94,10 +95,11 @@ export async function createToken(
   const scopes = [...new Set(input.scopes)].filter(isScope);
   if (!scopes.length)
     throw new AppError('VALIDATION', 'pick at least one scope', { field: 'scopes' });
-  const open = await ctx.env.DB.prepare(
-    `SELECT COUNT(*) AS n FROM api_tokens WHERE user_id = ?1 AND kind = 'personal' AND revoked_at IS NULL
+  const open = await accessDb(ctx.env)
+    .prepare(
+      `SELECT COUNT(*) AS n FROM api_tokens WHERE user_id = ?1 AND kind = 'personal' AND revoked_at IS NULL
        AND (expires_at IS NULL OR expires_at > ?2)`,
-  )
+    )
     .bind(userId, ctx.now())
     .first<{ n: number }>();
   if ((open?.n ?? 0) >= cfg.api_tokens_max_per_user)
@@ -122,10 +124,11 @@ export async function createToken(
 }
 
 export async function insertToken(ctx: Ctx, row: TokenRow): Promise<void> {
-  await ctx.env.DB.prepare(
-    `INSERT INTO api_tokens (id, user_id, name, prefix, secret_hash, scopes, kind, created_at, expires_at, grant_id)
+  await accessDb(ctx.env)
+    .prepare(
+      `INSERT INTO api_tokens (id, user_id, name, prefix, secret_hash, scopes, kind, created_at, expires_at, grant_id)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
-  )
+    )
     .bind(
       row.id,
       row.user_id,
@@ -143,10 +146,11 @@ export async function insertToken(ctx: Ctx, row: TokenRow): Promise<void> {
 
 /** The user's working personal tokens, newest first. */
 export async function listTokens(ctx: Ctx, userId: string): Promise<TokenDto[]> {
-  const { results } = await ctx.env.DB.prepare(
-    `SELECT * FROM api_tokens WHERE user_id = ?1 AND kind = 'personal' AND revoked_at IS NULL
+  const { results } = await accessDb(ctx.env)
+    .prepare(
+      `SELECT * FROM api_tokens WHERE user_id = ?1 AND kind = 'personal' AND revoked_at IS NULL
        AND (expires_at IS NULL OR expires_at > ?2) ORDER BY created_at DESC`,
-  )
+    )
     .bind(userId, ctx.now())
     .all<TokenRow>();
   return results.map(toDto);
@@ -154,9 +158,10 @@ export async function listTokens(ctx: Ctx, userId: string): Promise<TokenDto[]> 
 
 /** Owner only; someone else's id is simply not found. */
 export async function revokeToken(ctx: Ctx, userId: string, id: string): Promise<void> {
-  const r = await ctx.env.DB.prepare(
-    `UPDATE api_tokens SET revoked_at = ?3 WHERE id = ?1 AND user_id = ?2 AND kind = 'personal' AND revoked_at IS NULL`,
-  )
+  const r = await accessDb(ctx.env)
+    .prepare(
+      `UPDATE api_tokens SET revoked_at = ?3 WHERE id = ?1 AND user_id = ?2 AND kind = 'personal' AND revoked_at IS NULL`,
+    )
     .bind(id, userId, ctx.now())
     .run();
   if (!r.meta.changes) throw new AppError('NOT_FOUND', 'no such token');
@@ -196,7 +201,8 @@ export async function authenticateToken(
       reason: row.u_status,
     });
   if (row.last_used_at === null || now - row.last_used_at > TOUCH_EVERY_MS)
-    await ctx.env.DB.prepare(`UPDATE api_tokens SET last_used_at = ?2 WHERE id = ?1`)
+    await accessDb(ctx.env)
+      .prepare(`UPDATE api_tokens SET last_used_at = ?2 WHERE id = ?1`)
       .bind(row.id, now)
       .run();
   return {
@@ -216,16 +222,20 @@ export async function findToken(
 ): Promise<
   (TokenRow & { u_email: string; u_name: string; u_status: SessionUser['status'] }) | null
 > {
-  const row = await ctx.env.DB.prepare(
-    `SELECT t.*, u.email AS u_email, u.name AS u_name, u.status AS u_status
-     FROM api_tokens t JOIN users u ON u.id = t.user_id WHERE t.prefix = ?1`,
-  )
+  // The token is in the access database, its owner in the main one (ADR-080): two reads, no join.
+  const row = await accessDb(ctx.env)
+    .prepare('SELECT * FROM api_tokens WHERE prefix = ?1')
     .bind(token.slice(0, TOKEN_PREFIX.length + ID_LEN))
-    .first<TokenRow & { u_email: string; u_name: string; u_status: SessionUser['status'] }>();
+    .first<TokenRow>();
   const hash = await sha256Hex(token);
   // Compared even when no row matched, so a miss and a wrong secret take the same time.
   const same = timingSafeEqual(row?.secret_hash ?? '0'.repeat(64), hash);
-  return row && same ? row : null;
+  if (!row || !same) return null;
+  const user = await ctx.env.DB.prepare('SELECT email, name, status FROM users WHERE id = ?1')
+    .bind(row.user_id)
+    .first<{ email: string; name: string; status: SessionUser['status'] }>();
+  if (!user) return null;
+  return { ...row, u_email: user.email, u_name: user.name, u_status: user.status };
 }
 
 export function requireScope(auth: Pick<TokenAuth, 'scopes'>, scope: TokenScope): void {

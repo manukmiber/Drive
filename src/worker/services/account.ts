@@ -85,12 +85,12 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
     ),
     notificationPrefs: await ctx.adapters.notices.prefs(userId).catch(() => null),
     // Access tokens (ADR-061): names, scopes and dates, never the secrets or their hashes.
-    apiTokens: await q(
+    apiTokens: await qa(
       'SELECT id, name, prefix, scopes, kind, created_at, last_used_at, expires_at, revoked_at FROM api_tokens WHERE user_id = ?1 ORDER BY created_at',
       userId,
     ),
     // Apps connected through OAuth (ADR-063).
-    connectedApps: await q(
+    connectedApps: await qa(
       'SELECT id, client_id, scopes, created_at, last_used_at, revoked_at FROM oauth_grants WHERE user_id = ?1 ORDER BY created_at',
       userId,
     ),
@@ -205,19 +205,21 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
     if (!(await purgeS3Account(ctx, id)))
       await ctx.env.CLEANUP_QUEUE.send({ type: 's3_purge', userId: id });
     const now = ctx.now();
-    await accessDb(ctx.env)
-      .prepare(`UPDATE shares SET revoked_at = ?2 WHERE created_by = ?1 AND revoked_at IS NULL`)
-      .bind(id, now)
-      .run();
+    // Links, access tokens and app connections are in the access database (ADR-079, ADR-080).
+    const A = accessDb(ctx.env);
+    await A.batch([
+      A.prepare(
+        `UPDATE shares SET revoked_at = ?2 WHERE created_by = ?1 AND revoked_at IS NULL`,
+      ).bind(id, now),
+      A.prepare('DELETE FROM api_tokens WHERE user_id = ?1').bind(id),
+      A.prepare('DELETE FROM oauth_grants WHERE user_id = ?1').bind(id),
+      A.prepare('DELETE FROM oauth_codes WHERE user_id = ?1').bind(id),
+    ]);
     await DB.batch([
       DB.prepare(
         `UPDATE subscriptions SET status = 'cancelled', status_changed_at = ?2, updated_at = ?2 WHERE payer_user_id = ?1 AND status != 'cancelled'`,
       ).bind(id, now),
       DB.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
-      // Access tokens and app connections (ADR-061).
-      DB.prepare('DELETE FROM api_tokens WHERE user_id = ?1').bind(id),
-      DB.prepare('DELETE FROM oauth_grants WHERE user_id = ?1').bind(id),
-      DB.prepare('DELETE FROM oauth_codes WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM accounts WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM passkeys WHERE user_id = ?1').bind(id),
       DB.prepare('DELETE FROM two_factors WHERE user_id = ?1').bind(id),

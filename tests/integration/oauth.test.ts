@@ -204,7 +204,7 @@ describe('OAuth for Zeiko apps (ADR-063)', () => {
     ).toBe(400);
 
     const c3 = await getCode(user, q);
-    rt.d1.sqlite.prepare('UPDATE oauth_codes SET expires_at = 1').run();
+    rt.access.sqlite.prepare('UPDATE oauth_codes SET expires_at = 1').run();
     expect((await token(rt, { ...base, code: c3, code_verifier: p.verifier })).status).toBe(400);
 
     // Used twice: the second fails and what the first made is revoked.

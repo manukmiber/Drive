@@ -46,7 +46,7 @@ describe('access tokens (ADR-061)', () => {
     const made = await make(user, { scopes: ['drive.read', 'share'] });
     expect(made.token).toMatch(TOKEN_RE);
     expect(made.token.startsWith(made.info.prefix)).toBe(true);
-    const row = rt.d1.sqlite
+    const row = rt.access.sqlite
       .prepare('SELECT secret_hash, prefix FROM api_tokens WHERE id = ?')
       .get(made.info.id) as { secret_hash: string; prefix: string };
     expect(row.secret_hash).toMatch(/^[0-9a-f]{64}$/);
@@ -61,7 +61,7 @@ describe('access tokens (ADR-061)', () => {
     const body = (await me.json()) as { user: { id: string }; token: { scopes: string[] } };
     expect(body.user.id).toBe(user.userId);
     expect(body.token.scopes).toEqual(['drive.read', 'share']);
-    const used = rt.d1.sqlite
+    const used = rt.access.sqlite
       .prepare('SELECT last_used_at FROM api_tokens WHERE id = ?')
       .get(made.info.id) as { last_used_at: number | null };
     expect(used.last_used_at).not.toBeNull();
@@ -78,9 +78,11 @@ describe('access tokens (ADR-061)', () => {
     }
     expect((await rt.fetch(new Request(`${APP}/api/v1/me`))).status).toBe(401);
 
-    rt.d1.sqlite.prepare('UPDATE api_tokens SET expires_at = 1 WHERE id = ?').run(made.info.id);
+    rt.access.sqlite.prepare('UPDATE api_tokens SET expires_at = 1 WHERE id = ?').run(made.info.id);
     expect((await bearer(rt, '/api/v1/me', made.token)).status).toBe(401);
-    rt.d1.sqlite.prepare('UPDATE api_tokens SET expires_at = NULL WHERE id = ?').run(made.info.id);
+    rt.access.sqlite
+      .prepare('UPDATE api_tokens SET expires_at = NULL WHERE id = ?')
+      .run(made.info.id);
     expect((await bearer(rt, '/api/v1/me', made.token)).status).toBe(200);
 
     expect((await user.req('DELETE', `/api/tokens/${made.info.id}`)).status).toBe(204);
@@ -108,7 +110,9 @@ describe('access tokens (ADR-061)', () => {
       body: JSON.stringify({ name: 'x', scopes: ['drive.read'], expiresInDays: null }),
     });
     expect(mint.status).toBe(401);
-    expect(rt.d1.sqlite.prepare('SELECT COUNT(*) AS n FROM api_tokens').get()).toEqual({ n: 1 });
+    expect(rt.access.sqlite.prepare('SELECT COUNT(*) AS n FROM api_tokens').get()).toEqual({
+      n: 1,
+    });
   });
 
   it('checks scopes per route', async () => {
@@ -145,7 +149,9 @@ describe('access tokens (ADR-061)', () => {
       .prepare(`UPDATE users SET status = 'active', delete_requested_at = 1 WHERE id = ?`)
       .run(user.userId);
     expect(await processAccountDeletions(createCtx(rt.env))).toBe(1);
-    expect(rt.d1.sqlite.prepare('SELECT COUNT(*) AS n FROM api_tokens').get()).toEqual({ n: 0 });
+    expect(rt.access.sqlite.prepare('SELECT COUNT(*) AS n FROM api_tokens').get()).toEqual({
+      n: 0,
+    });
     expect((await bearer(rt, '/api/v1/me', made.token)).status).toBe(401);
   });
 

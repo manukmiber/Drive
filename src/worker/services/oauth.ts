@@ -5,6 +5,7 @@
 // refresh token used a second time ends the whole connection (someone copied it).
 import { DAY_MS } from '../../shared/constants';
 import type { Ctx } from '../context';
+import { accessDb } from '../lib/access-db';
 import { base64UrlEncode, sha256Hex, timingSafeEqual } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { randomBase62, ulid } from '../lib/ids';
@@ -143,10 +144,11 @@ export async function approve(
   const ok = checkAuthorize(ctx.env.APP_ORIGIN, r);
   const cfg = await ctx.config();
   const code = randomBase62(43);
-  await ctx.env.DB.prepare(
-    `INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, scopes, code_challenge, expires_at)
+  await accessDb(ctx.env)
+    .prepare(
+      `INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, scopes, code_challenge, expires_at)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`,
-  )
+    )
     .bind(
       await sha256Hex(code),
       ok.client.id,
@@ -213,7 +215,8 @@ async function issue(
     kind: 'oauth_refresh',
     expires_at: now + cfg.oauth_refresh_ttl_days * DAY_MS,
   });
-  await ctx.env.DB.prepare(`UPDATE oauth_grants SET last_used_at = ?2 WHERE id = ?1`)
+  await accessDb(ctx.env)
+    .prepare(`UPDATE oauth_grants SET last_used_at = ?2 WHERE id = ?1`)
     .bind(grant.id, now)
     .run();
   return {
@@ -228,7 +231,7 @@ async function issue(
 /** Ends a connection: the grant and every token it gave out. */
 export async function revokeGrant(ctx: Ctx, grantId: string): Promise<void> {
   const now = ctx.now();
-  const DB = ctx.env.DB;
+  const DB = accessDb(ctx.env);
   await DB.batch([
     DB.prepare(`UPDATE oauth_grants SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL`).bind(
       grantId,
@@ -256,7 +259,8 @@ export async function exchangeCode(
 ): Promise<TokenResponse> {
   if (!clientById(p.clientId)) throw new OAuthError('invalid_client', 'unknown client', 401);
   const hash = await sha256Hex(p.code);
-  const row = await ctx.env.DB.prepare(`SELECT * FROM oauth_codes WHERE code_hash = ?1`)
+  const row = await accessDb(ctx.env)
+    .prepare(`SELECT * FROM oauth_codes WHERE code_hash = ?1`)
     .bind(hash)
     .first<{
       client_id: string;
@@ -289,7 +293,7 @@ export async function exchangeCode(
   const now = ctx.now();
   const grantId = ulid(now);
   // Claim the code and open the grant together: of two exchanges at once, one wins.
-  const DB = ctx.env.DB;
+  const DB = accessDb(ctx.env);
   const [claim] = await DB.batch([
     DB.prepare(
       `UPDATE oauth_codes SET used_at = ?2, grant_id = ?3 WHERE code_hash = ?1 AND used_at IS NULL`,
@@ -317,7 +321,8 @@ export async function refresh(
   if (!REFRESH_RE.test(p.refreshToken)) throw bad();
   const row = await findToken(ctx, p.refreshToken);
   if (!row || row.kind !== 'oauth_refresh' || !row.grant_id) throw bad();
-  const grant = await ctx.env.DB.prepare(`SELECT * FROM oauth_grants WHERE id = ?1`)
+  const grant = await accessDb(ctx.env)
+    .prepare(`SELECT * FROM oauth_grants WHERE id = ?1`)
     .bind(row.grant_id)
     .first<{
       id: string;
@@ -335,9 +340,8 @@ export async function refresh(
   if (grant.revoked_at !== null || (row.expires_at !== null && row.expires_at <= ctx.now()))
     throw bad();
   if (row.u_status !== 'active') throw bad();
-  const used = await ctx.env.DB.prepare(
-    `UPDATE api_tokens SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL`,
-  )
+  const used = await accessDb(ctx.env)
+    .prepare(`UPDATE api_tokens SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL`)
     .bind(row.id, ctx.now())
     .run();
   if (!used.meta.changes) {
@@ -352,15 +356,15 @@ export async function revokeToken(ctx: Ctx, token: string, clientId: string): Pr
   if (!TOKEN_RE.test(token) && !REFRESH_RE.test(token)) return;
   const row = await findToken(ctx, token);
   if (!row?.grant_id) return;
-  const grant = await ctx.env.DB.prepare(`SELECT client_id FROM oauth_grants WHERE id = ?1`)
+  const grant = await accessDb(ctx.env)
+    .prepare(`SELECT client_id FROM oauth_grants WHERE id = ?1`)
     .bind(row.grant_id)
     .first<{ client_id: string }>();
   if (grant?.client_id !== clientId) return;
   if (row.kind === 'oauth_refresh') await revokeGrant(ctx, row.grant_id);
   else
-    await ctx.env.DB.prepare(
-      `UPDATE api_tokens SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL`,
-    )
+    await accessDb(ctx.env)
+      .prepare(`UPDATE api_tokens SET revoked_at = ?2 WHERE id = ?1 AND revoked_at IS NULL`)
       .bind(row.id, ctx.now())
       .run();
 }
@@ -376,10 +380,11 @@ export interface ConnectedApp {
 
 /** Settings → Tokens & apps: the apps connected to this account. */
 export async function listApps(ctx: Ctx, userId: string): Promise<ConnectedApp[]> {
-  const { results } = await ctx.env.DB.prepare(
-    `SELECT id, client_id, scopes, created_at, last_used_at FROM oauth_grants
+  const { results } = await accessDb(ctx.env)
+    .prepare(
+      `SELECT id, client_id, scopes, created_at, last_used_at FROM oauth_grants
      WHERE user_id = ?1 AND revoked_at IS NULL ORDER BY created_at DESC`,
-  )
+    )
     .bind(userId)
     .all<{
       id: string;
@@ -400,9 +405,8 @@ export async function listApps(ctx: Ctx, userId: string): Promise<ConnectedApp[]
 
 /** Owner only; someone else's grant is simply not found. */
 export async function disconnectApp(ctx: Ctx, userId: string, grantId: string): Promise<void> {
-  const g = await ctx.env.DB.prepare(
-    `SELECT id FROM oauth_grants WHERE id = ?1 AND user_id = ?2 AND revoked_at IS NULL`,
-  )
+  const g = await accessDb(ctx.env)
+    .prepare(`SELECT id FROM oauth_grants WHERE id = ?1 AND user_id = ?2 AND revoked_at IS NULL`)
     .bind(grantId, userId)
     .first<{ id: string }>();
   if (!g) throw new AppError('NOT_FOUND', 'no such app');
