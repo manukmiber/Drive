@@ -268,7 +268,9 @@ lewat fase R di `docs/ROADMAP.md`.
 ## Kompatibilitas S3 tambahan (S8, ADR-076, 2026-10-29)
 - [x] 1. Object tagging: Put/Get/DeleteObjectTagging, `x-amz-tagging` (PutObject, multipart), tagging directive di
   CopyObject, batas Amazon, `x-amz-tagging-count`; lifecycle filter Tag/And. Index per akun v4.
-- [ ] 2. GetObject/HeadObject `partNumber` · 3. checksum · 4. PostObject.
+- [x] 2. GetObject/HeadObject `partNumber`: jumlah dan ukuran part dicatat saat complete (index v5), 206 + Content-Range
+  + `x-amz-mp-parts-count`, error Amazon (`InvalidPartNumber` 416).
+- [ ] 3. checksum · 4. PostObject.
 
 ## Upload multipart dari `/s3` (S4, ADR-075, 2026-10-29)
 - [x] File di atas satu part (32 MiB) naik per part lewat `/api/s3/buckets/:name/uploads/*`: paralel, coba ulang per

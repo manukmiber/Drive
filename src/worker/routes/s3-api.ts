@@ -92,6 +92,7 @@ import {
   listParts,
   listUploads,
   metaFromHeaders,
+  partRange,
   parseMeta,
   putObject,
   uploadPart,
@@ -962,8 +963,22 @@ async function readObject(
 ): Promise<Response> {
   const head = r.method === 'HEAD';
   r.op = head ? 'HeadObject' : 'GetObject';
-  if (r.query.has('partNumber'))
-    throw new S3Error('NotImplemented', 'GET by part number is not supported by Zeiko S3.');
+  // ?partNumber=N reads one part of a multipart object, like a Range (ADR-076).
+  const partParam = r.query.get('partNumber');
+  let part: number | null = null;
+  if (partParam !== undefined) {
+    part = Number(partParam);
+    if (!/^\d{1,5}$/.test(partParam) || part < 1 || part > 10_000)
+      throw new S3Error(
+        'InvalidArgument',
+        'Part number must be an integer between 1 and 10000, inclusive',
+      );
+    if (r.raw.headers.get('range') !== null)
+      throw new S3Error(
+        'InvalidRequest',
+        'Cannot specify both Range header and partNumber query parameter',
+      );
+  }
   const row = await getObjectRow(r.ctx, account, bucket.name, r.key!);
   if (!row) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: r.key! });
   r.objectSize = row.size;
@@ -1006,6 +1021,11 @@ async function readObject(
   }
   let range = parseRange(h.get('range'), row.size);
   if (range.kind === 'multi') range = { kind: 'none' };
+  if (part !== null) {
+    const p = partRange(row, part);
+    if (row.parts) headers.set('x-amz-mp-parts-count', String(p.count));
+    range = row.size ? { kind: 'single', start: p.start, end: p.end } : { kind: 'none' };
+  }
   if (range.kind === 'unsatisfiable')
     throw new S3Error('InvalidRange', 'The requested range is not satisfiable.', {
       ActualObjectSize: String(row.size),

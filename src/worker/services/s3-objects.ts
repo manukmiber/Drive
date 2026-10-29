@@ -64,6 +64,9 @@ export interface ObjectRow {
   modified_at: number;
   /** Object tags, `[[key, value], …]` (ADR-076). */
   tags_json: string | null;
+  /** Multipart objects: how many parts, and the size of every part but the last (ADR-076). */
+  parts?: number | null;
+  part_size?: number | null;
 }
 
 const enc = new TextEncoder();
@@ -189,8 +192,8 @@ async function replaceRow(
   const insert = (tail: string) =>
     db
       .prepare(
-        `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at, tags_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)${tail}`,
+        `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at, tags_json, parts, part_size)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)${tail}`,
       )
       .bind(
         row.user_id,
@@ -205,6 +208,8 @@ async function replaceRow(
         row.sha256,
         row.modified_at,
         row.tags_json,
+        row.parts ?? null,
+        row.part_size ?? null,
       );
   if (!cond) {
     const [deleted] = await db.batch([
@@ -232,7 +237,8 @@ async function replaceRow(
     db
       .prepare(
         `UPDATE s3_objects SET blob_id = ?5, size = ?6, etag = ?7, content_type = ?8, meta_json = ?9,
-           scan_status = ?10, sha256 = ?11, modified_at = ?12, tags_json = ?13, replicated = 0
+           scan_status = ?10, sha256 = ?11, modified_at = ?12, tags_json = ?13, parts = ?14,
+           part_size = ?15, replicated = 0
          WHERE ${name} AND etag = ?4 RETURNING blob_id`,
       )
       .bind(
@@ -249,6 +255,8 @@ async function replaceRow(
         row.sha256,
         row.modified_at,
         row.tags_json,
+        row.parts ?? null,
+        row.part_size ?? null,
       ),
     ...extra,
   ]);
@@ -511,6 +519,9 @@ export async function copyObject(
       content_type: contentType,
       meta_json: meta,
       tags_json: tags,
+      // One object in one put, whatever the source was made of.
+      parts: null,
+      part_size: null,
       // The bytes are the source's: so is the scan result.
       modified_at: now,
     };
@@ -975,6 +986,8 @@ export async function completeUpload(
     content_type: up.content_type,
     meta_json: up.meta_json,
     tags_json: up.tags_json ?? null,
+    parts: chosen.length,
+    part_size: chosen[0]!.size,
     scan_status: total === 0 ? 'clean' : 'pending',
     sha256: null,
     modified_at: ctx.now(),
@@ -1369,4 +1382,30 @@ export async function setObjectTags(
     .run();
   if (!res.meta.changes)
     throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });
+}
+
+/**
+ * GetObject/HeadObject ?partNumber=N (ADR-076): the byte range of part N, and the part count.
+ * An object put in one go is one part. Multipart objects from before part sizes were recorded
+ * can't be cut up.
+ */
+export function partRange(
+  row: Pick<ObjectRow, 'size' | 'etag' | 'parts' | 'part_size'>,
+  n: number,
+): { start: number; end: number; count: number } {
+  const count = row.parts ?? (/-(\d+)$/.test(row.etag) ? null : 1);
+  if (count === null || (count > 1 && !row.part_size))
+    throw new S3Error(
+      'InvalidRequest',
+      'The part sizes of this object were not recorded (it was completed before part numbers were supported); read it with a Range instead.',
+    );
+  if (n > count)
+    throw new S3Error('InvalidPartNumber', 'The requested partnumber is not satisfiable', {
+      PartNumberRequested: String(n),
+      ActualPartCount: String(count),
+    });
+  if (count === 1) return { start: 0, end: row.size - 1, count };
+  const size = row.part_size!;
+  const start = (n - 1) * size;
+  return { start, end: Math.min(start + size, row.size) - 1, count };
 }

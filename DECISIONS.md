@@ -2009,3 +2009,15 @@ Tanggal: 2026-10-29. Status: diterima (pemilik: roadmap S8). Satu commit per bag
   seperti Amazon. Editor "Hapus otomatis" di `/s3` menampilkan rule bertag sebagai rule API, tanpa mengubahnya.
 
 Test: `tests/integration/s3-tagging.test.ts`.
+
+### 2. GetObject/HeadObject `?partNumber`
+- Saat CompleteMultipartUpload, jumlah part dan ukuran part disimpan (langkah `v5`: `s3_objects.parts`, `part_size`).
+  Semua part kecuali yang terakhir sama besar (aturan R2), jadi dua angka itu cukup untuk menghitung rentang part mana pun.
+- `?partNumber=N` dilayani seperti Range: 206, `Content-Range` part itu, `Content-Length` part itu, ETag objek utuh,
+  dan `x-amz-mp-parts-count` untuk objek multipart. Objek yang di-put sekali jalan = 1 part (part 1 = seluruh objek,
+  tanpa hitungan part). Hasil CopyObject juga satu part.
+- Error seperti Amazon: N di luar 1–10.000 → `InvalidArgument`; N lebih besar dari jumlah part → `InvalidPartNumber`
+  (416); `Range` bersama `partNumber` → `InvalidRequest`. Objek multipart yang selesai sebelum langkah v5 (ETag `-N`,
+  ukuran part tidak tercatat) → `InvalidRequest` dengan saran memakai Range.
+
+Test: `tests/integration/s3-part-number.test.ts`.

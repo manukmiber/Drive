@@ -24,6 +24,7 @@ const STATUS = {
   InvalidBucketName: 400,
   InvalidDigest: 400,
   InvalidPart: 400,
+  InvalidPartNumber: 416,
   InvalidPartOrder: 400,
   InvalidRange: 416,
   InvalidRequest: 400,

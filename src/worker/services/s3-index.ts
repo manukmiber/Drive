@@ -80,6 +80,12 @@ const MIGRATIONS: string[][] = [
     `ALTER TABLE s3_objects ADD COLUMN tags_json TEXT`,
     `ALTER TABLE s3_uploads ADD COLUMN tags_json TEXT`,
   ],
+  // v5 (ADR-076): how a multipart object was put together, for GetObject/HeadObject ?partNumber.
+  // Every part but the last has `part_size` bytes (an R2 rule), so the count and size say it all.
+  [
+    `ALTER TABLE s3_objects ADD COLUMN parts INTEGER`,
+    `ALTER TABLE s3_objects ADD COLUMN part_size INTEGER`,
+  ],
 ];
 export const INDEX_SCHEMA_VERSION = MIGRATIONS.length;
 
