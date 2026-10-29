@@ -6,6 +6,7 @@ import { formatBytes } from '../../../shared/format';
 import { t } from '../../lib/i18n';
 import { downloadFile, previewInfo, type NodeDto } from '../../lib/files';
 import { FileIcon } from '../FileIcon';
+import { VideoView } from './VideoView';
 import { editable, isDoc, isZip, maxBytes, toolFor } from '../../editors/files';
 import { useConfig } from '../../editors/ui';
 
@@ -220,9 +221,7 @@ export function Preview({
         {info.isPending && <p className="text-sm text-white/70">{t.common.loading}</p>}
         {info.isError && <p className="text-sm text-red-300">{t.errors.generic}</p>}
         {d && d.kind === 'image' && <PictureView key={d.url} url={d.url} node={node} />}
-        {d && d.kind === 'video' && (
-          <video src={d.url} controls autoPlay className="max-h-full max-w-full" />
-        )}
+        {d && d.kind === 'video' && <VideoView key={d.url} url={d.url} node={node} />}
         {d && d.kind === 'audio' && (
           <audio src={d.url} controls autoPlay className="w-full max-w-lg" />
         )}

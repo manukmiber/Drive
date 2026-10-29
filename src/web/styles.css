@@ -258,3 +258,14 @@ body {
 [data-grid] > [role='option'] {
   contain-intrinsic-size: auto 220px;
 }
+
+/* Subtitle text size in the video preview (D13); the default cue size follows the video's height. */
+video[data-subs='sm']::cue {
+  font-size: clamp(11px, 2.6vmin, 20px);
+}
+video[data-subs='md']::cue {
+  font-size: clamp(13px, 3.6vmin, 28px);
+}
+video[data-subs='lg']::cue {
+  font-size: clamp(16px, 5vmin, 38px);
+}

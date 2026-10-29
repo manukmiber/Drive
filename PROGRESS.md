@@ -261,6 +261,11 @@ lewat fase R di `docs/ROADMAP.md`.
   untuk gambar iklan. Drive ini sudah live (lihat di bawah), jadi sampai tab Reports ada, takedown hanya bisa lewat
   `curl` ke ops API. Setelah itu pemilik update relay (`bash install.sh` atau tombol update).
 
+## Subtitle di pratinjau video (D13, ADR-073, 2026-10-29)
+- [x] `.srt`/`.vtt` di folder yang sama dipasang otomatis (nama dasar sama), bisa dipilih, dimatikan, atau diambil dari
+  perangkat; SRT → WebVTT di browser (BOM, UTF-16, Windows-1252); ukuran teks kecil/sedang/besar.
+- [x] Dicek di Chrome dev: desktop gelap (EN) dan 360 px terang (ID); ganti ke track `en` dan matikan.
+
 ## Lifecycle bucket S3 (S3, ADR-072, 2026-10-28)
 - [x] `Put/Get/DeleteBucketLifecycleConfiguration`: Expiration (Days/Date) dan AbortIncompleteMultipartUpload, filter
   prefix + ukuran; Tag/Transition/versi → 501. Cron jam-an bertahap dengan cursor; editor "Hapus otomatis" di `/s3`.

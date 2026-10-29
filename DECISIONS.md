@@ -1880,3 +1880,25 @@ Aturan disimpan di `s3_buckets.lifecycle_json` (migrasi `0019_s3_lifecycle.sql`,
 Test: `tests/integration/s3-lifecycle.test.ts` (parse/serialize XML termasuk bentuk aws-cli, SDK Put/Get/Delete, editor
 app, key terbatas, cron dengan jam palsu menghapus tepat yang jatuh tempo dan membatalkan upload, halaman demi halaman
 dengan cursor, akun locked dilewati).
+
+## ADR-073 — Subtitle di pratinjau video (D13)
+
+Tanggal: 2026-10-29. Status: diterima (pemilik: "Kerjakan D13", walau fitur Drive baru dibekukan sampai R3; fitur ini
+tidak menyentuh D1 dan tidak menambah data di server).
+
+- **Sumber subtitle:** `.srt`/`.vtt` yang sudah lolos pindai di folder yang sama dengan video (dicari lewat
+  `GET /api/nodes/:folder/children`, paling banyak 10 halaman). Nama dasar yang sama (`Film.srt` untuk `Film.mp4`) dipasang
+  otomatis; `Film.id.srt`/`Film.en.forced.vtt` berlabel tag-nya. Bisa dipilih manual, dimatikan, atau diambil dari
+  perangkat (file itu tidak diunggah).
+- **Di browser saja** (`src/web/lib/subtitles.ts`, `components/explorer/VideoView.tsx`): bytes dari URL pratinjau yang
+  sudah ada (USERCONTENT_ORIGIN, CORS sudah mengizinkan APP_ORIGIN), didekode sendiri (BOM UTF-8/UTF-16, UTF-8 ketat,
+  lalu Windows-1252 untuk `.srt` lama), SRT diubah ke WebVTT, lalu dipasang sebagai `<track>` lewat URL `blob:`.
+  CSP tidak berubah: `media-src` sudah mengizinkan `blob:`, dan track tidak pernah dimuat langsung dari USERCONTENT_ORIGIN.
+- **Konversi SRT:** waktu `,`→`.` (jam boleh tidak ada, pecahan 1–3 digit), nomor cue dibuang, kotak `X1:…Y2:` dibuang,
+  `<b>/<i>/<u>` tetap, tag lain (`<font>`) dan override ASS (`{\an8}`) dibuang, `&` dan `<` lepas di-escape, `-->` di
+  teks diganti `→`. Blok yang rusak dilewati, bukan menggagalkan seluruh file.
+- **Ukuran teks:** Kecil/Sedang/Besar lewat `video[data-subs]::cue`, disimpan per perangkat (`localStorage`).
+- **Tidak dibangun:** subtitle di halaman share publik, subtitle yang tertanam di file video (mkv/mp4 text track),
+  dan format lain (`.ass`, `.ssa`, `.sub`).
+
+Test: `tests/unit/subtitles.test.ts` (waktu, encoding, BOM, tag, blok rusak, pencocokan nama).

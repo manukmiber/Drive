@@ -36,6 +36,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 | API publik v1 + OpenAPI (ADR-062) | `routes/v1.ts` (`ENDPOINTS`, idempotency), `routes/v1-schemas.ts`, `lib/openapi.ts`, `services/s3-app.ts`, `pages/ApiDocs.tsx` (`/developer`), `migrations/0015_api_idempotency.sql` | — | — |
 | Login aplikasi OAuth + PKCE (ADR-063) | `services/oauth.ts` (`OAUTH_CLIENTS`, `exchangeCode`, `refresh`), `routes/oauth.ts` (persetujuan), `routes/v1.ts` (`/oauth/token`, `/oauth/revoke`), `routes/well-known.ts`, `pages/OAuthAuthorize.tsx`, `migrations/0016_oauth.sql` | — | — |
 | Editor foto/video/PDF (ADR-050, di browser) | `src/web/editors/*`, `src/web/pages/Tools.tsx` (`/alat`), menu di `components/explorer/useNodeActions.tsx`, tombol Edit + pdf.js di `Preview.tsx`, aset pdf.js di `vite.config.ts` | — | — |
+| Subtitle di pratinjau video (ADR-073) | `src/web/lib/subtitles.ts` (`toVtt`, `srtToVtt`, `subtitleMatch`), `components/explorer/VideoView.tsx`, `Preview.tsx`, `::cue` di `styles.css` | — | — |
 | Editor teks/kode, dokumen, file baru (ADR-051) | `src/web/editors/{text,doc}/*`, `editors/sanitize.ts`, `editors/prose.css`, Baru → Dokumen / File teks di `components/NewMenu.tsx`, pratinjau `.docx` di `Preview.tsx` | — | — |
 
 ## B. Zeiko Drive — `/root/zeiko-cloud-storage`

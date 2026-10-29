@@ -88,7 +88,7 @@ Fitur di bawah dibangun di atas index R2 (fase R), bukan D1.
 | D10 | Album di Galeri                                  | Niche   | M      | D8         | belum                                    |
 | D11 | Cari file kembar                                 | Niche   | S      | R2         | belum                                    |
 | D12 | Tanggal hapus otomatis                           | Niche   | S      | R3         | belum                                    |
-| D13 | Subtitle di pratinjau video                      | Niche   | S      | –          | belum                                    |
+| D13 | Subtitle di pratinjau video                      | Niche   | S      | –          | selesai (ADR-073)                        |
 | D14 | Email dua bahasa                                 | Sisa    | S      | (R7)       | selesai (ADR-069)                        |
 | D15 | Logo di tengah QR                                | Sisa    | S      | –          | selesai (ADR-059)                        |
 | D16 | Brankas end-to-end: analisis saja                | Niche   | S      | –          | belum                                    |
