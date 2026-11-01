@@ -99,6 +99,33 @@ export const nodeInfo = (id: string) =>
     path: Crumb[];
     access: { view: boolean; edit: boolean; remove: boolean; isOwner: boolean };
   }>(`/api/nodes/${id}`);
+/** D2 (ADR-085): who an item is shared with, and what others shared with the person. */
+export interface PersonDto {
+  id: string;
+  userId: string | null;
+  email: string | null;
+  name: string | null;
+  role: 'view' | 'edit';
+  pending: boolean;
+  expiresAt: number | null;
+  createdAt: number;
+}
+export const listPeople = (id: string) => api<{ items: PersonDto[] }>(`/api/nodes/${id}/people`);
+export const addPeople = (id: string, emails: string[], role: 'view' | 'edit') =>
+  sendJson<{ items: PersonDto[] }>('POST', `/api/nodes/${id}/people`, { emails, role });
+export const setPersonRole = (id: string, gid: string, role: 'view' | 'edit') =>
+  sendJson<{ items: PersonDto[] }>('PATCH', `/api/nodes/${id}/people/${gid}`, { role });
+export const removePerson = (id: string, gid: string) =>
+  sendJson<void>('DELETE', `/api/nodes/${id}/people/${gid}`);
+export interface SharedWithMeItem {
+  grantId: string;
+  role: 'view' | 'edit';
+  sharedBy: { id: string; name: string | null };
+  sharedAt: number;
+  expiresAt: number | null;
+  node: NodeDto;
+}
+export const sharedWithMe = () => api<{ items: SharedWithMeItem[] }>('/api/shared-with-me');
 /** D1: a file's earlier contents, and how many versions each space keeps. */
 export interface VersionDto {
   id: string;

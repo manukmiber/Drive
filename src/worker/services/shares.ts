@@ -210,7 +210,9 @@ export async function createShare(
   if (!ids.length || ids.length > 100) throw new AppError('VALIDATION', 'between 1 and 100 items');
   const nodes = [];
   for (const id of ids) {
-    const { node } = await requireNode(ctx, userId, id, 'view');
+    const { node, access } = await requireNode(ctx, userId, id, 'view');
+    // Only its owner's side shares it on (D2, ADR-085).
+    if (access.shared) throw new AppError('FORBIDDEN', 'only the owner can share this item');
     if (node.trashed_at !== null) throw new AppError('CONFLICT', 'item is in the trash');
     if (node.parent_id === null) throw new AppError('FORBIDDEN', 'cannot share a root folder');
     if (node.kind === 'file') {

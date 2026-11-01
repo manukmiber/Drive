@@ -65,6 +65,9 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] D1 riwayat versi (ADR-084, 2026-11-01): versi = baris `nodes` `kind='version'` di bawah file (tanpa tabel baru),
   kolom index `vs`, jumlah per ruang di header index (`keepVersions`), maks `version_keep_days` (30), cron
   `purge_versions`, tab Versi di panel Detail, kartu di Pengaturan, `/api/nodes/:id/versions…` (+ v1).
+- [x] D2 share ke akun tertentu (ADR-085, 2026-11-01): `node_grants` di D1 akses (`migrations-access/0003`), warisan
+  folder di `nodeAccess`, item baru milik pemilik ruang (`spaceOwner`), "Dibagikan dengan saya" (`/untuk-saya`), tab
+  Orang di dialog Bagikan, notifikasi `node_shared`, email untuk alamat yang belum terdaftar. Butuh `ACCESS_DB`.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

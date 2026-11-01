@@ -28,7 +28,8 @@ export type NotificationType =
   | 's3_reminder'
   | 's3_dunning'
   | 's3_url_released'
-  | 'file_expiring';
+  | 'file_expiring'
+  | 'node_shared';
 
 /** Queue a notice. It reaches the bell once the relay has it (the queue retries until then). */
 export async function notify(
@@ -162,6 +163,12 @@ export function renderNotice(
         cta: { label: m.ctaOpenDrive, url: `${app}/` },
       };
     }
+    case 'node_shared':
+      return {
+        title: m.sharedTitle(String(p.by), String(p.name)),
+        paragraphs: [m.sharedBody(Boolean(p.folder), p.role === 'edit')],
+        cta: { label: m.ctaShared, url: `${app}/untuk-saya` },
+      };
     case 'archive_ready':
       return {
         title: m.archiveTitle,
@@ -336,6 +343,7 @@ export const PREF_TYPES = [
   'compress_done',
   'ad_status',
   'file_expiring',
+  'node_shared',
 ] as const;
 
 export async function getPrefs(ctx: Ctx, userId: string) {

@@ -14,6 +14,7 @@ import {
   Search,
   Settings,
   Share2,
+  Inbox,
   Star,
   Megaphone,
   Minimize2,
@@ -49,6 +50,7 @@ const NAV: NavItem[] = [
   { to: '/', label: t.nav.myDrive, icon: HardDrive },
   { to: '/keluarga', label: t.nav.familyDrive, icon: Users },
   { to: '/dibagikan', label: t.nav.shared, icon: Share2 },
+  { to: '/untuk-saya', label: t.nav.sharedWithMe, icon: Inbox },
   { to: '/terbaru', label: t.nav.recent, icon: Clock },
   { to: '/berbintang', label: t.nav.starred, icon: Star },
   { to: '/kompres', label: t.nav.compress, icon: Minimize2 },
@@ -131,7 +133,11 @@ export function AppShell() {
   if (!me.data) return <ToSignIn next={location.pathname} />;
 
   const data = me.data;
-  const nav = NAV.filter((n) => n.to !== '/keluarga' || data.space.familyId);
+  const nav = NAV.filter(
+    (n) =>
+      (n.to !== '/keluarga' || data.space.familyId) &&
+      (n.to !== '/untuk-saya' || catalog.data?.capabilities?.peopleShares),
+  );
 
   async function signOut() {
     // Out of Zeiko Accounts too, or the next visit signs straight back in.

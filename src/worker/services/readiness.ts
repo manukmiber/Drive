@@ -35,7 +35,8 @@ export type FeatureId =
   | 'async_archives'
   | 'antivirus'
   | 'captcha'
-  | 'app_links';
+  | 'app_links'
+  | 'people_shares';
 
 export interface Feature {
   id: FeatureId;
@@ -299,6 +300,20 @@ export async function readiness(ctx: Ctx): Promise<Feature[]> {
         ),
       ],
     },
+    {
+      id: 'people_shares',
+      title: 'Sharing with people',
+      what: 'Sharing a file or folder with particular Zeiko accounts, and "Shared with me".',
+      hidden: true,
+      after: [],
+      needs: [
+        deploy(
+          'ACCESS_DB',
+          Boolean(env.ACCESS_DB),
+          'Create zeiko-access-<env>, apply migrations-access/, put its id in deploy/<env>.json "accessDb" and deploy (DEPLOY.md).',
+        ),
+      ],
+    },
   ];
 
   const ready = new Map<FeatureId, boolean>();
@@ -318,6 +333,8 @@ export async function capabilities(ctx: Ctx) {
   const hostnames = s3 && ctx.adapters.hostnames !== null;
   return {
     asyncArchives: ctx.adapters.archiver.name !== 'none',
+    /** D2 (ADR-085): person shares live in the access database, made by the owner. */
+    peopleShares: Boolean(env.ACCESS_DB),
     /** ClamAV checks files; without it "clean" only means the basic check passed (ADR-056). */
     antivirus: ctx.adapters.scanner.name !== 'mock',
     emailShare: realEmail(ctx),

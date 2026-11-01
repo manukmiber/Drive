@@ -157,6 +157,8 @@ async function createNodeJob(
   const kind = kindOf(node.mime, node.name);
   if (!kind) return 'NOT_MEDIA';
   if (node.status !== 'ready' || !node.blob_id) return 'NOT_READY';
+  // Server jobs run on the owner's quota later: not for items shared with the person (ADR-085).
+  if (access.shared) return 'FORBIDDEN';
   if (o.save === 'replace' && !access.edit) return 'FORBIDDEN';
   if (o.save === 'copy') await requireWritableFolder(ctx, userId, node.parent_id!);
   const blob = await ctx.env.DB.prepare('SELECT r2_key, scan_status FROM blobs WHERE id = ?1')

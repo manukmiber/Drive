@@ -2359,3 +2359,46 @@ dan berapa banyak versi itu terserah user".
 Test (`drive-versions.test.ts`): id dan link tetap, kuota sebelum/sesudah ganti, pulihkan, hapus versi, reconcile,
 hapus file membawa versinya; jumlah pilihan user, "Simpan", menurunkan angka, 30 hari dengan jam palsu, 0 = perilaku
 lama; IDOR (orang lain 404, versi di bawah file lain 404, id versi di route node umum 404); izin keluarga.
+
+## ADR-085 — D2: share ke akun tertentu, izin di D1 khusus akses, dan "Dibagikan dengan saya"
+
+Tanggal: 2026-11-01. Status: diterima (pemilik: "Sekalian kerjai. D2 dan D3 abis itu wraping up").
+
+**Keputusan:**
+- Prompt D2 meminta tabel izin lewat migrasi baru. ADR-064 melarang tabel D1 Drive, tapi D1 khusus akses memang untuk
+  "siapa boleh membuka apa" (sesi, token, share). Izin per orang jadi tabel `node_grants` di `zeiko-access`
+  (`migrations-access/0003`): node, pemilik item, penerima (`user_id`, atau `email` huruf kecil kalau orangnya belum
+  pernah masuk Drive), peran `view`/`edit`, pemberi, waktu, kedaluwarsa opsional. Tidak pernah di-join dengan `nodes`.
+  **Hanya jalan kalau `ACCESS_DB` ada:** tanpa binding itu tidak ada izin (fitur `people_shares` di
+  `services/readiness.ts`, `capabilities.peopleShares`, disembunyikan di app sampai database itu dibuat).
+- **Warisan folder:** izin di folder berlaku untuk seluruh isinya. `nodeAccess` (`services/access.ts`) memeriksa izin
+  hanya kalau aturan biasa menolak: leluhur node lewat CTE ke atas di D1 utama (maks 200 tingkat), izin orang itu dari
+  D1 akses, keduanya di-memo per request (`services/grant-lookup.ts`). Untuk yang tidak punya izin sama sekali cukup
+  satu query ke D1 akses per request.
+- **Peran:** `view` = lihat/unduh. `edit` = juga ubah nama, ganti isi, pulihkan versi, tambah isi (upload, folder baru,
+  salin di dalamnya), pindah **di dalam ruang pemilik**. Hapus/Sampah hanya untuk item yang dibuat penerima itu sendiri,
+  dan folder yang dibagikan tidak bisa dihapus atau dipindah oleh penerima. Penerima tidak bisa membagikan lagi (link
+  maupun orang), tidak bisa Kompres server, dan tidak bisa memindah/menyalin keluar dari ruang pemilik.
+- **Kuota dan index pemilik:** item baru di ruang pribadi orang lain dimiliki pemilik ruang itu (`spaceOwner` di
+  `services/nodes.ts`; `created_by` tetap pembuatnya), jadi memakai pool pemilik dan masuk index `u/{pemilik}/`.
+  Perubahan lewat izin menandai index pemilik (`grantedOwners` → `markManifestDirty`).
+- **Yang boleh membagikan:** yang aksesnya bukan lewat izin orang: pemilik item pribadi, anggota keluarga untuk item
+  Drive Keluarga (sama dengan link). Privasi keluarga tidak berubah: kepala keluarga tidak melihat file pribadi anggota
+  kecuali dibagikan langsung.
+- **Email yang belum terdaftar:** izin menunggu di `email` dan dikirimi email (bahasa pemberi, CTA ke `/untuk-saya`).
+  Saat orang itu membuka "Dibagikan dengan saya" dengan Akun Zeiko beralamat sama, izin menjadi miliknya
+  (`claimGrants`). Yang sudah punya akun mendapat notifikasi `node_shared` (lonceng + email, dua bahasa, bisa dimatikan).
+- **Batas:** 1–20 alamat per permintaan, maks 50 orang per item, `person_share_daily_limit` (config, 50 alamat/hari per
+  pemberi), plus rate limit `RL_SHARE_SEND`.
+- **Bacaan:** penerima membaca lewat jalur D1 yang sudah ada (bukan index-nya sendiri). Breadcrumb dipotong mulai dari
+  folder yang dibagikan, supaya nama folder pemilik di atasnya tidak bocor. Pencarian (tanpa filter ruang) dan Terbaru
+  ikut menampilkan isi yang dibagikan (CTE ke bawah dari akar izin, maks 64 tingkat).
+- Route: `GET/POST /api/nodes/:id/people`, `PATCH/DELETE /api/nodes/:id/people/:gid` (penerima boleh `DELETE` izinnya
+  sendiri = keluar), `GET /api/shared-with-me`. Belum ada di v1.
+- Hapus selamanya menghapus izin item itu; hapus akun menghapus izin yang diberikan dan diterima; ekspor data memuat
+  keduanya (`people.given`, `people.received`).
+- UI: tab Link/Orang di dialog Bagikan, halaman `/untuk-saya` di sidebar, dan tombol di halaman Dibagikan (jalan di HP).
+
+Test (`drive-people.test.ts`, IDOR): view (isi folder, breadcrumb terpotong, tidak bisa ubah/bagikan, sebelah 404,
+pencarian tidak bocor), edit (kuota dan index pemilik, hapus hanya buatan sendiri, tidak bisa keluar ruang pemilik),
+cabut/keluar/ganti peran/izin file saja, email yang belum terdaftar, validasi, ekspor.

@@ -18,6 +18,7 @@ import { Turnstile, useTurnstileSiteKey } from '../Turnstile';
 import { Dialog } from '../ui/Dialog';
 import { toast } from '../ui/Toast';
 import { ShareQr } from './ShareQr';
+import { SharePeople } from './SharePeople';
 import { ShareSettings } from './ShareSettings';
 import { errorText } from './useNodeActions';
 
@@ -49,12 +50,16 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
   const [copied, setCopied] = useState(false);
   const [panel, setPanel] = useState<'none' | 'email' | 'qr' | 'settings'>('none');
   // Hidden until Drive sends real email (ADR-049).
-  const emailOk = useCatalog().data?.capabilities?.emailShare !== false;
+  const caps = useCatalog().data?.capabilities;
+  const emailOk = caps?.emailShare !== false;
   const [emails, setEmails] = useState('');
   const [captcha, setCaptcha] = useState<string | null>(null);
   const needsCaptcha = Boolean(useTurnstileSiteKey());
   const [message, setMessage] = useState('');
   const started = useRef(false);
+  // D2 (ADR-085): one item can also go to particular people.
+  const peopleOk = Boolean(single) && caps?.peopleShares === true;
+  const [tab, setTab] = useState<'link' | 'people'>('link');
 
   const create = useMutation({
     mutationFn: () => createShare({ nodeIds: nodes.map((n) => n.id) }),
@@ -71,11 +76,11 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
 
   // Reuse an active link for single items; otherwise create one right away.
   useEffect(() => {
-    if (started.current) return;
+    if (started.current || tab !== 'link') return;
     if (single && existing.isPending) return;
     started.current = true;
     if (!active) create.mutate();
-  }, [single, existing.isPending, active, create]);
+  }, [single, existing.isPending, active, create, tab]);
 
   const send = async (channel: 'whatsapp' | 'telegram' | 'webshare') => {
     if (!share) return;
@@ -125,7 +130,28 @@ export function ShareDialog({ nodes, onClose }: { nodes: NodeDto[]; onClose: () 
 
   return (
     <Dialog open title={t.share.dialogTitle(title)} onClose={onClose}>
-      {!share ? (
+      {peopleOk && (
+        <div
+          role="tablist"
+          className="mb-4 flex gap-1 rounded-xl bg-[var(--bg-subtle)] p-1 text-sm"
+        >
+          {(['link', 'people'] as const).map((k) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => setTab(k)}
+              className={`flex-1 rounded-lg px-3 py-1.5 ${tab === k ? 'bg-[var(--card)] font-medium shadow-sm' : 'text-[var(--fg-muted)]'}`}
+            >
+              {k === 'link' ? t.people.tabLink : t.people.tabPeople}
+            </button>
+          ))}
+        </div>
+      )}
+      {tab === 'people' && single ? (
+        <SharePeople node={single} />
+      ) : !share ? (
         <p className="py-6 text-center text-sm text-[var(--fg-muted)]">{t.share.creating}</p>
       ) : (
         <div className="space-y-4">

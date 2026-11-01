@@ -111,6 +111,8 @@ export const configSchema = z.object({
   share_download_dedupe_minutes: int().min(1).default(10),
   share_email_max_recipients: int().min(1).default(5),
   share_email_daily_limit: int().min(0).default(20),
+  /** D2 (ADR-085): addresses a person may share items with per day. */
+  person_share_daily_limit: int().min(0).default(50),
   share_message_max_chars: int().min(1).default(500),
 
   // ── Archive ──

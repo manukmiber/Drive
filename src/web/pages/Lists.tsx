@@ -29,8 +29,10 @@ import {
   listStarred,
   revokeShare,
   searchNodes,
+  sharedWithMe,
   type ShareDto,
 } from '../lib/files';
+import { useCatalog } from '../lib/catalog';
 
 function Header({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
@@ -173,7 +175,30 @@ function shareStatus(s: ShareDto): { label: string; tone: string } {
   return { label: t.share.statusActive, tone: 'bg-green-100 text-green-800' };
 }
 
+/** D2 (ADR-085): what others shared straight to the person's account. */
+export function SharedWithMe() {
+  const q = useQuery({ queryKey: ['shared-with-me'], queryFn: sharedWithMe });
+  useEffect(() => void (document.title = `${t.nav.sharedWithMe} · Zeiko`), []);
+  return (
+    <div>
+      <Header title={t.nav.sharedWithMe} />
+      <p className="px-4 pt-3 text-sm text-[var(--fg-muted)]">{t.people.pageHint}</p>
+      {q.isPending ? (
+        <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>
+      ) : (
+        <FileView
+          items={(q.data?.items ?? []).map((i) => i.node)}
+          view="list"
+          label={t.nav.sharedWithMe}
+          empty={emptyBox(t.people.empty)}
+        />
+      )}
+    </div>
+  );
+}
+
 export function Shared() {
+  const people = useCatalog().data?.capabilities?.peopleShares === true;
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['shares', 'mine'], queryFn: () => listShares() });
   const [showOld, setShowOld] = useState(false);
@@ -192,6 +217,14 @@ export function Shared() {
   return (
     <div>
       <Header title={t.nav.shared}>
+        {people && (
+          <Link
+            to="/untuk-saya"
+            className="inline-flex h-9 items-center rounded-full border border-[var(--border)] px-3 text-sm"
+          >
+            {t.nav.sharedWithMe}
+          </Link>
+        )}
         <label className="relative">
           <SearchIcon
             className="pointer-events-none absolute top-2.5 left-2.5 h-4 w-4 text-[var(--fg-muted)]"

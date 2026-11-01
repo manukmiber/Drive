@@ -278,7 +278,14 @@ export async function readNode(
     };
   const { access } = await requireNode(ctx, userId, id);
   const [node, path] = await Promise.all([getNodeDto(ctx, userId, id), breadcrumb(ctx, id)]);
-  return { node, path, access };
+  return { node, path: sharedPath(path, access), access };
+}
+
+/** Through a person share the path starts at what was shared: the owner's folders above stay hidden. */
+function sharedPath(path: Crumb[], access: Access): Crumb[] {
+  if (!access.shared) return path;
+  const at = path.findIndex((c) => c.id === access.shared!.rootId);
+  return at === -1 ? path.slice(-1) : path.slice(at);
 }
 
 /** A page of a folder (SPEC §8.2), with the breadcrumb on the first page. */
@@ -291,7 +298,9 @@ export async function readChildren(
   const found = await treeNode(ctx, userId, folderId);
   if (!found) {
     const res = await listChildren(ctx, userId, folderId, opts);
-    return opts.cursor ? res : { ...res, path: await breadcrumb(ctx, folderId) };
+    if (opts.cursor) return res;
+    const { access } = await requireNode(ctx, userId, folderId);
+    return { ...res, path: sharedPath(await breadcrumb(ctx, folderId), access) };
   }
   if (found.node.kind !== 'folder') throw new AppError('BAD_REQUEST', 'not a folder');
   let page: { items: NodeDto[]; nextCursor: string | null };

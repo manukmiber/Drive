@@ -13,6 +13,13 @@ import { findDuplicates } from '../services/duplicates';
 import { setExpiry } from '../services/expiry';
 import { nodeActivity, recentActivity } from '../services/activity';
 import {
+  addPeople,
+  listPeople,
+  removePerson,
+  setPersonRole,
+  sharedWithMe,
+} from '../services/grants';
+import {
   deleteVersion,
   keepVersion,
   listVersions,
@@ -57,6 +64,7 @@ export const nodes = new Hono<AppBindings>()
   .use('/recent', requireUser)
   .use('/drive/*', requireUser)
   .use('/activity', requireUser)
+  .use('/shared-with-me', requireUser)
   .get(
     '/search',
     validate(
@@ -102,6 +110,52 @@ export const nodes = new Hono<AppBindings>()
         c.req.valid('query').space ?? 'personal',
         c.req.header('if-none-match'),
       ),
+  )
+  // D2: a file or folder shared with particular Zeiko accounts (ADR-085).
+  .get('/nodes/:id/people', async (c) =>
+    c.json({ items: await listPeople(c.get('ctx'), c.get('user')!.id, c.req.param('id')) }),
+  )
+  .post(
+    '/nodes/:id/people',
+    rateLimit('RL_SHARE_SEND', 'people'),
+    validate(
+      'json',
+      z.object({
+        emails: z.array(z.string().max(254)).min(1).max(20),
+        role: z.enum(['view', 'edit']),
+        expiresAt: z.number().int().nullable().optional(),
+      }),
+    ),
+    async (c) =>
+      c.json({
+        items: await addPeople(
+          c.get('ctx'),
+          c.get('user')!.id,
+          c.req.param('id'),
+          c.req.valid('json'),
+        ),
+      }),
+  )
+  .patch(
+    '/nodes/:id/people/:gid',
+    validate('json', z.object({ role: z.enum(['view', 'edit']) })),
+    async (c) =>
+      c.json({
+        items: await setPersonRole(
+          c.get('ctx'),
+          c.get('user')!.id,
+          c.req.param('id'),
+          c.req.param('gid'),
+          c.req.valid('json').role,
+        ),
+      }),
+  )
+  .delete('/nodes/:id/people/:gid', async (c) => {
+    await removePerson(c.get('ctx'), c.get('user')!.id, c.req.param('id'), c.req.param('gid'));
+    return c.body(null, 204);
+  })
+  .get('/shared-with-me', async (c) =>
+    c.json({ items: await sharedWithMe(c.get('ctx'), c.get('user')!.id) }),
   )
   // D1: version history of a file, and how many versions each space keeps.
   .get('/nodes/:id/versions', async (c) =>

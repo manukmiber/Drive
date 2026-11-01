@@ -32,6 +32,7 @@ const Duplicates = page(() => import('./pages/Duplicates'), 'Duplicates');
 const Recent = page(() => import('./pages/Lists'), 'Recent');
 const Search = page(() => import('./pages/Lists'), 'Search');
 const Shared = page(() => import('./pages/Lists'), 'Shared');
+const SharedWithMe = page(() => import('./pages/Lists'), 'SharedWithMe');
 const Starred = page(() => import('./pages/Lists'), 'Starred');
 const Billing = page(() => import('./pages/Billing'), 'Billing');
 const Report = page(() => import('./pages/Report'), 'Report');
@@ -127,6 +128,7 @@ const routeTree = rootRoute.addChildren([
     }),
     createRoute({ getParentRoute: () => appRoute, path: '/keluarga', component: FamilyPage }),
     createRoute({ getParentRoute: () => appRoute, path: '/dibagikan', component: Shared }),
+    createRoute({ getParentRoute: () => appRoute, path: '/untuk-saya', component: SharedWithMe }),
     createRoute({ getParentRoute: () => appRoute, path: '/terbaru', component: Recent }),
     createRoute({ getParentRoute: () => appRoute, path: '/berbintang', component: Starred }),
     searchRoute,

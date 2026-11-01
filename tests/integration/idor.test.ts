@@ -165,7 +165,17 @@ describe('IDOR (SPEC §14.1)', () => {
             'SELECT name, user_id, public, cors_json, logging_json FROM s3_buckets ORDER BY name',
           )
           .all(),
+        rt.access.sqlite
+          .prepare('SELECT id, node_id, user_id, email, role FROM node_grants ORDER BY id')
+          .all(),
       ]);
+    // D2 (ADR-085): A shares the folder with someone who isn't on Drive yet.
+    const people = await a.req('POST', `/api/nodes/${folder.id}/people`, {
+      emails: ['teman-a@example.com'],
+      role: 'view',
+    });
+    expect(people.status, await people.clone().text()).toBe(200);
+    const grant = ((await people.json()) as { items: Array<{ id: string }> }).items[0]!.id;
     // B's own folder, to try A's photo as its cover (ADR-058).
     const bFolder = await createFolder(b, bRoot, 'Punya B');
     const before = await snapshot();
@@ -180,6 +190,15 @@ describe('IDOR (SPEC §14.1)', () => {
     const attempts: Array<[string, string, unknown?, RequestInit?]> = [
       ['GET', `/api/nodes/${file.id}`],
       ['GET', `/api/nodes/${folder.id}/children`],
+      ['GET', `/api/nodes/${folder.id}/people`],
+      [
+        'POST',
+        `/api/nodes/${folder.id}/people`,
+        { emails: ['penyerang@example.com'], role: 'edit' },
+      ],
+      ['PATCH', `/api/nodes/${folder.id}/people/${grant}`, { role: 'edit' }],
+      ['DELETE', `/api/nodes/${folder.id}/people/${grant}`],
+      ['DELETE', `/api/nodes/${bFolder.id}/people/${grant}`],
       ['POST', '/api/nodes/decor', { ids: [folder.id], color: 'red' }],
       ['POST', '/api/nodes/decor', { ids: [bFolder.id], coverId: file.id }],
       ['PATCH', `/api/nodes/${file.id}`, { name: 'dicuri.txt' }],

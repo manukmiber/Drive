@@ -20,6 +20,7 @@ import { requireNode, type NodeRecord } from './access';
 import {
   getNodeDto,
   markManifestDirty,
+  spaceOwner,
   siblingByName,
   trashNodes,
   uniqueName,
@@ -150,13 +151,13 @@ function insertRows(
     DB.prepare(
       `INSERT INTO nodes (id, pool_id, space, family_id, owner_id, created_by, parent_id, kind, name, name_key,
          blob_id, size, mime, status, client_modified_at, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, 'file', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)`,
+       VALUES (?1, ?2, ?3, ?4, ?5, ?15, ?6, 'file', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)`,
     ).bind(
       p.nodeId,
       p.parent.pool_id,
       p.parent.space,
       p.parent.family_id,
-      p.userId,
+      spaceOwner(p.parent, p.userId),
       p.parent.id,
       p.name,
       pendingKey(p.nodeId),
@@ -166,6 +167,7 @@ function insertRows(
       p.status,
       p.lastModified,
       now,
+      p.userId,
     ),
     DB.prepare(
       `INSERT INTO uploads (id, user_id, pool_id, node_id, blob_id, r2_key, r2_upload_id, size, part_size,

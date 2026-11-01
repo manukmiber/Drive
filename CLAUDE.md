@@ -34,6 +34,8 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
 - **Versi file (D1, ADR-084)** = baris `nodes` `kind='version'` di bawah file-nya. Query yang menjumlah byte terpakai
   memakai `USED_SQL` (`services/versions-sql.ts`); query daftar/cari yang membaca `nodes` langsung harus menyaring
   `kind != 'version'`. Mengganti isi file menukar `blob_id` di node yang sama (id dan link tetap).
+- **Share ke orang (D2, ADR-085)**: izin di `node_grants` (D1 akses), dicek di `nodeAccess` hanya kalau aturan biasa
+  menolak (`Access.shared`). Item baru di ruang pribadi selalu milik pemilik ruang (`spaceOwner`), bukan pembuatnya.
 
 ## Mesin ini
 - HP Android (PRoot, aarch64). **workerd tidak bisa jalan** → jangan pakai `wrangler dev`,

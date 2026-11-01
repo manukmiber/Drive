@@ -4,6 +4,8 @@ import { recordActivity } from './activity';
 import { USED_SQL } from './versions-sql';
 import { DAY_MS } from '../../shared/constants';
 import { markIndexDirty } from './drive-index-sync';
+import { grantedOwners } from './grant-lookup';
+import { forgetGrants } from './grants';
 import { isFolderColor, isFolderIcon, type FolderDecor } from '../../shared/folder-decor';
 import {
   decodeCursor as decodeSharedCursor,
@@ -76,7 +78,7 @@ export function toDto(r: Row): NodeDto {
   };
 }
 
-const SELECT_DTO = `SELECT n.*, b.scan_status, b.thumb_key, ${COVER_SQL},
+export const SELECT_DTO = `SELECT n.*, b.scan_status, b.thumb_key, ${COVER_SQL},
   (SELECT 1 FROM node_stars s WHERE s.node_id = n.id AND s.user_id = ?1) AS starred
   FROM nodes n LEFT JOIN blobs b ON b.id = n.blob_id`;
 
@@ -268,9 +270,18 @@ export async function requireWritableFolder(
   return node;
 }
 
+/**
+ * Who owns a new item in `parent`: in a personal space always that space's owner, also when someone
+ * it was shared with makes it (D2, ADR-085); in a family's space its maker (SPEC §9.2).
+ */
+export function spaceOwner(parent: Pick<NodeRecord, 'space' | 'owner_id'>, userId: string): string {
+  return parent.space === 'personal' ? parent.owner_id : userId;
+}
+
 /** The user's Drive index is behind D1: it is written after the response (R3, ADR-074). */
 export async function markManifestDirty(ctx: Ctx, userId: string): Promise<void> {
-  await markIndexDirty(ctx, [userId]);
+  // A change made through a person share is in its owner's tree (D2, ADR-085).
+  await markIndexDirty(ctx, [userId, ...grantedOwners(ctx)]);
 }
 
 // ───────────────────────────── writes ─────────────────────────────
@@ -299,18 +310,19 @@ export async function createFolder(
       await ctx.env.DB.prepare(
         `INSERT INTO nodes (id, pool_id, space, family_id, owner_id, created_by, parent_id, kind, name, name_key,
            status, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, 'folder', ?7, ?8, 'ready', ?9, ?9)`,
+         VALUES (?1, ?2, ?3, ?4, ?5, ?10, ?6, 'folder', ?7, ?8, 'ready', ?9, ?9)`,
       )
         .bind(
           id,
           parent.pool_id,
           parent.space,
           parent.family_id,
-          userId,
+          spaceOwner(parent, userId),
           parent.id,
           name,
           nameKey(name),
           now,
+          userId,
         )
         .run();
       break;
@@ -479,8 +491,17 @@ export async function moveNodes(
     return p;
   };
   for (const id of ids) {
-    const { node } = await requireNode(ctx, userId, id, 'edit');
+    const { node, access } = await requireNode(ctx, userId, id, 'edit');
     if (node.parent_id === null) throw new AppError('FORBIDDEN', 'cannot move a root folder');
+    // Through a person share only within its owner's space (D2, ADR-085).
+    if (
+      access.shared &&
+      (node.space !== target.space ||
+        node.family_id !== target.family_id ||
+        spaceOwner(node, userId) !== spaceOwner(target, userId) ||
+        node.id === access.shared.rootId)
+    )
+      throw new AppError('FORBIDDEN', 'not allowed');
     if (node.trashed_at !== null) throw new AppError('CONFLICT', 'item is in the trash');
     if (node.status === 'uploading') throw new AppError('UPLOAD_STATE', 'upload still running');
     if (node.parent_id === target.id) {
@@ -603,13 +624,13 @@ export async function copyFile(
       ctx.env.DB.prepare(
         `INSERT INTO nodes (id, pool_id, space, family_id, owner_id, created_by, parent_id, kind, name, name_key,
            blob_id, size, mime, status, client_modified_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?5, ?6, 'file', ?7, ?8, ?9, ?10, ?11, 'ready', ?12, ?13, ?13)`,
+         VALUES (?1, ?2, ?3, ?4, ?5, ?14, ?6, 'file', ?7, ?8, ?9, ?10, ?11, 'ready', ?12, ?13, ?13)`,
       ).bind(
         newId,
         target.pool_id,
         target.space,
         target.family_id,
-        userId,
+        spaceOwner(target, userId),
         target.id,
         name,
         nameKey(name),
@@ -618,6 +639,7 @@ export async function copyFile(
         node.mime,
         node.client_modified_at,
         now,
+        userId,
       ),
     ]);
   } catch (e) {
@@ -753,6 +775,10 @@ export async function deleteSubtree(ctx: Ctx, rootId: string): Promise<DeleteRes
   ]);
   const deleted = results[3]?.meta.changes ?? 0;
   await forgetSharedNodes(
+    ctx,
+    gone.map((r) => r.id),
+  );
+  await forgetGrants(
     ctx,
     gone.map((r) => r.id),
   );

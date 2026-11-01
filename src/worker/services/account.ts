@@ -2,6 +2,7 @@
 // period. Invoices and the wallet ledger are kept (accounting obligations) but de-identified.
 import { DAY_MS } from '../../shared/constants';
 import { deleteActivity, exportActivity } from './activity';
+import { deleteGrantsOfUser, exportGrants } from './grants';
 import { deleteUserIndex } from './drive-index-sync';
 import type { Ctx } from '../context';
 import { accessDb } from '../lib/access-db';
@@ -73,6 +74,8 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
     ),
     // D4: what happened in the person's own Drive, from its log in R2 (ADR-083).
     activity: await exportActivity(ctx, userId),
+    // D2: items shared with particular people, both ways (ADR-085).
+    people: await exportGrants(ctx, userId),
     shares: await qa(
       'SELECT title, kind, expires_at, download_count, revoked_at, created_at FROM shares WHERE created_by = ?1',
       userId,
@@ -240,6 +243,7 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
     ]);
     await deleteUserIndex(ctx, id);
     await deleteActivity(ctx, { user: id });
+    await deleteGrantsOfUser(ctx, id);
     log.info('account_deleted', { userId: id });
   }
   return results.length;

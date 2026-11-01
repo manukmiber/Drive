@@ -2,6 +2,7 @@
 // "no view access" into 404 so IDs of other users' files never leak (IDOR tests, SPEC §8.6).
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
+import { grantFor, type GrantRole } from './grant-lookup';
 
 export interface NodeRecord {
   rid: number;
@@ -43,6 +44,8 @@ export interface Access {
   /** Put new items inside (upload, new folder, move/copy into). Every member may add to Drive Keluarga. */
   add: boolean;
   isOwner: boolean;
+  /** Reached through a person share (D2, ADR-085): its role and the folder it was given on. */
+  shared?: { role: GrantRole; rootId: string };
 }
 
 const NONE: Access = { view: false, edit: false, remove: false, add: false, isOwner: false };
@@ -66,12 +69,12 @@ export async function nodeAccess(ctx: Ctx, userId: string, node: NodeRecord): Pr
   if (node.status === 'uploading' && node.created_by !== userId) return NONE;
 
   if (node.space === 'personal') {
-    if (node.owner_id !== userId) return NONE;
+    if (node.owner_id !== userId) return sharedAccess(ctx, userId, node);
     return { view: true, edit: true, remove: true, add: true, isOwner: true };
   }
   if (!node.family_id) return NONE;
   const role = await familyRole(ctx, userId, node.family_id);
-  if (!role) return NONE;
+  if (!role) return sharedAccess(ctx, userId, node);
   const privileged = role === 'owner' || node.created_by === userId;
   return {
     view: true,
@@ -79,6 +82,25 @@ export async function nodeAccess(ctx: Ctx, userId: string, node: NodeRecord): Pr
     remove: privileged,
     add: true,
     isOwner: node.owner_id === userId,
+  };
+}
+
+/**
+ * Someone else's item shared with the person (D2, ADR-085): view, or edit = also rename, move within
+ * it, replace content and add; removing stays with its owner and whoever made the item.
+ */
+async function sharedAccess(ctx: Ctx, userId: string, node: NodeRecord): Promise<Access> {
+  if (node.kind === 'version') return NONE;
+  const g = await grantFor(ctx, userId, node);
+  if (!g) return NONE;
+  const edit = g.role === 'edit';
+  return {
+    view: true,
+    edit,
+    remove: edit && node.created_by === userId && node.id !== g.rootId,
+    add: edit,
+    isOwner: false,
+    shared: { role: g.role, rootId: g.rootId },
   };
 }
 

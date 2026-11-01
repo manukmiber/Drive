@@ -2,11 +2,12 @@
 // index (R2, ADR-077) and their family's (R4, ADR-078). Stars on family files are each member's own
 // and Terbaru is not in any index yet, so those stay on D1.
 import type { Ctx } from '../context';
-import { DRIVE_TYPE_FILTERS, type DriveTypeFilter } from '../../shared/drive-tree';
+import { DRIVE_TYPE_FILTERS, searchOrder, type DriveTypeFilter } from '../../shared/drive-tree';
 import { markIndexDirty } from './drive-index-sync';
 import { personalTree, searchTrees } from './drive-read';
 import { AppError } from '../lib/errors';
 import { requireNode } from './access';
+import { searchShared, sharedRoots, SHARED_SUBTREE } from './grants';
 import { COVER_SQL, toDto, type NodeDto } from './nodes';
 
 /** Family nodes the user may see (§9.4). */
@@ -35,7 +36,16 @@ export interface SearchOptions {
 
 /** Names in the person's own Drive and their family's: every word a prefix, accents ignored. */
 export async function search(ctx: Ctx, userId: string, o: SearchOptions): Promise<NodeDto[]> {
-  return searchTrees(ctx, userId, o);
+  // What others shared with the person is found too (D2, ADR-085), unless one space was asked for.
+  const [own, shared] = await Promise.all([
+    searchTrees(ctx, userId, o),
+    o.space ? Promise.resolve([]) : searchShared(ctx, userId, o),
+  ]);
+  if (!shared.length) return own;
+  const seen = new Set(own.map((n) => n.id));
+  return [...own, ...shared.filter((n) => !seen.has(n.id))]
+    .sort(searchOrder)
+    .slice(0, Math.min(o.limit ?? 50, 100));
 }
 
 export async function setStar(
@@ -78,13 +88,18 @@ export async function listStarred(ctx: Ctx, userId: string): Promise<NodeDto[]> 
 
 /** Recently opened or changed files. */
 export async function listRecent(ctx: Ctx, userId: string): Promise<NodeDto[]> {
+  // Files inside what others shared with the person count too (D2, ADR-085).
+  const roots = await sharedRoots(ctx, userId);
+  const shared = roots
+    ? ` OR (n.id IN (SELECT id FROM g) AND n.trashed_at IS NULL AND n.status != 'uploading')`
+    : '';
   const { results } = await ctx.env.DB.prepare(
-    `${SELECT} LEFT JOIN node_recent r ON r.node_id = n.id AND r.user_id = ?1
-     WHERE ${VISIBLE} AND n.kind = 'file'
+    `${roots ? SHARED_SUBTREE : ''} ${SELECT} LEFT JOIN node_recent r ON r.node_id = n.id AND r.user_id = ?1
+     WHERE ((${VISIBLE})${shared}) AND n.kind = 'file'
        AND (r.accessed_at IS NOT NULL OR n.created_by = ?1)
      ORDER BY MAX(COALESCE(r.accessed_at, 0), n.updated_at) DESC LIMIT 100`,
   )
-    .bind(userId)
+    .bind(...(roots ? [userId, roots] : [userId]))
     .all<Parameters<typeof toDto>[0]>();
   return results.map(toDto);
 }
