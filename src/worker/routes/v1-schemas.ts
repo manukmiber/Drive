@@ -57,6 +57,16 @@ export const Activity = z.strictObject({
   space: z.enum(['personal', 'family']),
 });
 
+export const Version = z.strictObject({
+  id: z.string(),
+  number: z.number().int().describe('The version number the file had with this content'),
+  size: z.number().int(),
+  savedAt: ms.describe('When it stopped being the file’s content'),
+  contentAt: ms.describe('When that content was made'),
+  kept: z.boolean().describe('Kept past the count you chose (still goes after the days limit)'),
+  expiresAt: ms,
+});
+
 export const Crumb = z.strictObject({
   id: z.string(),
   name: z.string(),

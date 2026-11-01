@@ -99,6 +99,35 @@ export const nodeInfo = (id: string) =>
     path: Crumb[];
     access: { view: boolean; edit: boolean; remove: boolean; isOwner: boolean };
   }>(`/api/nodes/${id}`);
+/** D1: a file's earlier contents, and how many versions each space keeps. */
+export interface VersionDto {
+  id: string;
+  number: number;
+  size: number;
+  savedAt: number;
+  contentAt: number;
+  kept: boolean;
+  expiresAt: number;
+}
+export const listVersions = (id: string) =>
+  api<{ items: VersionDto[]; keep: number; days: number }>(`/api/nodes/${id}/versions`);
+export const versionUrl = (id: string, vid: string) =>
+  api<{ url: string; expiresAt: number }>(`/api/nodes/${id}/versions/${vid}/download`);
+export const restoreVersion = (id: string, vid: string) =>
+  sendJson<{ node: NodeDto }>('POST', `/api/nodes/${id}/versions/${vid}/restore`);
+export const keepVersion = (id: string, vid: string, kept: boolean) =>
+  sendJson<void>('PUT', `/api/nodes/${id}/versions/${vid}/keep`, { kept });
+export const deleteVersion = (id: string, vid: string) =>
+  sendJson<void>('DELETE', `/api/nodes/${id}/versions/${vid}`);
+export interface VersionSettings {
+  personal: { keepVersions: number };
+  family: { keepVersions: number; canChange: boolean } | null;
+  days: number;
+  max: number;
+}
+export const driveSettings = () => api<{ versions: VersionSettings }>('/api/drive/settings');
+export const setKeepVersions = (space: 'personal' | 'family', keepVersions: number) =>
+  sendJson<{ versions: VersionSettings }>('PUT', '/api/drive/settings', { space, keepVersions });
 /** D4: a node's activity (a folder's includes its direct contents), or the latest overall. */
 export const nodeActivity = (id: string) =>
   api<{ items: ActivityItem[] }>(`/api/nodes/${id}/activity`);

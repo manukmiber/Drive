@@ -12,7 +12,7 @@ export interface NodeRecord {
   owner_id: string;
   created_by: string;
   parent_id: string | null;
-  kind: 'file' | 'folder';
+  kind: 'file' | 'folder' | 'version';
   name: string;
   name_key: string;
   blob_id: string | null;
@@ -94,7 +94,8 @@ export async function requireNode(
   need: keyof Omit<Access, 'isOwner'> = 'view',
 ): Promise<{ node: NodeRecord; access: Access }> {
   const node = await loadNode(ctx, id);
-  if (!node) throw new AppError('NOT_FOUND', 'node not found');
+  // A file's older versions (D1, ADR-084) are reached only through the file (services/versions.ts).
+  if (!node || node.kind === 'version') throw new AppError('NOT_FOUND', 'node not found');
   const access = await nodeAccess(ctx, userId, node);
   if (!access.view) throw new AppError('NOT_FOUND', 'node not found');
   if (await poolLocked(ctx, node.pool_id))

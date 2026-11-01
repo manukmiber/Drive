@@ -40,7 +40,7 @@ async function collectTree(
        SELECT id, 0, id FROM nodes WHERE id IN (${placeholders}) AND trashed_at IS NULL
        UNION ALL
        SELECT n.id, t.depth + 1, t.root FROM nodes n JOIN t ON n.parent_id = t.id
-       WHERE n.trashed_at IS NULL AND t.depth < 64)
+       WHERE n.trashed_at IS NULL AND n.kind != 'version' AND t.depth < 64)
      SELECT n.id, n.parent_id, n.kind, n.name, n.size, n.mime, n.blob_id, n.updated_at, n.client_modified_at,
             CASE WHEN b.scan_status IN ('infected', 'quarantined') THEN 'rejected' ELSE n.status END AS status,
             b.r2_key, b.crc32, t.depth, t.root

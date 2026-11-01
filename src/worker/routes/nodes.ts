@@ -13,6 +13,15 @@ import { findDuplicates } from '../services/duplicates';
 import { setExpiry } from '../services/expiry';
 import { nodeActivity, recentActivity } from '../services/activity';
 import {
+  deleteVersion,
+  keepVersion,
+  listVersions,
+  restoreVersion,
+  setKeepVersions,
+  versionDownload,
+  versionSettings,
+} from '../services/versions';
+import {
   copyFile,
   createFolder,
   decorateFolders,
@@ -93,6 +102,62 @@ export const nodes = new Hono<AppBindings>()
         c.req.valid('query').space ?? 'personal',
         c.req.header('if-none-match'),
       ),
+  )
+  // D1: version history of a file, and how many versions each space keeps.
+  .get('/nodes/:id/versions', async (c) =>
+    c.json(await listVersions(c.get('ctx'), c.get('user')!.id, c.req.param('id'))),
+  )
+  .get('/nodes/:id/versions/:vid/download', async (c) =>
+    c.json(
+      await versionDownload(c.get('ctx'), c.get('user')!.id, c.req.param('id'), c.req.param('vid')),
+    ),
+  )
+  .post('/nodes/:id/versions/:vid/restore', async (c) =>
+    c.json({
+      node: await restoreVersion(
+        c.get('ctx'),
+        c.get('user')!.id,
+        c.req.param('id'),
+        c.req.param('vid'),
+      ),
+    }),
+  )
+  .put(
+    '/nodes/:id/versions/:vid/keep',
+    validate('json', z.object({ kept: z.boolean() })),
+    async (c) => {
+      await keepVersion(
+        c.get('ctx'),
+        c.get('user')!.id,
+        c.req.param('id'),
+        c.req.param('vid'),
+        c.req.valid('json').kept,
+      );
+      return c.body(null, 204);
+    },
+  )
+  .delete('/nodes/:id/versions/:vid', async (c) => {
+    await deleteVersion(c.get('ctx'), c.get('user')!.id, c.req.param('id'), c.req.param('vid'));
+    return c.body(null, 204);
+  })
+  .get('/drive/settings', async (c) =>
+    c.json({ versions: await versionSettings(c.get('ctx'), c.get('user')!.id) }),
+  )
+  .put(
+    '/drive/settings',
+    validate(
+      'json',
+      z.object({
+        space: z.enum(['personal', 'family']),
+        keepVersions: z.number().int().min(0).max(100),
+      }),
+    ),
+    async (c) => {
+      const b = c.req.valid('json');
+      return c.json({
+        versions: await setKeepVersions(c.get('ctx'), c.get('user')!.id, b.space, b.keepVersions),
+      });
+    },
   )
   // D4: the Activity panel (a node's, or the latest across the person's spaces).
   .get('/activity', async (c) =>

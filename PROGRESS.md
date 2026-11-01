@@ -62,8 +62,9 @@ lewat fase R di `docs/ROADMAP.md`.
   `PUT /api/nodes/:id/expiry` (+ v1), penanda `sys/expiry/…` untuk cron malam, pengingat H-1 `file_expiring`.
 - [x] D4 panel Aktivitas (ADR-083, 2026-10-29): log per ruang per bulan di R2 (`u|f/…/log/YYYY-MM.txt`), tab di panel
   Detail dan halaman Terbaru, `GET /api/activity` dan `/api/nodes/:id/activity` (+ v1), retensi `activity_keep_days`.
-- [ ] D1 riwayat versi: jawaban pemilik sudah ada (ADR-083 bagian akhir): masuk kuota, maks 30 hari, jumlah versi
-  dipilih user.
+- [x] D1 riwayat versi (ADR-084, 2026-11-01): versi = baris `nodes` `kind='version'` di bawah file (tanpa tabel baru),
+  kolom index `vs`, jumlah per ruang di header index (`keepVersions`), maks `version_keep_days` (30), cron
+  `purge_versions`, tab Versi di panel Detail, kartu di Pengaturan, `/api/nodes/:id/versions…` (+ v1).
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

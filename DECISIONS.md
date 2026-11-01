@@ -2322,3 +2322,40 @@ orang luar); keluarga dibubarkan menghapus lognya; retensi dengan jam palsu dan 
 **D1, jawaban pemilik (2026-10-29), untuk dipakai saat D1 dikerjakan:** versi lama dihitung ke kuota; disimpan paling
 lama 30 hari; berapa banyak versi yang disimpan ditentukan user sendiri.
 
+
+## ADR-084 — D1: riwayat versi sebagai baris `nodes` di bawah file, terlihat di index lewat kolom `vs`
+
+Tanggal: 2026-11-01. Status: diterima. Pemilik (2026-10-29): "Jelas masuk kuota untuk berapa lama 30 hari maximal
+dan berapa banyak versi itu terserah user".
+
+**Keputusan:**
+- Prompt D1 meminta tabel `node_versions`; ADR-064 melarang tabel/kolom D1 baru untuk Drive. Versi disimpan sebagai
+  baris `nodes` yang sudah ada, `kind = 'version'`, `parent_id` = file-nya, `blob_id` = isi lama, `version` = nomor
+  versinya, status `ready` atau `kept` ("Simpan"). Karena barisnya `nodes` biasa, semua yang sudah menghitung `nodes`
+  ikut benar tanpa jalur baru: kuota (`USED_SQL` di `services/versions-sql.ts`, dipakai `deleteSubtree`, reconcile
+  malam, keluarga), refcount blob, hapus selamanya (subtree), pindah ruang dan pool keluarga, hapus akun, ekspor data.
+- **Ganti isi tidak membuat node baru.** Upload `on_conflict=replace` (juga "ganti asli" editor, lewat jalur yang
+  sama) dan Kompres "ganti asli" menukar `blob_id` file yang ada dalam satu batch D1 bersama baris versinya
+  (`replaceWithVersion`, `versionInsert`): id file, link share, bintang, dekorasi, dan izin tetap; link share selalu
+  memberi isi terbaru. Pulihkan = tukar lagi (isi sekarang jadi versi baru, aktivitas `revert`).
+- **Kuota:** versi dihitung penuh (pemilik). Isi baru dicadangkan seperti upload biasa; kalau kuota tidak cukup,
+  upload ditolak seperti biasa.
+- **Berapa banyak:** dipilih per ruang, disimpan di header index (`keepVersions`, ditulis lewat `changeIndex`), bukan
+  di D1. Default `versions_default_keep` (config, 10), maksimal 100. Drive Keluarga hanya bisa diubah pemilik keluarga.
+  Versi "Simpan" tidak ikut hitungan jumlah. **0 = tanpa riwayat**: perilaku lama (file lama ke Sampah, file baru).
+  Menurunkan angka langsung membuang versi yang lewat batas.
+- **Berapa lama:** `version_keep_days` (config, 1–30, default 30), juga untuk versi "Simpan". Cron malam
+  `purge_versions` menghapusnya (`deleteSubtree`, jadi kuota dan refcount ikut).
+- **Index:** versi tidak menjadi entri sendiri. `project()` mengelompokkannya ke kolom `vs` milik file:
+  `[id, nomor, ukuran, diganti (detik), isi dari (detik), simpan]`. Jadi Sampah, pencarian, Terbaru, kembar, dan
+  daftar folder tidak pernah melihatnya; daftar versi dibaca dari index (`DriveTree.versions`), dengan cadangan D1.
+- **Akses:** versi hanya dijangkau lewat file-nya: `/api/nodes/:id/versions[/:vid[/download|/restore|/keep]]` (juga
+  v1, scope `drive.read`/`drive.write`). Lihat/unduh = view, pulihkan dan simpan = edit, hapus = remove
+  (`services/access.ts`). `requireNode` menolak `kind = 'version'`, jadi route node umum (ubah nama, pindah, Sampah,
+  share, salin, unduh) menjawab 404 untuk id versi. Unduh lewat token `/d/` yang sama dengan file.
+- UI: tab "Versi" di panel Detail (unduh, pulihkan, simpan/lepas, hapus dengan konfirmasi), kartu "Riwayat versi" di
+  Pengaturan.
+
+Test (`drive-versions.test.ts`): id dan link tetap, kuota sebelum/sesudah ganti, pulihkan, hapus versi, reconcile,
+hapus file membawa versinya; jumlah pilihan user, "Simpan", menurunkan angka, 30 hari dengan jam palsu, 0 = perilaku
+lama; IDOR (orang lain 404, versi di bawah file lain 404, id versi di route node umum 404); izin keluarga.

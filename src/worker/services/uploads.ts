@@ -1,6 +1,7 @@
 // Chunked, resumable, parallel uploads (SPEC §5.2). The client never sees R2 credentials or
 // presigned URLs: every byte passes through the Worker via the R2 binding.
 import { recordActivity } from './activity';
+import { replaceWithVersion } from './versions';
 import {
   HOUR_MS,
   MIB,
@@ -315,11 +316,12 @@ export async function uploadStatus(ctx: Ctx, userId: string, uploadId: string) {
 }
 
 /** Sets the final visible name (ADR-021) and flips the node to `scanning`. */
+/** Names the uploaded node (or pours it into the file it replaces); returns the file's id. */
 async function finalizeNode(
   ctx: Ctx,
   userId: string,
   up: Pick<UploadRow, 'node_id' | 'on_conflict'>,
-): Promise<void> {
+): Promise<string> {
   const node = await ctx.env.DB.prepare('SELECT * FROM nodes WHERE id = ?1')
     .bind(up.node_id)
     .first<NodeRecord>();
@@ -330,6 +332,8 @@ async function finalizeNode(
     const clash = node.parent_id ? await siblingByName(ctx, node.parent_id, name) : null;
     if (clash && clash.id !== node.id) {
       if (up.on_conflict === 'replace' && clash.kind === 'file') {
+        // D1 (ADR-084): the file keeps its id and history; its old content becomes a version.
+        if (await replaceWithVersion(ctx, userId, clash, node)) return clash.id;
         try {
           await trashNodes(ctx, userId, [clash.id]);
           replaced = true;
@@ -350,11 +354,12 @@ async function finalizeNode(
         action: replaced ? 'replace' : 'upload',
         node: { ...node, name },
       });
-      return;
+      return node.id;
     } catch (e) {
       if (!(e instanceof Error && /UNIQUE/.test(e.message)) || attempt === 2) throw e;
     }
   }
+  throw new AppError('NAME_CONFLICT', 'name already used');
 }
 
 async function enqueueScan(ctx: Ctx, blobId: string): Promise<void> {
@@ -404,10 +409,10 @@ export async function completeUpload(ctx: Ctx, userId: string, uploadId: string)
   )
     .bind(uploadId, now)
     .run();
-  await finalizeNode(ctx, userId, up);
+  const finalId = await finalizeNode(ctx, userId, up);
   await enqueueScan(ctx, up.blob_id);
   await markManifestDirty(ctx, userId);
-  return getNodeDto(ctx, userId, up.node_id);
+  return getNodeDto(ctx, userId, finalId);
 }
 
 /**
@@ -525,8 +530,8 @@ export async function simpleUpload(
     await ctx.env.BUCKET.delete(key).catch(() => undefined);
     throw e;
   }
-  await finalizeNode(ctx, userId, { node_id: nodeId, on_conflict: onConflict });
+  const finalId = await finalizeNode(ctx, userId, { node_id: nodeId, on_conflict: onConflict });
   await enqueueScan(ctx, blobId);
   await markManifestDirty(ctx, userId);
-  return getNodeDto(ctx, userId, nodeId);
+  return getNodeDto(ctx, userId, finalId);
 }

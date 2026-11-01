@@ -1,6 +1,7 @@
 // File tree operations (SPEC §8.3). Everything is a D1 update — R2 objects are never copied or
 // renamed (opaque keys, SPEC §3). Bulk operations work on subtrees via recursive CTEs (ADR-020).
 import { recordActivity } from './activity';
+import { USED_SQL } from './versions-sql';
 import { DAY_MS } from '../../shared/constants';
 import { markIndexDirty } from './drive-index-sync';
 import { isFolderColor, isFolderIcon, type FolderDecor } from '../../shared/folder-decor';
@@ -52,7 +53,7 @@ export function toDto(r: Row): NodeDto {
   return {
     id: r.id,
     parentId: r.parent_id,
-    kind: r.kind,
+    kind: r.kind === 'folder' ? 'folder' : 'file',
     name: r.name,
     size: r.size,
     mime: r.mime,
@@ -732,7 +733,7 @@ export async function deleteSubtree(ctx: Ctx, rootId: string): Promise<DeleteRes
       `${subtree(1)}
        UPDATE storage_pools SET
          used_bytes = MAX(0, used_bytes - (SELECT COALESCE(SUM(size), 0) FROM nodes
-           WHERE id IN (SELECT id FROM sub) AND kind = 'file' AND status = 'ready')),
+           WHERE id IN (SELECT id FROM sub) AND ${USED_SQL})),
          reserved_bytes = MAX(0, reserved_bytes - (SELECT COALESCE(SUM(size), 0) FROM nodes
            WHERE id IN (SELECT id FROM sub) AND kind = 'file' AND status IN ('uploading', 'scanning'))),
          updated_at = ?3

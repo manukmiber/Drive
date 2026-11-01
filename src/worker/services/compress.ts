@@ -2,6 +2,7 @@
 // is created and given back when it fails or the result is not smaller than the original.
 // Engines: Images binding (images ≤ images_binding_max_input_bytes), Media Transformations (videos
 // ≤ media_binding_max_seconds and ≤ media_binding_max_input_bytes) and Container `media` (rest).
+import { keepCount, pruneFile, versionInsert } from './versions';
 import type { Ctx } from '../context';
 import type { ImageFormat, MediaOutput, Quality, VideoPreset } from '../adapters/media';
 import { DAY_MS } from '../../shared/constants';
@@ -589,6 +590,42 @@ export async function processCompressJob(
       }
       await markManifestDirty(ctx, job.user_id);
       await finish(ctx, job, 'done', { outNodeId, savedBytes: saved });
+      return 'done';
+    }
+
+    // D1 (ADR-084): with history on, the original stays as a version and its bytes stay counted,
+    // so the result is added on top; without room for it, the original goes as before.
+    const keep = await keepCount(ctx, node);
+    if (keep > 0 && (await addUsedIfFits(ctx, node.pool_id, out.size))) {
+      const kept = await uniqueName(
+        ctx,
+        node.parent_id!,
+        outName(node.name, job.kind, o, false),
+        node.id,
+      );
+      const swap = await DB.batch([
+        blobInsert,
+        versionInsert(ctx, node.id, node.blob_id!),
+        DB.prepare(
+          `UPDATE nodes SET blob_id = ?2, size = ?3, mime = ?4, name = ?5, name_key = ?6, updated_at = ?7,
+             version = version + 1
+           WHERE id = ?1 AND blob_id = ?8 AND status = 'ready'`,
+        ).bind(node.id, blobId, out.size, out.contentType, kept, nameKey(kept), now, node.blob_id),
+      ]);
+      if (swap[2]?.meta.changes !== 1) {
+        await DB.batch([
+          DB.prepare(
+            'UPDATE storage_pools SET used_bytes = MAX(0, used_bytes - ?2) WHERE id = ?1',
+          ).bind(node.pool_id, out.size),
+          DB.prepare('DELETE FROM blobs WHERE id = ?1').bind(blobId),
+        ]);
+        await ctx.env.BUCKET.delete(key);
+        await finish(ctx, job, 'failed', { error: 'SOURCE_CHANGED' });
+        return 'failed';
+      }
+      await pruneFile(ctx, node.id, keep);
+      await markManifestDirty(ctx, node.owner_id);
+      await finish(ctx, job, 'done', { outNodeId: node.id, savedBytes: saved });
       return 'done';
     }
 

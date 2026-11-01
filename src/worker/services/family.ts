@@ -3,6 +3,7 @@
 // Pool changes (create, join, leave, dissolve) move nodes, blobs and usage counters in one batch.
 import { DAY_MS, SHARE_ID_LENGTH } from '../../shared/constants';
 import { deleteActivity } from './activity';
+import { USED_SQL } from './versions-sql';
 import { deleteFamilyIndex, markIndexDirty } from './drive-index-sync';
 import { revokeSharesOfNodes } from './shares';
 import { formatBytes, formatRupiah } from '../../shared/format';
@@ -596,7 +597,7 @@ export async function removeMember(ctx: Ctx, actorId: string, memberId: string):
   }
 
   const moving = await DB.prepare(
-    `SELECT COALESCE(SUM(size), 0) AS bytes FROM nodes WHERE pool_id = ?1 AND space = 'personal' AND owner_id = ?2 AND kind = 'file' AND status = 'ready'`,
+    `SELECT COALESCE(SUM(size), 0) AS bytes FROM nodes WHERE pool_id = ?1 AND space = 'personal' AND owner_id = ?2 AND ${USED_SQL}`,
   )
     .bind(target.poolId, memberId)
     .first<{ bytes: number }>();
@@ -744,7 +745,7 @@ export async function assertMemberCap(
     .first<{ cap_bytes: number | null }>();
   if (!row || row.cap_bytes === null) return;
   const used = await ctx.env.DB.prepare(
-    `SELECT COALESCE(SUM(size), 0) AS n FROM nodes WHERE pool_id = ?1 AND created_by = ?2 AND kind = 'file' AND status != 'rejected'`,
+    `SELECT COALESCE(SUM(size), 0) AS n FROM nodes WHERE pool_id = ?1 AND created_by = ?2 AND kind IN ('file', 'version') AND status != 'rejected'`,
   )
     .bind(poolId, userId)
     .first<{ n: number }>();
@@ -765,7 +766,7 @@ export async function familyOverview(ctx: Ctx, userId: string) {
     // Per-member totals only — never names of private files (SPEC §9.1).
     DB.prepare(
       `SELECT u.id, u.name, u.email, m.role, m.cap_bytes AS capBytes, m.joined_at AS joinedAt,
-              (SELECT COALESCE(SUM(size), 0) FROM nodes n WHERE n.pool_id = ?2 AND n.created_by = u.id AND n.kind = 'file' AND n.status = 'ready') AS usedBytes
+              (SELECT COALESCE(SUM(size), 0) FROM nodes n WHERE n.pool_id = ?2 AND n.created_by = u.id AND ${USED_SQL}) AS usedBytes
        FROM family_members m JOIN users u ON u.id = m.user_id WHERE m.family_id = ?1 ORDER BY m.role DESC, m.joined_at`,
     )
       .bind(m.familyId, m.poolId)

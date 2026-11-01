@@ -18,7 +18,7 @@
 // R4 (ADR-078): a family's tree has its own index (`f/{familyId}/index.txt`). It needs no mark of
 // its own: a member's flush writes their family's index as well, and every change to the family
 // space marks a member (the node's owner, the one acting, or the family owner).
-import { entryLine, type IndexEntry } from '../../shared/drive-index';
+import { entryLine, type IndexEntry, type IndexVersion } from '../../shared/drive-index';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
 import { changeIndex, indexKey, type IndexDoc } from './drive-index';
@@ -183,6 +183,7 @@ export interface TreeRow {
   thumb_key: string | null;
   scan_status: string | null;
   starred: number;
+  version: number;
   /** Family rows only: who owns it, whether other members may edit, who trashed it. */
   owner_id?: string;
   family_can_edit?: number;
@@ -190,7 +191,7 @@ export interface TreeRow {
 }
 
 const TREE_COLUMNS = `n.id, n.parent_id, n.kind, n.name, n.size, n.mime, n.status, n.trashed_at,
-  n.trash_root_id, n.client_modified_at, n.created_at, n.updated_at,
+  n.trash_root_id, n.client_modified_at, n.created_at, n.updated_at, n.version,
   n.decor_color, n.decor_icon, n.decor_cover_id, b.r2_key, b.thumb_key, b.scan_status`;
 
 export async function readTree(
@@ -310,6 +311,23 @@ export function project(doc: IndexDoc, rows: TreeRow[], used: number, members?: 
   const had = new Map<string, IndexEntry>();
   for (const e of doc.entries()) if (e.legacy) had.set(e.legacy, e);
 
+  // D1 (ADR-084): a file's earlier contents are no entries of their own, but a column of the file's.
+  const versions = new Map<string, IndexVersion[]>();
+  for (const r of rows) {
+    if (r.kind !== 'version' || !r.parent_id) continue;
+    const list = versions.get(r.parent_id) ?? [];
+    list.push({
+      id: r.id,
+      n: r.version,
+      size: r.size,
+      savedAt: r.created_at,
+      contentAt: r.updated_at,
+      kept: r.status === 'kept',
+    });
+    versions.set(r.parent_id, list);
+  }
+  rows = rows.filter((r) => r.kind !== 'version');
+
   const ids = new Map<string, number>();
   for (const r of rows) if (r !== root) ids.set(r.id, had.get(r.id)?.id ?? doc.allocate());
   const entryOf = (id: string | null) => (id ? (ids.get(id) ?? 0) : 0);
@@ -347,6 +365,7 @@ export function project(doc: IndexDoc, rows: TreeRow[], used: number, members?: 
       trashedBy: r.trashed_at === null ? 0 : at(r.trashed_by),
       // D12 (ADR-082): only the index keeps it, so it outlives every projection of the D1 row.
       expiresAt: had.get(r.id)?.expiresAt ?? null,
+      versions: (versions.get(r.id) ?? []).sort((a, b) => b.savedAt - a.savedAt || b.n - a.n),
     };
     const before = had.get(r.id);
     if (!before || entryLine(before) !== entryLine(entry)) doc.set(entry);

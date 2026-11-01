@@ -5,7 +5,7 @@
 //
 // While Drive moves off D1 (R3–R8) a node's id is still its D1 id, kept in the entry's `x` column;
 // entry numbers stay inside one index and are never shown.
-import type { IndexEntry, IndexHead } from './drive-index';
+import type { IndexEntry, IndexHead, IndexVersion } from './drive-index';
 import { isFolderColor, isFolderIcon, type FolderColor, type FolderDecor } from './folder-decor';
 
 /** A file or folder as the app and the API see it (the Worker's NodeDto). */
@@ -419,6 +419,11 @@ export class DriveTree {
     return this.live()
       .filter((e) => e.kind === 'file' && e.status === 'ready' && e.blob !== 0)
       .map((e) => ({ node: this.toNode(e), blob: e.blob }));
+  }
+
+  /** D1 (ADR-084): a file's earlier contents, newest first. */
+  versions(id: string): IndexVersion[] {
+    return this.byId.get(id)?.versions ?? [];
   }
 
   /** Starred and not in the Trash, the most recently changed first (the index keeps no star time). */

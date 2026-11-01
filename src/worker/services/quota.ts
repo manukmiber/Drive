@@ -1,4 +1,5 @@
 // Atomic quota accounting on storage_pools (SPEC §4, ADR-020).
+import { USED_SQL } from './versions-sql';
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 
@@ -59,7 +60,7 @@ export async function reconcilePools(
 ): Promise<Array<{ poolId: string; usedDrift: number; reservedDrift: number }>> {
   const { results } = await ctx.env.DB.prepare(
     `SELECT p.id AS pool_id, p.used_bytes, p.reserved_bytes,
-       COALESCE((SELECT SUM(size) FROM nodes n WHERE n.pool_id = p.id AND n.kind = 'file' AND n.status = 'ready'), 0) AS used_actual,
+       COALESCE((SELECT SUM(size) FROM nodes n WHERE n.pool_id = p.id AND ${USED_SQL}), 0) AS used_actual,
        COALESCE((SELECT SUM(size) FROM nodes n WHERE n.pool_id = p.id AND n.kind = 'file' AND n.status IN ('uploading', 'scanning')), 0) AS reserved_actual
      FROM storage_pools p`,
   ).all<{

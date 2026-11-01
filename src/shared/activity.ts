@@ -13,6 +13,7 @@ export const ACTIVITY_ACTIONS = [
   'share',
   'unshare',
   'decor',
+  'revert',
 ] as const;
 export type ActivityAction = (typeof ACTIVITY_ACTIONS)[number];
 

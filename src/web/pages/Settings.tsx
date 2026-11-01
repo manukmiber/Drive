@@ -1,15 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ArrowDownUp, Brain, CircleUser, CopyCheck, Languages, MapPin } from 'lucide-react';
+import {
+  ArrowDownUp,
+  Brain,
+  CircleUser,
+  CopyCheck,
+  History,
+  Languages,
+  MapPin,
+} from 'lucide-react';
 import { useState } from 'react';
 import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
 import { sitePage } from '../lib/zeiko';
 import { AccessTokens } from '../components/AccessTokens';
 import { Button } from '../components/Button';
+import { toast } from '../components/ui/Toast';
 import { TransferSettingsForm } from '../components/TransferSettings';
 import { api, ApiError, sendJson } from '../lib/api';
-import { downloadZip } from '../lib/files';
+import { downloadZip, driveSettings, setKeepVersions } from '../lib/files';
 import { meQueryKey, useMe } from '../lib/session';
 
 const card = 'z-card rounded-2xl p-5';
@@ -49,6 +58,7 @@ export function Settings() {
       <Language />
       <Transfers />
       <DuplicateFiles />
+      <VersionHistory />
 
       <section className={card} aria-labelledby="profil">
         <h2 id="profil" className="font-medium">
@@ -145,6 +155,107 @@ function DuplicateFiles() {
         {t.duplicates.find}
       </Link>
     </section>
+  );
+}
+
+/** D1 (ADR-084): how many earlier versions each space keeps of a file. */
+function VersionHistory() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['drive-settings'], queryFn: driveSettings });
+  const save = useMutation({
+    mutationFn: (a: { space: 'personal' | 'family'; keep: number }) =>
+      setKeepVersions(a.space, a.keep),
+    onSuccess: async (r) => {
+      qc.setQueryData(['drive-settings'], r);
+      await qc.invalidateQueries({ queryKey: ['versions'] });
+      toast(t.versions.saved);
+    },
+    onError: () => toast(t.errors.generic, { tone: 'error' }),
+  });
+  const v = q.data?.versions;
+  if (!v) return null;
+  return (
+    <section className={card} aria-labelledby="riwayat-versi">
+      <h2 id="riwayat-versi" className="flex items-center gap-2 font-medium">
+        <History className="h-4 w-4" aria-hidden="true" /> {t.versions.settingsTitle}
+      </h2>
+      <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.versions.settingsBody(v.days)}</p>
+      <KeepCount
+        key={`p${v.personal.keepVersions}`}
+        label={t.versions.personal}
+        value={v.personal.keepVersions}
+        max={v.max}
+        busy={save.isPending}
+        onSave={(keep) => save.mutate({ space: 'personal', keep })}
+      />
+      {v.family && (
+        <KeepCount
+          key={`f${v.family.keepVersions}`}
+          label={t.versions.family}
+          value={v.family.keepVersions}
+          max={v.max}
+          busy={save.isPending}
+          {...(v.family.canChange
+            ? { onSave: (keep: number) => save.mutate({ space: 'family', keep }) }
+            : { note: t.versions.familyOwnerOnly })}
+        />
+      )}
+    </section>
+  );
+}
+
+function KeepCount({
+  label,
+  value,
+  max,
+  busy,
+  onSave,
+  note,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  busy: boolean;
+  onSave?: (keep: number) => void;
+  note?: string;
+}) {
+  const [draft, setDraft] = useState(String(value));
+  const n = Number(draft);
+  const valid = draft !== '' && Number.isInteger(n) && n >= 0 && n <= max;
+  return (
+    <form
+      className="mt-3 flex flex-wrap items-center gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (onSave && valid && n !== value) onSave(n);
+      }}
+    >
+      <label className="min-w-32 flex-1 text-sm">
+        {label}
+        <input
+          type="number"
+          inputMode="numeric"
+          min={0}
+          max={max}
+          value={draft}
+          disabled={!onSave}
+          onChange={(e) => setDraft(e.target.value)}
+          className={`${input} mt-1`}
+        />
+      </label>
+      {onSave ? (
+        <Button
+          type="submit"
+          variant="secondary"
+          className="self-end"
+          disabled={busy || !valid || n === value}
+        >
+          {t.common.save}
+        </Button>
+      ) : (
+        <p className="w-full text-xs text-[var(--fg-muted)]">{note}</p>
+      )}
+    </form>
   );
 }
 

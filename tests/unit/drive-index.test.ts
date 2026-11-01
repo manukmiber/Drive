@@ -40,6 +40,7 @@ function file(id: number, parent: number, name: string, extra: Partial<IndexEntr
     canEdit: false,
     trashedBy: 0,
     expiresAt: null,
+    versions: [],
     ...extra,
   } satisfies IndexEntry;
 }

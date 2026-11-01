@@ -1,29 +1,45 @@
 // Right-hand Detail panel (SPEC §8.1).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock, X } from 'lucide-react';
+import { Clock, History, X } from 'lucide-react';
 import { useState } from 'react';
 import { formatBytes, formatDate, formatDateTime } from '../../../shared/format';
 import { addDaysWib, wibDate } from '../../../shared/time';
 import { useCatalog } from '../../lib/catalog';
 import { t } from '../../lib/i18n';
-import { nodeActivity, nodeInfo, setExpiry, type NodeDto } from '../../lib/files';
+import {
+  deleteVersion,
+  keepVersion,
+  listVersions,
+  nodeActivity,
+  nodeInfo,
+  restoreVersion,
+  setExpiry,
+  versionUrl,
+  type NodeDto,
+  type VersionDto,
+} from '../../lib/files';
 import { useMe } from '../../lib/session';
 import { ActivityList } from '../ActivityList';
 import { Button } from '../Button';
 import { FileIcon } from '../FileIcon';
+import { Dialog } from '../ui/Dialog';
 import { toast } from '../ui/Toast';
 
 export function Details({ id, onClose }: { id: string; onClose: () => void }) {
   const me = useMe();
   const catalog = useCatalog();
   const q = useQuery({ queryKey: ['node', id], queryFn: () => nodeInfo(id) });
-  const [tab, setTab] = useState<'details' | 'activity'>('details');
+  const [tab, setTab] = useState<'details' | 'activity' | 'versions'>('details');
   const activity = useQuery({
     queryKey: ['activity', id],
     queryFn: () => nodeActivity(id),
     enabled: tab === 'activity',
   });
   const n = q.data?.node;
+  const tabs =
+    n?.kind === 'file'
+      ? (['details', 'activity', 'versions'] as const)
+      : (['details', 'activity'] as const);
   // "Safe" only when an antivirus looked; the basic check says what it is (ADR-056).
   const scan =
     n?.scanStatus === 'clean' && catalog.data?.capabilities?.antivirus === false
@@ -52,7 +68,7 @@ export function Details({ id, onClose }: { id: string; onClose: () => void }) {
         </button>
       </div>
       <div role="tablist" className="mt-3 flex gap-1 rounded-xl bg-[var(--bg-subtle)] p-1 text-sm">
-        {(['details', 'activity'] as const).map((k) => (
+        {tabs.map((k) => (
           <button
             key={k}
             type="button"
@@ -61,7 +77,11 @@ export function Details({ id, onClose }: { id: string; onClose: () => void }) {
             onClick={() => setTab(k)}
             className={`flex-1 rounded-lg px-3 py-1.5 ${tab === k ? 'bg-[var(--card)] font-medium shadow-sm' : 'text-[var(--fg-muted)]'}`}
           >
-            {k === 'details' ? t.activity.detailsTab : t.activity.tab}
+            {k === 'details'
+              ? t.activity.detailsTab
+              : k === 'activity'
+                ? t.activity.tab
+                : t.versions.tab}
           </button>
         ))}
       </div>
@@ -75,6 +95,13 @@ export function Details({ id, onClose }: { id: string; onClose: () => void }) {
             <ActivityList items={activity.data.items} />
           </div>
         ))}
+      {tab === 'versions' && n?.kind === 'file' && q.data && (
+        <Versions
+          node={n}
+          canEdit={q.data.access.edit && n.trashedAt === null}
+          canRemove={q.data.access.remove && n.trashedAt === null}
+        />
+      )}
       {tab === 'details' && n && (
         <>
           <div className="my-5 flex aspect-video items-center justify-center overflow-hidden rounded-xl bg-[var(--bg-subtle)]">
@@ -176,6 +203,142 @@ function Expiry({ node, canSet }: { node: NodeDto; canSet: boolean }) {
           </form>
         </>
       )}
+    </section>
+  );
+}
+
+/** D1 (ADR-084): a file's earlier contents, newest first, with what the person may do to each. */
+function Versions({
+  node,
+  canEdit,
+  canRemove,
+}: {
+  node: NodeDto;
+  canEdit: boolean;
+  canRemove: boolean;
+}) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['versions', node.id], queryFn: () => listVersions(node.id) });
+  const [doomed, setDoomed] = useState<VersionDto | null>(null);
+  const refresh = () =>
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['versions', node.id] }),
+      qc.invalidateQueries({ queryKey: ['node', node.id] }),
+      qc.invalidateQueries({ queryKey: ['children'] }),
+    ]);
+  const act = useMutation({
+    mutationFn: async (a: { kind: 'restore' | 'keep' | 'unkeep' | 'delete'; v: VersionDto }) => {
+      if (a.kind === 'restore') await restoreVersion(node.id, a.v.id);
+      else if (a.kind === 'delete') await deleteVersion(node.id, a.v.id);
+      else await keepVersion(node.id, a.v.id, a.kind === 'keep');
+      return a.kind;
+    },
+    onSuccess: async (kind) => {
+      if (kind === 'restore') toast(t.versions.restored);
+      if (kind === 'delete') toast(t.versions.deleted);
+      await refresh();
+    },
+    onError: () => toast(t.errors.generic, { tone: 'error' }),
+  });
+  async function download(v: VersionDto) {
+    try {
+      const { url } = await versionUrl(node.id, v.id);
+      window.location.assign(url);
+    } catch {
+      toast(t.errors.generic, { tone: 'error' });
+    }
+  }
+  if (q.isPending) return <p className="mt-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>;
+  if (q.isError) return <p className="mt-6 text-sm text-red-600">{t.errors.generic}</p>;
+  const small = 'h-8 rounded-full border border-[var(--border)] px-3 text-xs disabled:opacity-50';
+  return (
+    <section className="mt-4" aria-labelledby="versi">
+      <h3 id="versi" className="flex items-center gap-2 text-sm font-medium">
+        <History className="h-4 w-4" aria-hidden="true" /> {t.versions.title}
+      </h3>
+      <p className="mt-1 text-xs text-[var(--fg-muted)]">
+        {t.versions.note(q.data.keep, q.data.days)}
+      </p>
+      {q.data.items.length === 0 ? (
+        <p className="mt-4 text-sm text-[var(--fg-muted)]">{t.versions.none}</p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {q.data.items.map((v) => (
+            <li key={v.id} className="rounded-xl border border-[var(--border)] p-3">
+              <p className="text-sm font-medium">
+                {t.versions.item(v.number)} · {formatBytes(v.size)}
+                {v.kept && (
+                  <span className="ml-2 rounded-full bg-[var(--bg-subtle)] px-2 py-0.5 text-xs font-normal">
+                    {t.versions.kept}
+                  </span>
+                )}
+              </p>
+              <p className="text-xs text-[var(--fg-muted)]">
+                {t.versions.savedOn(formatDateTime(v.savedAt))} ·{' '}
+                {t.versions.goesOn(formatDate(v.expiresAt))}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button type="button" className={small} onClick={() => void download(v)}>
+                  {t.versions.download}
+                </button>
+                {canEdit && (
+                  <>
+                    <button
+                      type="button"
+                      className={small}
+                      disabled={act.isPending}
+                      onClick={() => act.mutate({ kind: 'restore', v })}
+                    >
+                      {t.versions.restore}
+                    </button>
+                    <button
+                      type="button"
+                      className={small}
+                      disabled={act.isPending}
+                      onClick={() => act.mutate({ kind: v.kept ? 'unkeep' : 'keep', v })}
+                    >
+                      {v.kept ? t.versions.unkeep : t.versions.keep}
+                    </button>
+                  </>
+                )}
+                {canRemove && (
+                  <button
+                    type="button"
+                    className={`${small} text-red-600`}
+                    disabled={act.isPending}
+                    onClick={() => setDoomed(v)}
+                  >
+                    {t.versions.delete}
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Dialog
+        open={doomed !== null}
+        title={doomed ? t.versions.item(doomed.number) : ''}
+        onClose={() => setDoomed(null)}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDoomed(null)}>
+              {t.common.cancel}
+            </Button>
+            <Button
+              onClick={() => {
+                const v = doomed!;
+                setDoomed(null);
+                act.mutate({ kind: 'delete', v });
+              }}
+            >
+              {t.versions.delete}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm">{t.versions.deleteConfirm}</p>
+      </Dialog>
     </section>
   );
 }

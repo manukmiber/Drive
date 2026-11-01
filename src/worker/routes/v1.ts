@@ -28,6 +28,7 @@ import { indexAnswer, readChildren, readNode, readTrash } from '../services/driv
 import { findDuplicates } from '../services/duplicates';
 import { setExpiry } from '../services/expiry';
 import { nodeActivity, recentActivity } from '../services/activity';
+import { deleteVersion, listVersions, restoreVersion, versionDownload } from '../services/versions';
 import {
   copyFile,
   createFolder,
@@ -354,6 +355,68 @@ export const ENDPOINTS: readonly Op[] = [
       responses: { 200: NODES },
     },
     async (c) => c.json({ items: await readTrash(c.get('ctx'), userId(c)) }),
+  ),
+  op(
+    {
+      method: 'get',
+      path: '/nodes/{id}/versions',
+      scope: 'drive.read',
+      tag: 'Drive',
+      summary:
+        "A file's earlier contents, newest first: a replaced file keeps them for `days` days, at most `keep` of them (kept ones aside)",
+      params: nodeParam,
+      responses: {
+        200: z.object({
+          items: z.array(S.Version),
+          keep: z.number().int(),
+          days: z.number().int(),
+        }),
+      },
+    },
+    async (c, { params }) => c.json(await listVersions(c.get('ctx'), userId(c), params.id)),
+  ),
+  op(
+    {
+      method: 'get',
+      path: '/nodes/{id}/versions/{versionId}/download',
+      scope: 'drive.read',
+      tag: 'Drive',
+      summary: 'A short-lived download link for one version',
+      params: z.object({ id: S.ulidId, versionId: S.ulidId }),
+      responses: { 200: z.object({ url: z.string(), expiresAt: z.number().int() }) },
+    },
+    async (c, { params }) => {
+      const r = await versionDownload(c.get('ctx'), userId(c), params.id, params.versionId);
+      return c.json({ url: new URL(r.url, c.env.APP_ORIGIN).toString(), expiresAt: r.expiresAt });
+    },
+  ),
+  op(
+    {
+      method: 'post',
+      path: '/nodes/{id}/versions/{versionId}/restore',
+      scope: 'drive.write',
+      tag: 'Drive',
+      summary: "Make a version the file's content again (the current content becomes a version)",
+      params: z.object({ id: S.ulidId, versionId: S.ulidId }),
+      responses: { 200: NODE },
+    },
+    async (c, { params }) =>
+      c.json({ node: await restoreVersion(c.get('ctx'), userId(c), params.id, params.versionId) }),
+  ),
+  op(
+    {
+      method: 'delete',
+      path: '/nodes/{id}/versions/{versionId}',
+      scope: 'drive.write',
+      tag: 'Drive',
+      summary: 'Delete a version for good (its bytes leave your quota)',
+      params: z.object({ id: S.ulidId, versionId: S.ulidId }),
+      responses: { 204: null },
+    },
+    async (c, { params }) => {
+      await deleteVersion(c.get('ctx'), userId(c), params.id, params.versionId);
+      return c.body(null, 204);
+    },
   ),
   op(
     {

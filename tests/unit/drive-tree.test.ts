@@ -32,6 +32,7 @@ function entry(over: Partial<IndexEntry> & Pick<IndexEntry, 'id' | 'name'>): Ind
     canEdit: false,
     trashedBy: 0,
     expiresAt: null,
+    versions: [],
     ...over,
   };
 }

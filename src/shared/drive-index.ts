@@ -17,7 +17,8 @@ export const INDEX_VERSION = 1;
  * seconds · th: has a thumbnail · f: starred · t: moved to Trash at · tr: the entry the person
  * trashed · d: folder decoration [colour, icon, cover entry] · o / e / tb: family only: owner,
  * others may edit, trashed by (member positions in the header) · ex: goes to the Trash on this day
- * (D12, ADR-082; kept only here, not in D1).
+ * (D12, ADR-082; kept only here, not in D1) · vs: a file's earlier contents, newest first, each
+ * [id, version number, size, saved at, content from, kept] (D1, ADR-084).
  */
 export const INDEX_COLUMNS = [
   'id',
@@ -41,6 +42,7 @@ export const INDEX_COLUMNS = [
   'e',
   'tb',
   'ex',
+  'vs',
 ] as const;
 type Column = (typeof INDEX_COLUMNS)[number];
 
@@ -87,9 +89,25 @@ export interface IndexEntry {
   trashedBy: number;
   /** D12: when it goes to the Trash by itself; the index is the only place that keeps it. */
   expiresAt: number | null;
+  /** D1 (ADR-084): a file's earlier contents, newest first. */
+  versions: IndexVersion[];
 }
 
-type Cell = number | string | Array<string | number>;
+export interface IndexVersion {
+  /** The version's id (its D1 row while Drive moves off D1). */
+  id: string;
+  /** The file's version number this content had. */
+  n: number;
+  size: number;
+  /** When it stopped being the file's content (ms here, seconds in the file). */
+  savedAt: number;
+  /** When that content was made. */
+  contentAt: number;
+  /** Kept past the count the person chose (still goes after the days limit). */
+  kept: boolean;
+}
+
+type Cell = number | string | Array<string | number> | Array<Array<string | number>>;
 type Row = Cell[];
 
 export class IndexFormatError extends Error {
@@ -160,6 +178,9 @@ export function entryToRow(e: IndexEntry): Row {
     e.canEdit ? 1 : 0,
     e.trashedBy,
     e.expiresAt === null ? 0 : sec(e.expiresAt),
+    e.versions.length
+      ? e.versions.map((v) => [v.id, v.n, v.size, sec(v.savedAt), sec(v.contentAt), v.kept ? 1 : 0])
+      : 0,
   ];
   let end = row.length;
   while (end > 4 && (row[end - 1] === 0 || row[end - 1] === '')) end--;
@@ -206,6 +227,22 @@ export function rowToEntry(row: unknown, map: Record<Column, number>): IndexEntr
   const cm = int(at('cm'), 'clientModified');
   const t = int(at('t'), 'trashedAt');
   const ex = int(at('ex'), 'expiresAt');
+  const vs = at('vs') ?? 0;
+  const versions: IndexVersion[] = [];
+  if (Array.isArray(vs)) {
+    for (const v of vs as unknown[]) {
+      if (!Array.isArray(v) || typeof v[0] !== 'string')
+        throw new IndexFormatError(`bad version for ${id}`);
+      versions.push({
+        id: v[0],
+        n: int(v[1], 'version number'),
+        size: int(v[2], 'version size'),
+        savedAt: int(v[3], 'version saved') * 1000,
+        contentAt: int(v[4], 'version content') * 1000,
+        kept: v[5] === 1,
+      });
+    }
+  } else if (vs !== 0) throw new IndexFormatError(`bad versions for ${id}`);
   return {
     id,
     parent: int(at('p'), 'parent'),
@@ -228,6 +265,7 @@ export function rowToEntry(row: unknown, map: Record<Column, number>): IndexEntr
     canEdit: at('e') === 1,
     trashedBy: int(at('tb'), 'trashedBy'),
     expiresAt: ex ? ex * 1000 : null,
+    versions,
   };
 }
 

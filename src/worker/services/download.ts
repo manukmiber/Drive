@@ -66,7 +66,9 @@ export function assertDownloadable(
   scanStatus: string | null,
   userId: string,
 ): void {
-  if (node.kind !== 'file' || !node.blob_id) throw new AppError('BAD_REQUEST', 'not a file');
+  // A version (D1) is a file's earlier content, downloaded the same way.
+  if ((node.kind !== 'file' && node.kind !== 'version') || !node.blob_id)
+    throw new AppError('BAD_REQUEST', 'not a file');
   if (node.status === 'rejected' || scanStatus === 'infected')
     throw new AppError('FORBIDDEN', 'file was rejected');
   if (scanStatus === 'quarantined')

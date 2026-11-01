@@ -81,6 +81,10 @@ export const configSchema = z.object({
   trash_retention_days: int().min(1).default(30),
   /** D4 (ADR-083): how long the Activity panel looks back; older log months are dropped. */
   activity_keep_days: int().min(1).max(365).default(90),
+  /** D1 (ADR-084): versions a file keeps until the person picks their own count (0 = no history). */
+  versions_default_keep: int().min(0).max(100).default(10),
+  /** D1: how long a version lives; the owner's limit is 30 days. */
+  version_keep_days: int().min(1).max(30).default(30),
   manifest_rebuild_min_interval_minutes: int().min(1).default(60),
   quota_reconcile_alert_bytes: nonNeg().default(0),
 

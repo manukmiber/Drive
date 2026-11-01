@@ -31,6 +31,9 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
   `changeIndex`, dan `project()` wajib membawanya dari entri lama supaya flush tidak menghapusnya. Sejak R4 (ADR-078) ruang keluarga
   juga: `f/{familyId}/index.txt`, ditulis oleh flush anggota mana pun (perubahan di ruang keluarga harus menandai seorang
   anggota). Upload berjalan, Terbaru, bintang keluarga, dan jawaban dari tulis masih D1.
+- **Versi file (D1, ADR-084)** = baris `nodes` `kind='version'` di bawah file-nya. Query yang menjumlah byte terpakai
+  memakai `USED_SQL` (`services/versions-sql.ts`); query daftar/cari yang membaca `nodes` langsung harus menyaring
+  `kind != 'version'`. Mengganti isi file menukar `blob_id` di node yang sama (id dan link tetap).
 
 ## Mesin ini
 - HP Android (PRoot, aarch64). **workerd tidak bisa jalan** → jangan pakai `wrangler dev`,

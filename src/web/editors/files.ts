@@ -159,7 +159,10 @@ export async function saveFolder(
   return parent?.access.edit ? { parentId: folderId, same: true } : { parentId: root, same: false };
 }
 
-/** Queues the result for upload; `replace` sends the old file of the same name to the Trash. */
+/**
+ * Queues the result for upload; `replace` keeps the old content as a version (D1), or sends the old
+ * file to the Trash when history is off.
+ */
 export function saveToDrive(blob: Blob, name: string, parentId: string, replace: boolean): void {
   const file = new File([blob], name, { type: blob.type, lastModified: Date.now() });
   void uploads().add([{ file, parentId, name, onConflict: replace ? 'replace' : 'rename' }]);
