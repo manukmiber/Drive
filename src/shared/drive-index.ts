@@ -18,7 +18,9 @@ export const INDEX_VERSION = 1;
  * trashed · d: folder decoration [colour, icon, cover entry] · o / e / tb: family only: owner,
  * others may edit, trashed by (member positions in the header) · ex: goes to the Trash on this day
  * (D12, ADR-082; kept only here, not in D1) · vs: a file's earlier contents, newest first, each
- * [id, version number, size, saved at, content from, kept] (D1, ADR-084).
+ * [id, version number, size, saved at, content from, kept] (D1, ADR-084) · md: what a photo or video
+ * says about itself, [taken at (unix s, 0 = not said), width, height, duration ms], present once read
+ * (D8, ADR-091; kept only here).
  */
 export const INDEX_COLUMNS = [
   'id',
@@ -43,6 +45,7 @@ export const INDEX_COLUMNS = [
   'tb',
   'ex',
   'vs',
+  'md',
 ] as const;
 type Column = (typeof INDEX_COLUMNS)[number];
 
@@ -91,6 +94,16 @@ export interface IndexEntry {
   expiresAt: number | null;
   /** D1 (ADR-084): a file's earlier contents, newest first. */
   versions: IndexVersion[];
+  /** D8 (ADR-091): read from a photo or video's own bytes; absent until read. */
+  media?: IndexMedia | null;
+}
+
+export interface IndexMedia {
+  /** ms; null when the file does not say when it was taken. */
+  takenAt: number | null;
+  width: number;
+  height: number;
+  durationMs: number;
 }
 
 export interface IndexVersion {
@@ -181,6 +194,14 @@ export function entryToRow(e: IndexEntry): Row {
     e.versions.length
       ? e.versions.map((v) => [v.id, v.n, v.size, sec(v.savedAt), sec(v.contentAt), v.kept ? 1 : 0])
       : 0,
+    e.media
+      ? [
+          e.media.takenAt === null ? 0 : sec(e.media.takenAt),
+          e.media.width,
+          e.media.height,
+          e.media.durationMs,
+        ]
+      : 0,
   ];
   let end = row.length;
   while (end > 4 && (row[end - 1] === 0 || row[end - 1] === '')) end--;
@@ -243,6 +264,17 @@ export function rowToEntry(row: unknown, map: Record<Column, number>): IndexEntr
       });
     }
   } else if (vs !== 0) throw new IndexFormatError(`bad versions for ${id}`);
+  const md = at('md') ?? 0;
+  let media: IndexMedia | null = null;
+  if (Array.isArray(md)) {
+    const [tk, w, h, du] = md as unknown[];
+    media = {
+      takenAt: int(tk, 'taken') ? int(tk, 'taken') * 1000 : null,
+      width: int(w, 'width'),
+      height: int(h, 'height'),
+      durationMs: int(du, 'duration'),
+    };
+  } else if (md !== 0) throw new IndexFormatError(`bad media for ${id}`);
   return {
     id,
     parent: int(at('p'), 'parent'),
@@ -266,6 +298,7 @@ export function rowToEntry(row: unknown, map: Record<Column, number>): IndexEntr
     trashedBy: int(at('tb'), 'trashedBy'),
     expiresAt: ex ? ex * 1000 : null,
     versions,
+    ...(media ? { media } : {}),
   };
 }
 

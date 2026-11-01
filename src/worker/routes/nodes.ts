@@ -7,6 +7,7 @@ import { requireUser } from '../middleware/auth';
 import { rateLimit } from '../middleware/ratelimit';
 import { requireNode } from '../services/access';
 import { listRecent, listStarred, parseType, setStar } from '../services/browse';
+import { gallery } from '../services/gallery';
 import { bodyLimit } from 'hono/body-limit';
 import {
   contentSearchOn,
@@ -68,6 +69,7 @@ export const nodes = new Hono<AppBindings>()
   .use('/trash/*', requireUser)
   .use('/files/*', requireUser)
   .use('/search', requireUser)
+  .use('/gallery', requireUser)
   .use('/starred', requireUser)
   .use('/recent', requireUser)
   .use('/drive/*', requireUser)
@@ -92,6 +94,20 @@ export const nodes = new Hono<AppBindings>()
         await searchDrive(c.get('ctx'), c.get('user')!.id, { ...q, type: parseType(q.type) }),
       );
     },
+  )
+  // D8 (ADR-091): photos and videos, newest taken first.
+  .get(
+    '/gallery',
+    validate(
+      'query',
+      z.object({
+        q: z.string().max(500).optional(),
+        space: z.enum(['personal', 'family']).optional(),
+        cursor: z.string().max(200).optional(),
+        limit: z.coerce.number().int().min(1).max(500).optional(),
+      }),
+    ),
+    async (c) => c.json(await gallery(c.get('ctx'), c.get('user')!.id, c.req.valid('query'))),
   )
   .get('/starred', async (c) =>
     c.json({ items: await listStarred(c.get('ctx'), c.get('user')!.id) }),

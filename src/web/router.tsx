@@ -31,6 +31,7 @@ const Trash = page(() => import('./pages/Trash'), 'Trash');
 const Duplicates = page(() => import('./pages/Duplicates'), 'Duplicates');
 const Recent = page(() => import('./pages/Lists'), 'Recent');
 const Search = page(() => import('./pages/Lists'), 'Search');
+const Gallery = page(() => import('./pages/Gallery'), 'Gallery');
 const Shared = page(() => import('./pages/Lists'), 'Shared');
 const RequestUpload = page(() => import('./pages/RequestUpload'), 'RequestUpload');
 const SharedWithMe = page(() => import('./pages/Lists'), 'SharedWithMe');
@@ -73,6 +74,19 @@ const requestRoute = createRoute({
   component: function RequestPage() {
     const { id, sig } = requestRoute.useParams();
     return <RequestUpload id={id} sig={sig} />;
+  },
+});
+
+const galleryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/galeri',
+  validateSearch: (s: Record<string, unknown>): { q: string; space?: 'personal' | 'family' } => ({
+    q: typeof s.q === 'string' ? s.q.slice(0, 500) : '',
+    ...(s.space === 'personal' || s.space === 'family' ? { space: s.space } : {}),
+  }),
+  component: function GalleryPage() {
+    const { q, space } = galleryRoute.useSearch();
+    return <Gallery q={q} space={space} />;
   },
 });
 
@@ -144,6 +158,7 @@ const routeTree = rootRoute.addChildren([
     createRoute({ getParentRoute: () => appRoute, path: '/terbaru', component: Recent }),
     createRoute({ getParentRoute: () => appRoute, path: '/berbintang', component: Starred }),
     searchRoute,
+    galleryRoute,
     createRoute({ getParentRoute: () => appRoute, path: '/sampah', component: Trash }),
     createRoute({ getParentRoute: () => appRoute, path: '/kembar', component: Duplicates }),
     createRoute({ getParentRoute: () => appRoute, path: '/paket', component: Billing }),

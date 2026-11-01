@@ -27,6 +27,7 @@ export const en: Strings = {
     empty: 'Nothing here yet.',
   },
   nav: {
+    gallery: 'Gallery',
     newButton: 'New',
     newFolder: 'New folder',
     newTextFile: 'Text file',
@@ -1720,6 +1721,14 @@ export const en: Strings = {
     disconnectBody: 'The app is signed out at once and has to ask again.',
     disconnected: 'App disconnected',
     tooMany: 'You have the most tokens allowed. Revoke one first.',
+  },
+  gallery: {
+    title: 'Gallery',
+    search: 'Search the Gallery',
+    searchHint: 'Find photos & videos, e.g. holiday after:2024-06',
+    empty: 'No photos or videos yet. Photos you upload show here by the date they were taken.',
+    selected: (n: number) => `${n} selected`,
+    showAsGallery: 'Show as gallery',
   },
   searchFilters: {
     button: 'Filters',

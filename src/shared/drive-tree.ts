@@ -34,8 +34,12 @@ export interface DriveNode {
   decor: FolderDecor | null;
   /** D12 (ADR-082): the day it goes to the Trash by itself (00:00 WIB). Only the index knows it. */
   expiresAt: number | null;
-  /** D8: when a photo or video was taken (from its metadata); absent until known. */
+  /** D8 (ADR-091): when a photo or video was taken (from its own bytes); absent until read. */
   takenAt?: number | null;
+  /** D8: pixel size as shown, and a video's length; absent until read (0 = unknown). */
+  width?: number;
+  height?: number;
+  durationMs?: number;
 }
 
 export interface DriveCrumb {
@@ -392,6 +396,14 @@ export class DriveTree {
       clientModifiedAt: e.clientModified,
       decor,
       expiresAt: e.expiresAt,
+      ...(e.media
+        ? {
+            takenAt: e.media.takenAt,
+            width: e.media.width,
+            height: e.media.height,
+            durationMs: e.media.durationMs,
+          }
+        : {}),
     };
     this.nodes.set(e.id, node);
     return node;

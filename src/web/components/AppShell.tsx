@@ -4,23 +4,24 @@ import {
   Archive,
   Brain,
   CircleUser,
-  Database,
-  Languages,
-  MessageCircle,
   Clock,
+  Database,
   HardDrive,
   Home,
+  Images,
+  Inbox,
+  Languages,
   LogOut,
+  Megaphone,
+  MessageCircle,
+  Minimize2,
   Search,
   Settings,
   Share2,
-  Inbox,
   Star,
-  Megaphone,
-  Minimize2,
-  Wand2,
   Trash2,
   Users,
+  Wand2,
 } from 'lucide-react';
 import { useEffect, useRef, type ComponentType } from 'react';
 import { lang, setLang, t } from '../lib/i18n';
@@ -48,6 +49,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/', label: t.nav.myDrive, icon: HardDrive },
+  { to: '/galeri', label: t.nav.gallery, icon: Images },
   { to: '/keluarga', label: t.nav.familyDrive, icon: Users },
   { to: '/dibagikan', label: t.nav.shared, icon: Share2 },
   { to: '/untuk-saya', label: t.nav.sharedWithMe, icon: Inbox },
@@ -62,6 +64,7 @@ const NAV: NavItem[] = [
 
 const TABS: NavItem[] = [
   { to: '/terbaru', label: t.nav.home, icon: Home },
+  { to: '/galeri', label: t.nav.gallery, icon: Images },
   { to: '/berbintang', label: t.nav.starred, icon: Star },
   { to: '/dibagikan', label: t.nav.shared, icon: Share2 },
   { to: '/', label: t.nav.files, icon: HardDrive },
@@ -276,7 +279,7 @@ export function AppShell() {
       <ArchivePanel />
       <Toaster />
       <nav
-        className="z-glass fixed inset-x-0 bottom-0 z-20 grid grid-cols-4 border-t border-[var(--border)] pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="z-glass fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-[var(--border)] pb-[env(safe-area-inset-bottom)] md:hidden"
         aria-label={t.a11y.bottomNav}
       >
         {TABS.map((n) => (

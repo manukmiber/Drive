@@ -368,6 +368,9 @@ export function project(doc: IndexDoc, rows: TreeRow[], used: number, members?: 
       // D12 (ADR-082): only the index keeps it, so it outlives every projection of the D1 row.
       expiresAt: had.get(r.id)?.expiresAt ?? null,
       versions: (versions.get(r.id) ?? []).sort((a, b) => b.savedAt - a.savedAt || b.n - a.n),
+      // D8 (ADR-091): read from the content, so it stays only while the content does.
+      media:
+        !folder && had.get(r.id)?.blob === (r.r2_key ?? 0) ? (had.get(r.id)?.media ?? null) : null,
     };
     const before = had.get(r.id);
     if (!before || entryLine(before) !== entryLine(entry)) doc.set(entry);

@@ -4,6 +4,7 @@
 // nodes `ready`; infected → object deleted, reservation released, nodes `rejected`, hash
 // blocklisted, uploader notified.
 import type { ScanResult } from '../adapters/scanner';
+import { isMediaType, queueMedia } from './media';
 import { markBlobOwnersDirty } from './drive-index-sync';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
@@ -142,6 +143,17 @@ export async function processScan(
     ]);
     await markBlobOwnersDirty(ctx, [blobId]);
     await checkQuotaThresholds(ctx, blob.pool_id);
+    // D8 (ADR-091): photos and videos get their capture date and size read into the index.
+    const media =
+      isMediaType(result.sniffedMime) ||
+      Boolean(
+        await DB.prepare(
+          `SELECT 1 AS x FROM nodes WHERE blob_id = ?1 AND (mime LIKE 'image/%' OR mime LIKE 'video/%') LIMIT 1`,
+        )
+          .bind(blobId)
+          .first(),
+      );
+    if (media) await queueMedia(ctx, blobId);
   } else {
     const { results: affected } = await DB.prepare(
       `SELECT id, name, created_by FROM nodes WHERE blob_id = ?1 AND status IN ('scanning', 'ready')`,

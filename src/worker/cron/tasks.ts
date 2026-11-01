@@ -10,6 +10,7 @@ import {
 } from '../services/billing';
 import { purgeExpiredTrash } from '../services/nodes';
 import { flushDirtyIndexes } from '../services/drive-index-sync';
+import { backfillMedia } from '../services/media';
 import { runExpiries } from '../services/expiry';
 import { pruneActivity } from '../services/activity';
 import { purgeOldVersions } from '../services/versions';
@@ -37,6 +38,15 @@ registerCronTask(CRON.hourly, {
   async run(ctx) {
     const r = await flushDirtyIndexes(ctx);
     if (r.written || r.failed) log.info('drive_index_flush', r);
+  },
+});
+
+// D8 (ADR-091): photos and videos from before the Gallery get their date and size read.
+registerCronTask(CRON.hourly, {
+  name: 'media_backfill',
+  async run(ctx) {
+    const r = await backfillMedia(ctx);
+    if (r.queued) log.info('media_backfill', r);
   },
 });
 

@@ -9,9 +9,15 @@ import type { QueueMessage } from './messages';
 export type QueueHandler = (ctx: Ctx, body: QueueMessage, attempts: number) => Promise<void>;
 
 const handlers: Partial<Record<QueueName, QueueHandler>> = {};
+const batchEnds: Partial<Record<QueueName, (ctx: Ctx) => Promise<void>>> = {};
 
 export function registerQueueHandler(name: QueueName, handler: QueueHandler): void {
   handlers[name] = handler;
+}
+
+/** Work for the end of a batch of this queue (one write for many messages, ADR-091). */
+export function registerBatchEnd(name: QueueName, end: (ctx: Ctx) => Promise<void>): void {
+  batchEnds[name] = end;
 }
 
 export function queueKind(queue: string): QueueName | null {
@@ -48,6 +54,11 @@ export async function handleQueue(batch: MessageBatch<QueueMessage>, env: Env): 
       msg.retry({ delaySeconds: retryDelaySeconds(msg.attempts) });
     }
   }
+  const end = kind ? batchEnds[kind] : undefined;
+  if (end)
+    await end(ctx).catch((e: unknown) =>
+      log.error('queue_batch_end_failed', { queue: batch.queue, message: errorMessage(e) }),
+    );
   // One Drive index write per user for the whole batch (ADR-074).
   await ctx.drain();
 }

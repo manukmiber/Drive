@@ -363,6 +363,11 @@ describe('IDOR (SPEC §14.1)', () => {
           leaks.push(`WebDAV ${method} ${path} → ${res.status}`);
       }
     }
+    // D8 (ADR-091): the Gallery reads only the person's own trees, whatever folder name is asked.
+    const bGallery = (await (
+      await b.req('GET', `/api/gallery?q=${encodeURIComponent('di:"Pribadi"')}`)
+    ).json()) as { items: unknown[] };
+    expect(bGallery.items).toEqual([]);
     const bListing = await (await asB('PROPFIND', '/Drive%20Saya/', { depth: '1' })).text();
     for (const secret of ['ktp.txt', 'Pribadi']) expect(bListing).not.toContain(secret);
     // Marking someone else's notifications read is a silent no-op (204), but must not touch theirs.

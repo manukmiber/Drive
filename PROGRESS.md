@@ -93,6 +93,11 @@ lewat fase R di `docs/ROADMAP.md`.
   teks diambil di browser (teks, PDF, .docx, .xlsx) setelah upload dan lewat "Indeks ulang"; saklar per orang di header
   index, **default mati** + pop-up sekali (pemilik). Kalimat Kebijakan Privasi diusulkan di ADR-090, belum dipasang
   (teks milik pemilik).
+- [x] D8 Galeri (ADR-091, 2026-11-01): kolom index `md` (diambil, lebar, tinggi, durasi), dibaca di Worker setelah scan
+  lewat antrean `cleanup` (parser sendiri `lib/media-meta.ts`: EXIF JPEG/PNG/WebP/HEIC, MP4 `mvhd`/`tkhd`, tanpa GPS),
+  satu tulis index per batch; cron `media_backfill` untuk file lama; `GET /api/gallery` (+ v1) dengan sintaks D6;
+  halaman `/galeri` (grid tervirtualisasi per bulan/hari, pilih banyak, pratinjau berurutan, thumbnail dibuat di
+  browser bila perlu), di sidebar dan navigasi bawah HP; "Tampilkan sebagai galeri" di folder dan hasil cari.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

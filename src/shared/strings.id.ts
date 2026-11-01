@@ -27,6 +27,7 @@ export const t = {
     empty: 'Belum ada apa-apa di sini.',
   },
   nav: {
+    gallery: 'Galeri',
     newButton: 'Baru',
     newFolder: 'Folder baru',
     newTextFile: 'File teks',
@@ -1747,6 +1748,15 @@ export const t = {
     disconnectBody: 'Aplikasi itu langsung keluar dan harus meminta izin lagi.',
     disconnected: 'Aplikasi diputuskan',
     tooMany: 'Jumlah tokenmu sudah maksimal. Cabut salah satu dulu.',
+  },
+  gallery: {
+    title: 'Galeri',
+    search: 'Cari di Galeri',
+    searchHint: 'Cari foto & video, mis. liburan setelah:2024-06',
+    empty:
+      'Belum ada foto atau video. Foto yang kamu upload muncul di sini menurut tanggal diambil.',
+    selected: (n: number) => `${n} dipilih`,
+    showAsGallery: 'Tampilkan sebagai galeri',
   },
   searchFilters: {
     button: 'Filter',

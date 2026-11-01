@@ -2633,3 +2633,38 @@ kata di nama). Kata kunci Indonesia dan Inggris:
   menyalakan Cari isi file, teks dari dalam file dokumenmu (PDF, Word, Excel, teks) diambil di perangkatmu dan
   disimpan bersama file-mu supaya bisa dicari. Teks itu dihapus bersama filenya, dan kamu bisa mematikan fiturnya kapan
   saja."
+
+## ADR-091 — D8: Galeri foto dan video, tanggal diambil di index
+
+Tanggal: 2026-11-01. Status: diterima (pemilik: kerjakan fitur roadmap, yang besar dulu).
+
+**Yang dibangun:** halaman `/galeri` (sidebar dan navigasi bawah HP): semua foto dan video yang boleh dilihat dari Drive
+Saya dan Drive Keluarga, dikelompokkan per bulan dan per hari menurut tanggal diambil, grid tervirtualisasi
+(`@tanstack/react-virtual`), pilih banyak dengan aksi yang sama dengan explorer, dan pratinjau yang bisa digeser
+mengikuti urutan galeri. Pencarian di Galeri memakai sintaks D6 (ADR-090) dengan jenis gambar/video otomatis dan
+tanggal `diambil`; di explorer ada tombol "Tampilkan sebagai galeri" untuk folder (`di:"Nama"`) dan hasil cari.
+
+**Keputusan:**
+- **Kolom index saja `md`** (ADR-064/082: bukan D1): `[diambil (detik, 0 = tidak tercatat), lebar, tinggi, durasi
+  ms]`. Ada kolomnya = file sudah dibaca; tidak ada = belum. `project()` membawanya dari entri lama, dan ganti isi
+  (versi, ADR-084) membuangnya supaya dibaca ulang.
+- **Dibaca di Worker setelah scan** lewat antrean `cleanup` (batch 10): pesan `media` per file gambar/video yang lolos
+  scan, apa pun jalur uploadnya (web, WebDAV, editor, link minta file). Konsumen membaca awal objek dengan Range
+  (256 KiB; HEIC bisa satu Range lagi untuk item Exif; video tanpa `mvhd` di awal membaca 4 MiB terakhir), lalu
+  menulis semua hasil satu batch ke index pemiliknya dengan **satu** `changeIndex` per index. Entri yang belum ada di
+  index (flush belum jalan) diulang nanti.
+- **Parser sendiri** `lib/media-meta.ts`: EXIF JPEG (APP1), PNG (eXIf), WebP (chunk EXIF), HEIC/AVIF (item Exif lewat
+  `iinf`/`iloc`, ukuran `ispe`, rotasi `irot`); ukuran gambar dari header (SOF, IHDR, VP8X/VP8/VP8L); video dari
+  `mvhd` (durasi, waktu buat) dan `tkhd` (ukuran, matriks 90° → potret). Yang dibaca hanya waktu, offset waktu,
+  orientasi, dan ukuran. **GPS tidak pernah dibaca**, apalagi disimpan.
+- **Zona waktu:** `DateTimeOriginal` + `OffsetTimeOriginal`; tanpa offset dianggap WIB (UTC+7), karena kamera tidak
+  menyimpan zona dan pelanggan di Indonesia. Waktu MP4 dianggap UTC (standar). Tanggal sebelum 1990 atau sesudah 2100
+  dianggap jam kamera yang belum diatur → tidak tercatat.
+- **Tanggal galeri** = diambil, lalu waktu dari perangkat (`client_modified_at`), lalu waktu dibuat.
+- **File lama** diisi bertahap: cron per jam `media_backfill` memeriksa beberapa user per jam (cursor di KV, satu tulis
+  per jam) dan mengirim pesan `media` untuk gambar/video yang belum punya kolom `md`, dengan batas per jam di config.
+- **API:** `GET /api/gallery?space=&q=&cursor=` (+ `/api/v1/gallery`): urutan (tanggal, id) menurun, cursor =
+  (tanggal, id) terakhir, 200 per halaman. Hanya pohon pribadi dan keluarga (privasi keluarga sama dengan explorer);
+  file yang dibagikan orang (D2) belum masuk Galeri.
+- **Thumbnail yang belum ada** (mis. upload WebDAV/Telegram lama): dibuat di browser saat tampil, hanya kalau
+  penonton boleh mengubah file itu (route thumbnail butuh edit), paling banyak dua bersamaan; selain itu ikon.

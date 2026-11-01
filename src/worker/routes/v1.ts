@@ -18,6 +18,7 @@ import { API_RATE_PER_MINUTE, scope, tokenAuth } from '../middleware/token';
 import { ensurePersonalSpace } from '../services/accounts';
 import { parseType } from '../services/browse';
 import { searchDrive } from '../services/search';
+import { gallery } from '../services/gallery';
 import {
   exchangeCode,
   OAuthError,
@@ -340,6 +341,24 @@ export const ENDPOINTS: readonly Op[] = [
       });
       return c.json({ items: r.items, nextCursor: r.nextCursor, warnings: r.warnings });
     },
+  ),
+  op(
+    {
+      method: 'get',
+      path: '/gallery',
+      scope: 'drive.read',
+      tag: 'Drive',
+      summary:
+        "Photos and videos in your own Drive and your family's, newest taken first (taken from the file, else the time from the device, else when it came in). q takes the search syntax; pass nextCursor back as cursor",
+      query: z.object({
+        q: z.string().max(500).optional(),
+        space: z.enum(['personal', 'family']).optional(),
+        cursor: z.string().max(200).optional(),
+        limit: z.coerce.number().int().min(1).max(500).optional(),
+      }),
+      responses: { 200: NODES.extend({ nextCursor: z.string().nullable() }) },
+    },
+    async (c, { query }) => c.json(await gallery(c.get('ctx'), userId(c), query)),
   ),
   op(
     {

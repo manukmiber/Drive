@@ -188,6 +188,9 @@ export const configSchema = z.object({
   content_text_source_max_bytes: nonNeg()
     .max(1024 * MIB)
     .default(50 * MIB),
+  // ── Gallery (D8, ADR-091) ──
+  /** Older photos and videos read for their date and size each hour (Queues ops on Workers Free). */
+  media_backfill_per_hour: int().min(0).max(5000).default(200),
   // ── WebDAV (D9, ADR-089) ──
   /** One PUT is one request: under Workers' 100 MB body cap. Bigger files go through the app or API v1. */
   webdav_put_max_bytes: nonNeg()

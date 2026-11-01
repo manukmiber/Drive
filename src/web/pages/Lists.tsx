@@ -4,6 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Copy,
   FolderOpen,
+  Images,
   Link2Off,
   ListTree,
   Lock,
@@ -153,6 +154,14 @@ export function Search({ q: query, type }: { q: string; type?: string | undefine
       <Header title={t.files.searchResults(query)} />
       <div className="flex items-center gap-2 overflow-x-auto px-4 py-2">
         <SearchFilters q={query} onChange={(q) => go(q, type)} />
+        <Link
+          to="/galeri"
+          search={{ q: query }}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] px-3 text-xs hover:bg-[var(--bg-subtle)]"
+        >
+          <Images className="h-3.5 w-3.5" aria-hidden="true" />
+          {t.gallery.showAsGallery}
+        </Link>
         {[undefined, ...TYPES].map((ty) => (
           <button
             key={ty ?? 'all'}

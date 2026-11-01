@@ -79,14 +79,15 @@ async function jxlThumb(file: File): Promise<Blob | null> {
   );
 }
 
-export async function makeAndUploadThumb(nodeId: string, file: File): Promise<void> {
+/** True once a thumbnail was made and stored. */
+export async function makeAndUploadThumb(nodeId: string, file: File): Promise<boolean> {
   const type = file.type.toLowerCase();
   let blob: Blob | null = null;
   if ((type === 'image/jxl' || /\.jxl$/i.test(file.name)) && file.size < 60 * 1024 * 1024)
     blob = await jxlThumb(file).catch(() => null);
   else if (IMAGE.test(type) && file.size < 60 * 1024 * 1024) blob = await imageThumb(file);
   else if (type.startsWith('video/')) blob = await videoThumb(file);
-  if (!blob || blob.size > 128 * 1024) return;
+  if (!blob || blob.size > 128 * 1024) return false;
   const token = /(?:^|; )__Host-zk\.csrf=([^;]+)/.exec(document.cookie)?.[1];
   const res = await fetch(`/api/files/${nodeId}/thumbnail`, {
     method: 'PUT',
@@ -99,4 +100,5 @@ export async function makeAndUploadThumb(nodeId: string, file: File): Promise<vo
   });
   if (!res.ok && res.status !== 404)
     throw new ApiError(res.status, 'THUMB', 'thumbnail upload failed');
+  return res.ok;
 }

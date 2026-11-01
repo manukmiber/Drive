@@ -55,7 +55,9 @@ export type CleanupMessage =
   | { type: 's3_purge'; userId: string }
   // A plan moved to 3 copies or back to 1: copies made or dropped, a batch per message (ADR-047).
   | { type: 's3_replicate'; userId: string }
-  | { type: 's3_unreplicate'; userId: string };
+  | { type: 's3_unreplicate'; userId: string }
+  // D8 (ADR-091): read a photo or video's metadata into its index once the scan cleared it.
+  | { type: 'media'; blobId?: string; blobIds?: string[]; tries?: number };
 
 export type QueueMessage =
   ScanMessage | ArchiveMessage | CompressMessage | NotifyMessage | CleanupMessage;

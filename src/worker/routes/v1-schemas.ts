@@ -39,6 +39,13 @@ export const Node = z.strictObject({
     })
     .nullable(),
   expiresAt: ms.nullable().describe('When it goes to the Trash by itself (00:00 WIB that day)'),
+  takenAt: ms
+    .nullable()
+    .optional()
+    .describe('Photos and videos: when it was taken, from the file itself (null: it does not say)'),
+  width: z.number().int().nonnegative().optional().describe('Photos and videos: width as shown'),
+  height: z.number().int().nonnegative().optional().describe('Photos and videos: height as shown'),
+  durationMs: z.number().int().nonnegative().optional().describe('Videos: length in ms'),
 });
 
 export const Activity = z.strictObject({

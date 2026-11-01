@@ -1,6 +1,7 @@
 // Registers queue consumers. Imported once by the Worker entry point.
 import { deleteOrphanBlob, processScan } from '../services/scan';
-import { registerQueueHandler } from '.';
+import { registerBatchEnd, registerQueueHandler } from '.';
+import { readMediaOf, writeMedia } from '../services/media';
 import { log } from '../lib/log';
 import { OPERATOR_EMAIL } from '../../shared/constants';
 import { deliverShareEmail } from '../services/share-send';
@@ -18,6 +19,9 @@ registerQueueHandler('scan', async (ctx, body, attempts) => {
 
 registerQueueHandler('cleanup', async (ctx, body) => {
   if (body.type === 'delete_blob') await deleteOrphanBlob(ctx, body.blobId);
+  if (body.type === 'media')
+    for (const id of [...(body.blobId ? [body.blobId] : []), ...(body.blobIds ?? []).slice(0, 50)])
+      await readMediaOf(ctx, id, body.tries ?? 0);
   if (body.type === 'purge_pool' && !body.dryRun) await purgePool(ctx, body.poolId);
   if (body.type === 's3_purge' && !(await purgeS3Account(ctx, body.userId)))
     await ctx.env.CLEANUP_QUEUE.send({ type: 's3_purge', userId: body.userId });
@@ -53,3 +57,6 @@ registerQueueHandler('archive', async (ctx, body) => {
   if (body.type !== 'archive') return;
   await processArchiveJob(ctx, body.jobId);
 });
+
+// D8 (ADR-091): what the batch read from photos and videos, one index change per index.
+registerBatchEnd('cleanup', writeMedia);

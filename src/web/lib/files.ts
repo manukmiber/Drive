@@ -204,6 +204,16 @@ export const setStar = (id: string, on: boolean) =>
 export const searchNodes = (q: string, type?: string) =>
   api<{ items: NodeDto[] }>(`/api/search?${new URLSearchParams({ q, ...(type ? { type } : {}) })}`);
 
+/** D8 (ADR-091): a page of the Gallery, newest taken first. */
+export const galleryPage = (
+  q: string,
+  space: 'personal' | 'family' | undefined,
+  cursor: string | null,
+) =>
+  api<{ items: NodeDto[]; nextCursor: string | null }>(
+    `/api/gallery?${new URLSearchParams({ ...(q ? { q } : {}), ...(space ? { space } : {}), ...(cursor ? { cursor } : {}) })}`,
+  );
+
 /** D6 (ADR-090): a page of search results with the box's syntax. */
 export interface SearchPage {
   items: NodeDto[];

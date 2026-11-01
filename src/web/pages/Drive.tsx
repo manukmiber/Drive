@@ -1,7 +1,7 @@
 // Drive Saya (SPEC §8): breadcrumb, sort, list/grid, infinite scroll, drag-drop upload, paste.
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { ChevronRight, LayoutGrid, List, UploadCloud } from 'lucide-react';
+import { ChevronRight, Images, LayoutGrid, List, UploadCloud } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { t } from '../lib/i18n';
 import { AdCard } from '../components/AdCard';
@@ -276,6 +276,17 @@ export function Drive({ folderId }: { folderId?: string }) {
           >
             {view === 'list' ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
           </button>
+          {folder?.parentId && (
+            <Link
+              to="/galeri"
+              search={{ q: `di:"${folder.name.replace(/"/g, '')}"` }}
+              className="rounded-xl border border-[var(--border)] p-2 text-[var(--fg-muted)] transition-colors hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+              aria-label={t.gallery.showAsGallery}
+              title={t.gallery.showAsGallery}
+            >
+              <Images className="h-4 w-4" />
+            </Link>
+          )}
         </div>
       </div>
 
