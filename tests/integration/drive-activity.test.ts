@@ -92,9 +92,16 @@ describe('Activity (D4, ADR-083)', () => {
     });
     expect(again.status).toBe(201);
     const replaced = ((await again.json()) as { node: { id: string } }).node;
+    // D1 (ADR-084): the same file, its old content a version.
+    expect(replaced.id).toBe(f.id);
     await rt.settle();
     tick();
-    expect((await s.req('POST', '/api/nodes/restore', { ids: [f.id] })).status).toBe(200);
+    const versions = (await (await s.req('GET', `/api/nodes/${f.id}/versions`)).json()) as {
+      items: Array<{ id: string }>;
+    };
+    expect(
+      (await s.req('POST', `/api/nodes/${f.id}/versions/${versions.items[0]!.id}/restore`)).status,
+    ).toBe(200);
     tick();
     expect((await s.req('POST', '/api/nodes/trash', { ids: [copied.id] })).status).toBe(200);
     tick();
@@ -105,9 +112,8 @@ describe('Activity (D4, ADR-083)', () => {
     expect(all.map((e) => e.action)).toEqual([
       'delete',
       'trash',
-      'restore',
+      'revert',
       'replace',
-      'trash',
       'unshare',
       'share',
       'decor',
@@ -135,8 +141,8 @@ describe('Activity (D4, ADR-083)', () => {
 
     // A file: only its own events. A folder: its own and its direct contents', including what left.
     expect((await of(s, f.id)).map((e) => e.action)).toEqual([
-      'restore',
-      'trash',
+      'revert',
+      'replace',
       'unshare',
       'share',
       'move',
@@ -156,7 +162,7 @@ describe('Activity (D4, ADR-083)', () => {
 
     // The log is a month's object next to the index; D1 has no such table.
     const month = await rt.r2.get(`u/${s.userId}/log/2026-11.txt`);
-    expect(month && 'text' in month ? (await month.text()).split('\n').length : 0).toBe(14);
+    expect(month && 'text' in month ? (await month.text()).split('\n').length : 0).toBe(13);
     const tables = rt.d1.sqlite
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%event%'")
       .all();
@@ -164,7 +170,7 @@ describe('Activity (D4, ADR-083)', () => {
     const exported = (await (await s.req('GET', '/api/me/export')).json()) as {
       activity: ActivityItem[];
     };
-    expect(exported.activity).toHaveLength(13);
+    expect(exported.activity).toHaveLength(12);
   });
 
   it('shows a node only to who may see it; a family sees its space, with names', async () => {

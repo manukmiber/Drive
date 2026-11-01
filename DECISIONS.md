@@ -2355,6 +2355,8 @@ dan berapa banyak versi itu terserah user".
   share, salin, unduh) menjawab 404 untuk id versi. Unduh lewat token `/d/` yang sama dengan file.
 - UI: tab "Versi" di panel Detail (unduh, pulihkan, simpan/lepas, hapus dengan konfirmasi), kartu "Riwayat versi" di
   Pengaturan.
+- Aktivitas (ADR-083): ganti isi kini tercatat sebagai satu `replace` di file yang sama (bukan lagi `trash` lalu
+  `replace`), pulihkan versi sebagai `revert`. Kompres "ganti asli" juga menyimpan isi lama sebagai versi.
 
 Test (`drive-versions.test.ts`): id dan link tetap, kuota sebelum/sesudah ganti, pulihkan, hapus versi, reconcile,
 hapus file membawa versinya; jumlah pilihan user, "Simpan", menurunkan angka, 30 hari dengan jam palsu, 0 = perilaku

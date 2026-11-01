@@ -130,7 +130,7 @@ describe('compress jobs', () => {
     expect(notes.items[0]!.title).toContain('hemat');
   });
 
-  it('replaces a short video in place via Media Transformations and frees the old blob', async () => {
+  it('replaces a short video in place via Media Transformations, the old one a version', async () => {
     const { rt, s, root, poolId } = await setup();
     grant(rt, s.userId, 10, 'plan', T0 + 30 * DAY_MS, 'g1');
     const clip = await upload(s, root, 'klip.mov', mp4(30, 5000));
@@ -164,6 +164,14 @@ describe('compress jobs', () => {
     expect(node.name).toBe('klip.mp4');
     expect(node.size).toBe(3000);
     expect(node.blob_id).not.toBe(oldBlob);
+    // D1 (ADR-084): the original stays as a version, counted, until it is deleted.
+    expect(pool(rt, poolId).used_bytes).toBe(8000);
+    const v = rt.d1.sqlite
+      .prepare("SELECT id, blob_id FROM nodes WHERE parent_id = ? AND kind = 'version'")
+      .get(clip.id) as { id: string; blob_id: string };
+    expect(v.blob_id).toBe(oldBlob);
+    expect((await s.req('DELETE', `/api/nodes/${clip.id}/versions/${v.id}`)).status).toBe(204);
+    await rt.settle();
     expect(pool(rt, poolId).used_bytes).toBe(3000);
     expect(rt.d1.sqlite.prepare('SELECT id FROM blobs WHERE id = ?').get(oldBlob)).toBeUndefined();
   });
