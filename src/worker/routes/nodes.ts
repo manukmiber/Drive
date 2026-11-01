@@ -6,7 +6,15 @@ import { validate } from '../lib/validate';
 import { requireUser } from '../middleware/auth';
 import { rateLimit } from '../middleware/ratelimit';
 import { requireNode } from '../services/access';
-import { listRecent, listStarred, parseType, search, setStar } from '../services/browse';
+import { listRecent, listStarred, parseType, setStar } from '../services/browse';
+import { bodyLimit } from 'hono/body-limit';
+import {
+  contentSearchOn,
+  missingTexts,
+  postTexts,
+  searchDrive,
+  setContentSearch,
+} from '../services/search';
 import { downloadPlan, downloadUrl, previewUrl } from '../services/download';
 import { indexAnswer, readChildren, readNode, readTrash } from '../services/drive-read';
 import { findDuplicates } from '../services/duplicates';
@@ -70,19 +78,19 @@ export const nodes = new Hono<AppBindings>()
     validate(
       'query',
       z.object({
-        q: z.string().max(200),
+        q: z.string().max(500),
         type: z.string().max(20).optional(),
         modifiedAfter: z.coerce.number().int().nonnegative().optional(),
         space: z.enum(['personal', 'family']).optional(),
+        cursor: z.string().max(64).optional(),
       }),
     ),
     async (c) => {
       const q = c.req.valid('query');
-      const items = await search(c.get('ctx'), c.get('user')!.id, {
-        ...q,
-        type: parseType(q.type),
-      });
-      return c.json({ items });
+      // D6 (ADR-090): the box's syntax, a page at a time, with where the words are inside files.
+      return c.json(
+        await searchDrive(c.get('ctx'), c.get('user')!.id, { ...q, type: parseType(q.type) }),
+      );
     },
   )
   .get('/starred', async (c) =>
@@ -194,24 +202,71 @@ export const nodes = new Hono<AppBindings>()
     await deleteVersion(c.get('ctx'), c.get('user')!.id, c.req.param('id'), c.req.param('vid'));
     return c.body(null, 204);
   })
-  .get('/drive/settings', async (c) =>
-    c.json({ versions: await versionSettings(c.get('ctx'), c.get('user')!.id) }),
-  )
+  .get('/drive/settings', async (c) => {
+    const [versions, contentSearch] = await Promise.all([
+      versionSettings(c.get('ctx'), c.get('user')!.id),
+      contentSearchOn(c.get('ctx'), c.get('user')!.id),
+    ]);
+    return c.json({ versions, contentSearch });
+  })
   .put(
     '/drive/settings',
     validate(
       'json',
-      z.object({
-        space: z.enum(['personal', 'family']),
-        keepVersions: z.number().int().min(0).max(100),
-      }),
+      z
+        .object({
+          space: z.enum(['personal', 'family']).optional(),
+          keepVersions: z.number().int().min(0).max(100).optional(),
+          // D6 (ADR-090): "search file contents", the person's own switch.
+          contentSearch: z.boolean().optional(),
+        })
+        .refine((b) => (b.keepVersions === undefined) === (b.space === undefined), {
+          message: 'space and keepVersions go together',
+        }),
     ),
     async (c) => {
       const b = c.req.valid('json');
-      return c.json({
-        versions: await setKeepVersions(c.get('ctx'), c.get('user')!.id, b.space, b.keepVersions),
-      });
+      const ctx = c.get('ctx');
+      const userId = c.get('user')!.id;
+      if (b.contentSearch !== undefined) await setContentSearch(ctx, userId, b.contentSearch);
+      const versions =
+        b.space !== undefined && b.keepVersions !== undefined
+          ? await setKeepVersions(ctx, userId, b.space, b.keepVersions)
+          : await versionSettings(ctx, userId);
+      return c.json({ versions, contentSearch: await contentSearchOn(ctx, userId) });
     },
+  )
+  // D6 (ADR-090): text the browser took from files, one JSON object per line (NDJSON), so a batch
+  // of documents is not held to the 64 KiB JSON cap.
+  .post(
+    '/drive/texts',
+    bodyLimit({
+      maxSize: 1024 * 1024,
+      onError: () => {
+        throw new AppError('PAYLOAD_TOO_LARGE', 'too much text in one batch');
+      },
+    }),
+    async (c) => {
+      if (!(c.req.header('content-type') ?? '').includes('application/x-ndjson'))
+        throw new AppError('VALIDATION', 'send application/x-ndjson');
+      const line = z.object({ id: z.string().min(1).max(64), text: z.string().max(200_000) });
+      const items = (await c.req.text())
+        .split('\n')
+        .filter((l) => l.trim())
+        .slice(0, 21)
+        .map((l) => {
+          try {
+            return line.parse(JSON.parse(l));
+          } catch {
+            throw new AppError('VALIDATION', 'each line is {"id","text"}');
+          }
+        });
+      if (items.length > 20) throw new AppError('VALIDATION', 'at most 20 files a batch');
+      return c.json(await postTexts(c.get('ctx'), c.get('user')!.id, items));
+    },
+  )
+  .get('/drive/texts/missing', async (c) =>
+    c.json(await missingTexts(c.get('ctx'), c.get('user')!.id)),
   )
   // D4: the Activity panel (a node's, or the latest across the person's spaces).
   .get('/activity', async (c) =>

@@ -14,6 +14,7 @@ import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
 import { sitePage } from '../lib/zeiko';
 import { AccessTokens } from '../components/AccessTokens';
+import { ContentSearchSettings } from '../components/ContentSearch';
 import { WebDavSetup } from '../components/WebDavSetup';
 import { Button } from '../components/Button';
 import { toast } from '../components/ui/Toast';
@@ -88,6 +89,7 @@ export function Settings() {
 
       <NotificationPrefs />
       <AdLocation />
+      <ContentSearchSettings />
       <AccessTokens />
       <WebDavSetup />
 

@@ -71,6 +71,10 @@ export interface FileViewProps {
   label: string;
   /** Extra column text under the name (e.g. folder path in search results). */
   subtitle?: (n: NodeDto) => string | null;
+  /** D6: how a name is drawn (search marks the words it matched). */
+  nameOf?: (n: NodeDto) => ReactNode;
+  /** D6: a line under the name in the list (where the words are inside the file). */
+  extra?: (n: NodeDto) => ReactNode;
   empty?: ReactNode;
   /** Ctrl+V target (Drive only). */
   onPaste?: (clip: { ids: string[]; cut: boolean }) => void;
@@ -82,7 +86,16 @@ const setClipboard = (v: typeof clipboard) => {
   clipboard = v;
 };
 
-export function FileView({ items, view, label, subtitle, empty, onPaste }: FileViewProps) {
+export function FileView({
+  items,
+  view,
+  label,
+  subtitle,
+  nameOf,
+  extra,
+  empty,
+  onPaste,
+}: FileViewProps) {
   const actions = useNodeActions(items);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [anchor, setAnchor] = useState<number | null>(null);
@@ -303,7 +316,7 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
                 <Thumb node={node} />
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-sm">{node.name}</span>
+                    <span className="truncate text-sm">{nameOf ? nameOf(node) : node.name}</span>
                     {node.starred && (
                       <Star
                         className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400"
@@ -316,6 +329,7 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
                     {formatDate(node.updatedAt)}
                     {node.kind === 'file' && ` · ${formatBytes(node.size)}`}
                   </span>
+                  {extra?.(node)}
                   {subtitle?.(node) && (
                     <span className="hidden truncate text-xs text-[var(--fg-muted)] md:block">
                       {subtitle(node)}
@@ -357,7 +371,9 @@ export function FileView({ items, view, label, subtitle, empty, onPaste }: FileV
             >
               <div className="flex items-center gap-2 px-3 py-2">
                 <FileIcon node={node} className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-sm">{node.name}</span>
+                <span className="min-w-0 flex-1 truncate text-sm">
+                  {nameOf ? nameOf(node) : node.name}
+                </span>
                 <ExpiryMark node={node} />
                 {kebab(node)}
               </div>

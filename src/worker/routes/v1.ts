@@ -16,7 +16,8 @@ import { errorBody } from '../middleware/errors';
 import { clientIp, enforceRateLimit } from '../middleware/ratelimit';
 import { API_RATE_PER_MINUTE, scope, tokenAuth } from '../middleware/token';
 import { ensurePersonalSpace } from '../services/accounts';
-import { parseType, search } from '../services/browse';
+import { parseType } from '../services/browse';
+import { searchDrive } from '../services/search';
 import {
   exchangeCode,
   OAuthError,
@@ -316,19 +317,29 @@ export const ENDPOINTS: readonly Op[] = [
       path: '/search',
       scope: 'drive.read',
       tag: 'Drive',
-      summary: 'Find files and folders by name',
+      summary:
+        'Find files and folders with the search box syntax: words (all must match, as word prefixes), "exact phrase", -exclude, a OR b, type:pdf, ext:docx, after:2024-01, before:2024-03-15, date:created|taken, size:>10mb, in:"Folder", space:family, starred, shared, match:word, sort:date (Indonesian keywords work too). A page at a time: pass nextCursor back as cursor',
       query: z.object({
-        q: z.string().max(200),
+        q: z.string().max(500),
         type: z.string().max(20).optional(),
         modifiedAfter: z.coerce.number().int().nonnegative().optional(),
         space: z.enum(['personal', 'family']).optional(),
+        cursor: z.string().max(64).optional(),
       }),
-      responses: { 200: NODES },
+      responses: {
+        200: NODES.extend({
+          nextCursor: z.string().nullable(),
+          warnings: z.array(z.string()),
+        }),
+      },
     },
-    async (c, { query }) =>
-      c.json({
-        items: await search(c.get('ctx'), userId(c), { ...query, type: parseType(query.type) }),
-      }),
+    async (c, { query }) => {
+      const r = await searchDrive(c.get('ctx'), userId(c), {
+        ...query,
+        type: parseType(query.type),
+      });
+      return c.json({ items: r.items, nextCursor: r.nextCursor, warnings: r.warnings });
+    },
   ),
   op(
     {

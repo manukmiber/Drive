@@ -1,5 +1,5 @@
 // Cross-folder views: Cari, Terbaru, Berbintang, Dibagikan (SPEC §8.1, §6).
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import {
   Copy,
@@ -11,7 +11,10 @@ import {
   Search as SearchIcon,
   Settings2,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { parseSearch } from '../../shared/search-query';
+import { ContentSearchIntro } from '../components/ContentSearch';
+import { Highlighted, highlightName, SearchFilters } from '../components/SearchFilters';
 import { formatDateTime } from '../../shared/format';
 import { t } from '../lib/i18n';
 import { ActivityList } from '../components/ActivityList';
@@ -22,13 +25,14 @@ import { Dialog } from '../components/ui/Dialog';
 import { errorText } from '../components/explorer/useNodeActions';
 import { toast } from '../components/ui/Toast';
 import { cn } from '../lib/cn';
+import { Button } from '../components/Button';
 import {
   listRecent,
   recentActivity,
   listShares,
   listStarred,
   revokeShare,
-  searchNodes,
+  searchPage,
   listFileRequests,
   sharedWithMe,
   type ShareDto,
@@ -127,23 +131,33 @@ const TYPES = ['folder', 'image', 'video', 'audio', 'document', 'pdf', 'archive'
 
 export function Search({ q: query, type }: { q: string; type?: string | undefined }) {
   const navigate = useNavigate();
-  const q = useQuery({
+  const parsed = useMemo(() => parseSearch(query), [query]);
+  const pages = useInfiniteQuery({
     queryKey: ['search', query, type],
-    queryFn: () => searchNodes(query, type),
+    queryFn: ({ pageParam }) => searchPage(query, type, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
     enabled: query.trim().length > 0,
   });
   useEffect(() => void (document.title = `${query} · Zeiko`), [query]);
+  const items = pages.data?.pages.flatMap((p) => p.items) ?? [];
+  const snippets = Object.assign({}, ...(pages.data?.pages.map((p) => p.snippets) ?? [])) as Record<
+    string,
+    { text: string; ranges: Array<[number, number]> }
+  >;
+  const first = pages.data?.pages[0];
+  const go = (q: string, ty: string | undefined) =>
+    void navigate({ to: '/cari', search: { q, ...(ty ? { type: ty } : {}) } });
   return (
     <div>
       <Header title={t.files.searchResults(query)} />
-      <div className="flex gap-2 overflow-x-auto px-4 py-2">
+      <div className="flex items-center gap-2 overflow-x-auto px-4 py-2">
+        <SearchFilters q={query} onChange={(q) => go(q, type)} />
         {[undefined, ...TYPES].map((ty) => (
           <button
             key={ty ?? 'all'}
             type="button"
-            onClick={() =>
-              void navigate({ to: '/cari', search: { q: query, ...(ty ? { type: ty } : {}) } })
-            }
+            onClick={() => go(query, ty)}
             className={cn(
               'shrink-0 rounded-full border px-3 py-1 text-xs',
               type === ty
@@ -155,16 +169,44 @@ export function Search({ q: query, type }: { q: string; type?: string | undefine
           </button>
         ))}
       </div>
-      {q.isFetching && !q.data ? (
+      {first && first.warnings.length > 0 && (
+        <p className="px-4 pb-1 text-xs text-amber-700">
+          {t.searchFilters.warnings(first.warnings.join(', '))}
+        </p>
+      )}
+      {pages.isFetching && !pages.data ? (
         <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>
       ) : (
         <FileView
-          items={q.data?.items ?? []}
+          items={items}
           view="list"
           label={t.files.searchResults(query)}
           empty={emptyBox(t.files.noResults)}
+          nameOf={(n) => highlightName(n.name, parsed)}
+          extra={(n) =>
+            snippets[n.id] ? (
+              <span
+                className="block truncate text-xs text-[var(--fg-muted)]"
+                title={t.searchFilters.inContent}
+              >
+                <Highlighted text={snippets[n.id]!.text} ranges={snippets[n.id]!.ranges} />
+              </span>
+            ) : null
+          }
         />
       )}
+      {pages.hasNextPage && (
+        <div className="flex justify-center p-4">
+          <Button
+            variant="ghost"
+            disabled={pages.isFetchingNextPage}
+            onClick={() => void pages.fetchNextPage()}
+          >
+            {t.searchFilters.more}
+          </Button>
+        </div>
+      )}
+      <ContentSearchIntro off={first ? !first.contentSearch : false} />
     </div>
   );
 }

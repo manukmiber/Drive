@@ -81,7 +81,7 @@ Fitur di bawah dibangun di atas index R2 (fase R), bukan D1.
 | D3  | Link minta file (orang lain hanya upload)        | Wajib   | M      | R3, R5     | selesai (ADR-086)                        |
 | D4  | Panel Aktivitas (SPEC §8.1, belum dibuat)        | Wajib   | M      | R3         | selesai (ADR-083)                        |
 | D5  | Dekorasi folder: warna, ikon, gambar             | Diminta | M      | –          | selesai (ADR-058); pindah ke index di R3 |
-| D6  | Pencarian lanjutan + cari isi file               | Diminta | L      | R2         | belum                                    |
+| D6  | Pencarian lanjutan + cari isi file               | Diminta | L      | R2         | selesai (ADR-090)                        |
 | D7  | OCR PDF dan foto dokumen                         | Diminta | M      | D6, R3     | belum                                    |
 | D8  | Galeri foto/video, bisa dicari                   | Diminta | L      | R3, (D6)   | belum                                    |
 | D9  | WebDAV (backup galeri HP, mount di PC)           | Wajib   | L      | R3, R6     | selesai (ADR-089)                        |

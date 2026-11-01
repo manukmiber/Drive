@@ -8,6 +8,7 @@ import { api, ApiError, sendJson } from '../lib/api';
 import type { NodeDto } from '../lib/files';
 import { deleteResume, fingerprint, getResume, putResume } from './idb';
 import { makeAndUploadThumb } from './thumbs';
+import { indexUploaded } from '../lib/content-index';
 import { putWithProgress, type PutHandle } from './xhr';
 
 const SIMPLE_MAX = 16 * 1024 * 1024;
@@ -314,6 +315,8 @@ export class UploadManager {
       this.patch(t.id, { status: 'done', node, loaded: t.size, speed: 0 });
       this.opts.onUploaded(node, t.parentId);
       void makeAndUploadThumb(node.id, t.file).catch(() => undefined);
+      // D6 (ADR-090): its text for "search file contents", from the local copy.
+      void indexUploaded(node, t.file).catch(() => undefined);
     } catch (e) {
       if (rt.canceled || rt.paused) return;
       const err = e instanceof ApiError ? e : new ApiError(0, 'INTERNAL', String(e));

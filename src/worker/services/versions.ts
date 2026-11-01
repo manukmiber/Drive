@@ -10,6 +10,7 @@
 // cover it as they cover files. The index shows versions as the file entry's `vs` column. Generic
 // node routes never reach a version (requireNode refuses the kind); only the file's routes here do.
 import { DAY_MS } from '../../shared/constants';
+import { forgetTexts } from './content-index';
 import { parseIndexHead, type IndexVersion } from '../../shared/drive-index';
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
@@ -37,7 +38,7 @@ export interface VersionDto {
   expiresAt: number;
 }
 
-async function headOf(ctx: Ctx, owner: IndexOwner): Promise<Record<string, unknown> | null> {
+export async function headOf(ctx: Ctx, owner: IndexOwner): Promise<Record<string, unknown> | null> {
   const obj = await ctx.env.BUCKET.get(indexKey(owner), { range: { offset: 0, length: 65536 } });
   if (!obj || !('text' in obj)) return null;
   const text = await obj.text();
@@ -138,6 +139,8 @@ export async function replaceWithVersion(
   ]);
   if (res[1]?.meta.changes !== 1) return false;
   recordActivity(ctx, userId, { action: 'replace', node: file });
+  // D6 (ADR-090): the old content's search text no longer describes the file.
+  ctx.defer(forgetTexts(ctx, logOf(file), [file.id]));
   await pruneFile(ctx, file.id, keep);
   await markIndexDirty(ctx, [file.owner_id]);
   return true;

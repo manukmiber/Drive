@@ -2,6 +2,7 @@
 // period. Invoices and the wallet ledger are kept (accounting obligations) but de-identified.
 import { DAY_MS } from '../../shared/constants';
 import { deleteActivity, exportActivity } from './activity';
+import { exportTexts } from './content-index';
 import { deleteGrantsOfUser, exportGrants } from './grants';
 import { deleteRequestsOfUser, exportRequests } from './file-requests';
 import { deleteUserIndex } from './drive-index-sync';
@@ -75,6 +76,8 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
     ),
     // D4: what happened in the person's own Drive, from its log in R2 (ADR-083).
     activity: await exportActivity(ctx, userId),
+    // D6: the text taken from the person's files for search (ADR-090), [file id, text].
+    searchText: await exportTexts(ctx, { user: userId }),
     // D2: items shared with particular people, both ways (ADR-085).
     people: await exportGrants(ctx, userId),
     // D3: file request links (ADR-086).

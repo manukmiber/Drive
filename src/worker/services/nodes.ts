@@ -1,6 +1,7 @@
 // File tree operations (SPEC §8.3). Everything is a D1 update — R2 objects are never copied or
 // renamed (opaque keys, SPEC §3). Bulk operations work on subtrees via recursive CTEs (ADR-020).
 import { recordActivity } from './activity';
+import { forgetTexts } from './content-index';
 import { USED_SQL } from './versions-sql';
 import { DAY_MS } from '../../shared/constants';
 import { markIndexDirty } from './drive-index-sync';
@@ -794,6 +795,16 @@ export async function deleteSubtree(ctx: Ctx, rootId: string): Promise<DeleteRes
     DB.prepare(`${subtree(1)} DELETE FROM nodes WHERE id IN (SELECT id FROM sub)`).bind(rootId),
   ]);
   const deleted = results[3]?.meta.changes ?? 0;
+  // D6 (ADR-090): their search text goes with them.
+  ctx.defer(
+    forgetTexts(
+      ctx,
+      root.space === 'family' && root.family_id
+        ? { family: root.family_id }
+        : { user: root.owner_id },
+      gone.map((r) => r.id),
+    ),
+  );
   await forgetSharedNodes(
     ctx,
     gone.map((r) => r.id),

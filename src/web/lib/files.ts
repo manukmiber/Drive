@@ -182,9 +182,16 @@ export interface VersionSettings {
   days: number;
   max: number;
 }
-export const driveSettings = () => api<{ versions: VersionSettings }>('/api/drive/settings');
+export interface DriveSettings {
+  versions: VersionSettings;
+  /** D6 (ADR-090): "search file contents". */
+  contentSearch: boolean;
+}
+export const driveSettings = () => api<DriveSettings>('/api/drive/settings');
 export const setKeepVersions = (space: 'personal' | 'family', keepVersions: number) =>
-  sendJson<{ versions: VersionSettings }>('PUT', '/api/drive/settings', { space, keepVersions });
+  sendJson<DriveSettings>('PUT', '/api/drive/settings', { space, keepVersions });
+export const setContentSearch = (contentSearch: boolean) =>
+  sendJson<DriveSettings>('PUT', '/api/drive/settings', { contentSearch });
 /** D4: a node's activity (a folder's includes its direct contents), or the latest overall. */
 export const nodeActivity = (id: string) =>
   api<{ items: ActivityItem[] }>(`/api/nodes/${id}/activity`);
@@ -196,6 +203,19 @@ export const setStar = (id: string, on: boolean) =>
   api<void>(`/api/nodes/${id}/star`, { method: on ? 'PUT' : 'DELETE' });
 export const searchNodes = (q: string, type?: string) =>
   api<{ items: NodeDto[] }>(`/api/search?${new URLSearchParams({ q, ...(type ? { type } : {}) })}`);
+
+/** D6 (ADR-090): a page of search results with the box's syntax. */
+export interface SearchPage {
+  items: NodeDto[];
+  nextCursor: string | null;
+  snippets: Record<string, { text: string; ranges: Array<[number, number]> }>;
+  warnings: string[];
+  contentSearch: boolean;
+}
+export const searchPage = (q: string, type: string | undefined, cursor: string | null) =>
+  api<SearchPage>(
+    `/api/search?${new URLSearchParams({ q, ...(type ? { type } : {}), ...(cursor ? { cursor } : {}) })}`,
+  );
 export const listStarred = () => api<{ items: NodeDto[] }>('/api/starred');
 export const listRecent = () => api<{ items: NodeDto[] }>('/api/recent');
 

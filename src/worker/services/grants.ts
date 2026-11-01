@@ -308,9 +308,9 @@ export async function sharedRoots(ctx: Ctx, userId: string): Promise<string | nu
 }
 
 /** Name search inside what others shared with the person. */
-export async function searchShared(ctx: Ctx, userId: string, o: SearchOptions): Promise<NodeDto[]> {
-  const query = queryWords(o.q);
-  const roots = query.length ? await sharedRoots(ctx, userId) : null;
+/** Everything others shared with the person (D2), at most 5000, for search to filter (D6). */
+export async function sharedCandidates(ctx: Ctx, userId: string): Promise<NodeDto[]> {
+  const roots = await sharedRoots(ctx, userId);
   if (!roots) return [];
   const { results } = await ctx.env.DB.prepare(
     `${SHARED_SUBTREE} ${SELECT_DTO}
@@ -319,8 +319,13 @@ export async function searchShared(ctx: Ctx, userId: string, o: SearchOptions): 
   )
     .bind(userId, roots)
     .all<Parameters<typeof toDto>[0]>();
-  return results
-    .map(toDto)
+  return results.map(toDto);
+}
+
+export async function searchShared(ctx: Ctx, userId: string, o: SearchOptions): Promise<NodeDto[]> {
+  const query = queryWords(o.q);
+  if (!query.length) return [];
+  return (await sharedCandidates(ctx, userId))
     .filter((n) => matchesQuery(n.name, query))
     .filter((n) => !o.type || matchesType(n, o.type))
     .filter((n) => !o.modifiedAfter || n.updatedAt >= o.modifiedAfter)

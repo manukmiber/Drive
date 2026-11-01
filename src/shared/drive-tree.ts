@@ -6,6 +6,7 @@
 // While Drive moves off D1 (R3–R8) a node's id is still its D1 id, kept in the entry's `x` column;
 // entry numbers stay inside one index and are never shown.
 import type { IndexEntry, IndexHead, IndexVersion } from './drive-index';
+import { searchWords, termMatches, type ParsedSearch } from './search-query';
 import { isFolderColor, isFolderIcon, type FolderColor, type FolderDecor } from './folder-decor';
 
 /** A file or folder as the app and the API see it (the Worker's NodeDto). */
@@ -33,6 +34,8 @@ export interface DriveNode {
   decor: FolderDecor | null;
   /** D12 (ADR-082): the day it goes to the Trash by itself (00:00 WIB). Only the index knows it. */
   expiresAt: number | null;
+  /** D8: when a photo or video was taken (from its metadata); absent until known. */
+  takenAt?: number | null;
 }
 
 export interface DriveCrumb {
@@ -186,6 +189,74 @@ function compareTuples(
   if (a[1] !== b[1]) return (a[1] < b[1] ? -1 : 1) * dir;
   if (a[2] !== b[2]) return (a[2] < b[2] ? -1 : 1) * dir;
   return 0;
+}
+
+function extOf(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+}
+
+function searchDate(n: DriveNode, p: ParsedSearch): number {
+  if (p.dateField === 'created') return n.createdAt;
+  if (p.dateField === 'taken') return n.takenAt ?? n.clientModifiedAt ?? n.createdAt;
+  return n.updatedAt;
+}
+
+/** D6 (ADR-090): a search's filters other than its words and its folder. */
+export function passesFilters(n: DriveNode, p: ParsedSearch, only: Set<string> | null): boolean {
+  if (only && !only.has(n.id)) return false;
+  if (p.types.length && !p.types.some((t) => matchesType(n, t))) return false;
+  if (p.exts.length && (n.kind !== 'file' || !p.exts.includes(extOf(n.name)))) return false;
+  if (p.after !== null || p.before !== null) {
+    const d = searchDate(n, p);
+    if (p.after !== null && d < p.after) return false;
+    if (p.before !== null && d >= p.before) return false;
+  }
+  if (p.minSize !== null || p.maxSize !== null) {
+    if (n.kind !== 'file') return false;
+    if (p.minSize !== null && n.size < p.minSize) return false;
+    if (p.maxSize !== null && n.size > p.maxSize) return false;
+  }
+  if (p.starred && !n.starred) return false;
+  return true;
+}
+
+/**
+ * How well a name answers the query's words: null when it doesn't, 0 when the query has none.
+ * A whole word counts more than a prefix, a phrase more than loose words, the whole name most.
+ */
+export function nameScore(name: string, p: ParsedSearch): number | null {
+  const have = searchWords(name);
+  if (p.exclude.some((t) => termMatches(have, t, p.match))) return null;
+  let score = 0;
+  for (const g of p.groups) {
+    let best = -1;
+    for (const t of g) {
+      if (!termMatches(have, t, p.match)) continue;
+      const whole = t.words.every((w) => have.includes(w));
+      best = Math.max(best, (whole ? 3 : 1) * t.words.length + (t.phrase ? 2 : 0));
+    }
+    if (best < 0) return null;
+    score += best;
+  }
+  if (p.groups.length) {
+    const asked = p.groups.map((g) => g[0]!.words.join(' ')).join(' ');
+    if (have.join(' ') === asked || searchWords(name.replace(/\.[^.]*$/, '')).join(' ') === asked)
+      score += 5;
+  }
+  return score;
+}
+
+/** A node against a whole query except its folder: its score, or null. */
+export function scoreNode(n: DriveNode, p: ParsedSearch, only: Set<string> | null): number | null {
+  return passesFilters(n, p, only) ? nameScore(n.name, p) : null;
+}
+
+export interface FindOptions {
+  /** Folders whose contents (at any depth) are searched; null = everywhere. */
+  within?: string[] | null;
+  /** Only these ids (e.g. what the person shared); null = all. */
+  only?: Set<string> | null;
 }
 
 /** One index (a person's own, or a family's), ready to answer the explorer's questions. */
@@ -434,6 +505,55 @@ export class DriveTree {
       .filter((n) => !o.modifiedAfter || n.updatedAt >= o.modifiedAfter)
       .sort(searchOrder)
       .slice(0, limit);
+  }
+
+  /** D6: live folders with exactly this name (case and accents as names compare). */
+  foldersNamed(name: string): string[] {
+    const k = nameKey(name.trim());
+    return this.live()
+      .filter((e) => e.kind === 'folder' && nameKey(e.name) === k)
+      .map((e) => DriveTree.idOf(e));
+  }
+
+  /** Everything below these folders (not the folders themselves). */
+  private below(folderIds: string[]): Set<string> {
+    const out = new Set<string>();
+    const stack = folderIds.map((id) => this.numberOf(id)).filter((n): n is number => n !== null);
+    while (stack.length) {
+      for (const e of this.kids.get(stack.pop()!) ?? []) {
+        if (e.trashedAt !== null) continue;
+        const id = DriveTree.idOf(e);
+        if (out.has(id)) continue;
+        out.add(id);
+        if (e.kind === 'folder') stack.push(e.id);
+      }
+    }
+    return out;
+  }
+
+  /** D6 (ADR-090): everything not in the Trash that answers a parsed query, with its score. */
+  find(p: ParsedSearch, o: FindOptions = {}): Array<{ node: DriveNode; score: number }> {
+    const inside = o.within ? this.below(o.within) : null;
+    const out: Array<{ node: DriveNode; score: number }> = [];
+    for (const e of this.live()) {
+      if (inside && !inside.has(DriveTree.idOf(e))) continue;
+      const node = this.toNode(e);
+      const score = scoreNode(node, p, o.only ?? null);
+      if (score !== null) out.push({ node, score });
+    }
+    return out;
+  }
+
+  /** The filters (and folder) for a node found some other way, e.g. by its contents. */
+  passes(n: DriveNode, p: ParsedSearch, o: FindOptions & { words: boolean }): boolean {
+    if (n.trashedAt !== null || n.id === this.rootId) return false;
+    if (o.within && !this.below(o.within).has(n.id)) return false;
+    if (!passesFilters(n, p, o.only ?? null)) return false;
+    if (!o.words) {
+      const have = searchWords(n.name);
+      return !p.exclude.some((t) => termMatches(have, t, p.match));
+    }
+    return nameScore(n.name, p) !== null;
   }
 
   /**

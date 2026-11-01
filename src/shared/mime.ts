@@ -67,3 +67,61 @@ export function mimeFromName(name: string): string | null {
   if (dot <= 0 || dot === name.length - 1) return null;
   return BY_EXT[name.slice(dot + 1).toLowerCase()] ?? null;
 }
+
+const TEXT_EXT = new Set([
+  'txt',
+  'md',
+  'markdown',
+  'csv',
+  'tsv',
+  'json',
+  'xml',
+  'html',
+  'htm',
+  'log',
+  'ini',
+  'yaml',
+  'yml',
+  'toml',
+  'js',
+  'mjs',
+  'ts',
+  'tsx',
+  'jsx',
+  'py',
+  'java',
+  'kt',
+  'c',
+  'h',
+  'cpp',
+  'cs',
+  'go',
+  'rs',
+  'php',
+  'rb',
+  'sh',
+  'sql',
+  'css',
+  'scss',
+  'srt',
+  'vtt',
+  'tex',
+  'rtf',
+]);
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+export type TextKind = 'text' | 'pdf' | 'docx' | 'xlsx';
+
+/** D6 (ADR-090): which reader can take a file's text in the browser, or null when none can. */
+export function textKind(name: string, mime: string | null): TextKind | null {
+  const m = (mime || mimeFromName(name) || '').toLowerCase();
+  const dot = name.lastIndexOf('.');
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
+  if (m === 'application/pdf' || ext === 'pdf') return 'pdf';
+  if (m === DOCX || ext === 'docx') return 'docx';
+  if (m === XLSX || ext === 'xlsx') return 'xlsx';
+  if (m.startsWith('text/') || m === 'application/json' || m === 'application/xml') return 'text';
+  if (TEXT_EXT.has(ext)) return 'text';
+  return null;
+}

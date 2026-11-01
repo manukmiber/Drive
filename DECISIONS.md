@@ -2576,3 +2576,60 @@ Windows Explorer, Finder, dan Files di iOS. Kode: `routes/webdav.ts` (tipis), `s
 
 **Belum:** chunking Nextcloud untuk file > 95 MiB, item "Dibagikan dengan saya" di WebDAV, kunci yang dipaksakan,
 properti mati yang disimpan, `Depth: infinity`.
+
+## ADR-090 — D6: pencarian lanjutan, dan cari isi file dari objek teks per ruang di R2
+
+Tanggal: 2026-11-01. Status: diterima. Pemilik (2026-11-01): cari isi file pakai saklar di Pengaturan, **default mati**,
+dengan pop-up yang memperkenalkan fiturnya.
+
+**Bagian 1 — sintaks, filter, sorot kata.** Satu parser bersama `shared/search-query.ts` (`parseSearch`, `toQuery`),
+dipakai Worker (`/api/search`, `/api/v1/search`) dan app (panel filter menulis sintaks yang sama ke kotak cari, sorot
+kata di nama). Kata kunci Indonesia dan Inggris:
+- kata biasa (semua harus cocok), `"frasa persis"`, `-kecualikan` / `-"frasa"`, `ATAU`/`OR` di antara dua kata (mengikat
+  kata di kiri-kanannya saja, seperti Google: `nota ATAU kuitansi 2024` = (nota atau kuitansi) dan 2024);
+- `jenis:`/`type:` gambar|image|foto, video, audio|musik, pdf, dokumen|document, arsip|archive, folder; `ext:pdf`;
+- `setelah:`/`after:` dan `sebelum:`/`before:` dengan `YYYY`, `YYYY-MM`, atau `YYYY-MM-DD` (WIB). `setelah` = sejak awal
+  periode itu, `sebelum` = sebelum awal periode itu. Tanggal yang dipakai `tanggal:`/`date:` diubah|modified (bawaan),
+  dibuat|created, diambil|taken (diambil = tanggal foto dari D8; sebelum D8 jatuh ke waktu dari perangkat, lalu dibuat);
+- `ukuran:`/`size:` `>10mb`, `<1gb`, `>=`, `<=` (boleh dua kali); `di:`/`in:"Nama folder"` (termasuk subfolder, nama
+  folder dicocokkan utuh tanpa beda huruf besar/kecil); `ruang:`/`space:` pribadi|personal, keluarga|family;
+  `berbintang`/`starred`; `dibagikan`/`shared` (punya link share aktif atau dibagikan ke orang, oleh si pencari);
+  `cocok:`/`match:` awalan|prefix (bawaan, seperti dulu) atau kata|word; `urut:`/`sort:` relevan|relevance (bawaan) atau
+  tanggal|date.
+- Kunci yang tidak dikenal dibaca sebagai kata biasa; nilai yang salah (tanggal/ukuran rusak) diabaikan dan dilaporkan
+  di `warnings`, tidak pernah error. Tidak ada FTS5 lagi sejak R2 (ADR-077), jadi tidak ada sintaks yang bisa disuntik;
+  parser tetap dites dengan masukan aneh.
+- **Relevansi:** skor sederhana di nama (kata utuh > awalan, frasa, nama sama persis) dan kecil di isi file; seri → yang
+  terbaru. Pagination dengan `cursor` (posisi dalam urutan, ditandai sidik query supaya cursor query lain ditolak), 50
+  per halaman, paling jauh 500 hasil.
+- Parameter lama (`type`, `modifiedAfter`, `space`) tetap diterima dan digabung ke hasil parse.
+
+**Bagian 2 — cari isi file.**
+- **Tempat:** satu objek teks per ruang, `u/{userId}/text.txt` dan `f/{familyId}/text.txt` (ADR-064: bukan D1/FTS5).
+  Baris 1 header JSON `{"v":1}`, lalu satu baris per file `[id, isi, "teks"]` (plus `1` kalau teksnya punya huruf
+  non-ASCII); `isi` = id konten file saat teks diambil,
+  jadi teks lama dari isi yang sudah diganti tidak pernah tampil dan dibuang pada tulis berikutnya.
+- **Diambil di browser** (ADR-050; isi file tidak dikirim ke layanan luar): teks/kode/Markdown/CSV/JSON, PDF yang punya
+  lapisan teks (pdf.js), .docx (mammoth), .xlsx (sharedStrings + sel, dibaca sendiri dengan fflate). Setelah upload
+  selesai (dari file lokal, tanpa unduh) dan lewat "Indeks ulang" di Pengaturan (app mengunduh file yang belum
+  berteks lewat URL pratinjau dan mengirim teksnya). Dikirim per batch `POST /api/drive/texts` (≤ 20 file), satu tulis
+  R2 per batch per ruang (tulis bersyarat etag + ulang, menunggu batas 1 tulis/detik per key).
+- **Batas di config:** `content_text_max_chars` (20.000 karakter per file) dan `content_index_max_bytes` (4 MiB per
+  ruang). Hitungannya: Workers Free memberi ±10 ms CPU per request. Diukur di HP pengembang (Node 22) atas 4 MiB
+  penuh (209 dokumen × 20.000 karakter): kata yang tidak ada 8,6 ms, frasa 5,0 ms, dua kata yang ada di semua dokumen
+  16,3 ms; server Cloudflare lebih cepat dari HP ini. Supaya murah: setiap baris menyimpan tanda "ada huruf non-ASCII"
+  (kolom ke-4, dihitung sekali saat ditulis); teks ASCII dicocokkan dengan `includes` lalu regex batas kata atas huruf
+  kecilnya, tanpa memecah teks; hanya teks non-ASCII yang dipecah jadi kata (aksen dibuang seperti nama). Ruang yang
+  penuh menolak teks baru (`CONTENT_INDEX_FULL`), app berhenti mengirim dan Pengaturan menyebutnya.
+- **Saklar per orang**, disimpan di header index pribadinya (`contentSearch`, tanpa D1): mati = browser-nya tidak
+  mengambil teks dan pencariannya tidak membaca objek teks. Default mati. Pop-up sekali (disimpan per perangkat)
+  muncul saat orang mencari dan saklarnya mati: menjelaskan fiturnya, dengan tombol Nyalakan / Nanti saja.
+- **Izin:** mengirim teks butuh izin ubah (`edit`) atas file itu, supaya penonton tidak bisa mengotori pencarian
+  pemilik. Mencari isi hanya di file yang boleh dilihat: pohon pribadi sendiri dan ruang keluarga (aturan privasi
+  keluarga SPEC §9.4 sama dengan nama). Isi file yang dibagikan orang lain (D2) belum ikut.
+- **Hapus:** hapus permanen (`deleteSubtree`) membuang barisnya dari objek teks ruang itu; ganti isi membuang baris file
+  itu; hapus akun menghapus `text.txt`; ekspor data menyertakan teksnya.
+- **Kebijakan Privasi:** teksnya milik pemilik, tidak diubah sesi ini. Usulan kalimat untuk pemilik: "Kalau kamu
+  menyalakan Cari isi file, teks dari dalam file dokumenmu (PDF, Word, Excel, teks) diambil di perangkatmu dan
+  disimpan bersama file-mu supaya bisa dicari. Teks itu dihapus bersama filenya, dan kamu bisa mematikan fiturnya kapan
+  saja."

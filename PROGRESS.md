@@ -87,6 +87,12 @@ lewat fase R di `docs/ROADMAP.md`.
   (copy, sync, check, moveto/copyto di server, purge, about, waktu file vendor owncloud). **Production:** isi
   `"davOrigin": "https://dav.zeiko.biz.id"` di `deploy/production.json`, generate `wrangler.jsonc`, deploy (izin pemilik).
   Uji manual untuk pemilik: FolderSync di Android, Windows Explorer, Finder.
+- [x] D6 pencarian lanjutan + cari isi file (ADR-090, 2026-11-01): parser bersama `shared/search-query.ts` (ID/EN:
+  frasa, `-`, ATAU/OR, jenis/ext/setelah/sebelum/tanggal/ukuran/di/ruang/berbintang/dibagikan/cocok/urut), skor
+  relevansi + cursor, panel Filter yang menulis sintaks yang sama, sorot kata. Isi file: objek `u|f/…/text.txt` di R2,
+  teks diambil di browser (teks, PDF, .docx, .xlsx) setelah upload dan lewat "Indeks ulang"; saklar per orang di header
+  index, **default mati** + pop-up sekali (pemilik). Kalimat Kebijakan Privasi diusulkan di ADR-090, belum dipasang
+  (teks milik pemilik).
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

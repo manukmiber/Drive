@@ -19,6 +19,7 @@
 // its own: a member's flush writes their family's index as well, and every change to the family
 // space marks a member (the node's owner, the one acting, or the family owner).
 import { entryLine, type IndexEntry, type IndexVersion } from '../../shared/drive-index';
+import { textKey } from './content-index';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
 import { changeIndex, indexKey, type IndexDoc } from './drive-index';
@@ -155,12 +156,13 @@ export async function flushDirtyIndexes(
 
 /** Account deletion: the index goes with the files. */
 export async function deleteUserIndex(ctx: Ctx, userId: string): Promise<void> {
-  await ctx.env.BUCKET.delete(indexKey({ user: userId }));
+  // The search text of the space goes too (D6, ADR-090).
+  await ctx.env.BUCKET.delete([indexKey({ user: userId }), textKey({ user: userId })]);
 }
 
 /** A family that ended: its tree went back to the owner's own Drive, and its index goes. */
 export async function deleteFamilyIndex(ctx: Ctx, familyId: string): Promise<void> {
-  await ctx.env.BUCKET.delete(indexKey({ family: familyId }));
+  await ctx.env.BUCKET.delete([indexKey({ family: familyId }), textKey({ family: familyId })]);
 }
 
 export interface TreeRow {

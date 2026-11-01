@@ -314,6 +314,16 @@ describe('IDOR (SPEC §14.1)', () => {
       ['DELETE', `/api/s3/buckets/milik-b/uploads/${aUpload}?key=besar.bin`],
       // ADR-061: A's token cannot be revoked by B.
       ['DELETE', `/api/tokens/${aToken.id}`],
+      // D6 (ADR-090): B cannot put search text on A's file.
+      [
+        'POST',
+        '/api/drive/texts',
+        undefined,
+        {
+          body: JSON.stringify({ id: file.id, text: 'kata palsu' }),
+          headers: { 'content-type': 'application/x-ndjson' },
+        },
+      ],
     ];
 
     const leaks: string[] = [];

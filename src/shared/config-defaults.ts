@@ -176,6 +176,18 @@ export const configSchema = z.object({
   // ── Access tokens (ADR-061) ──
   /** Working personal tokens one user may have. */
   api_tokens_max_per_user: int().min(1).max(100).default(20),
+  // ── Search file contents (D6, ADR-090) ──
+  /** Characters of one file's text kept for search. */
+  content_text_max_chars: int().min(100).max(200_000).default(20_000),
+  /** The text object of one space (u/{id}/text.txt, f/{id}/text.txt): read whole on a search. */
+  content_index_max_bytes: int()
+    .min(64 * 1024)
+    .max(32 * MIB)
+    .default(4 * MIB),
+  /** Files bigger than this are not opened to take their text ("Index again"). */
+  content_text_source_max_bytes: nonNeg()
+    .max(1024 * MIB)
+    .default(50 * MIB),
   // ── WebDAV (D9, ADR-089) ──
   /** One PUT is one request: under Workers' 100 MB body cap. Bigger files go through the app or API v1. */
   webdav_put_max_bytes: nonNeg()
@@ -455,4 +467,5 @@ export const PUBLIC_CONFIG_KEYS = [
   's3_web_multipart_max_bytes',
   's3_link_max_seconds',
   'webdav_put_max_bytes',
+  'content_text_max_chars',
 ] as const satisfies readonly ConfigKey[];
