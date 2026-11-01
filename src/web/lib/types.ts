@@ -41,6 +41,8 @@ export interface Catalog {
     s3UrlCustom: boolean;
     /** D2 (ADR-085): sharing with particular accounts. */
     peopleShares: boolean;
+    /** D3 (ADR-086): file request links. */
+    fileRequests: boolean;
   };
   config: {
     upload_part_concurrency: number;

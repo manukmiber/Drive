@@ -303,7 +303,7 @@ export async function readiness(ctx: Ctx): Promise<Feature[]> {
     {
       id: 'people_shares',
       title: 'Sharing with people',
-      what: 'Sharing a file or folder with particular Zeiko accounts, and "Shared with me".',
+      what: 'Sharing a file or folder with particular Zeiko accounts, "Shared with me", and file request links.',
       hidden: true,
       after: [],
       needs: [
@@ -335,6 +335,8 @@ export async function capabilities(ctx: Ctx) {
     asyncArchives: ctx.adapters.archiver.name !== 'none',
     /** D2 (ADR-085): person shares live in the access database, made by the owner. */
     peopleShares: Boolean(env.ACCESS_DB),
+    /** D3 (ADR-086): file request links, in the same database. */
+    fileRequests: Boolean(env.ACCESS_DB),
     /** ClamAV checks files; without it "clean" only means the basic check passed (ADR-056). */
     antivirus: ctx.adapters.scanner.name !== 'mock',
     emailShare: realEmail(ctx),

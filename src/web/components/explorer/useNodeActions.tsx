@@ -26,6 +26,7 @@ import {
   Star,
   StarOff,
   Trash2,
+  Inbox,
 } from 'lucide-react';
 import { useCallback, useState, type ReactNode } from 'react';
 import { t } from '../../lib/i18n';
@@ -57,6 +58,7 @@ import {
   type EditRequest,
 } from '../../editors/files';
 import { useMe } from '../../lib/session';
+import { useCatalog } from '../../lib/catalog';
 import { Button } from '../Button';
 import { Dialog, PromptDialog } from '../ui/Dialog';
 import type { MenuItem } from '../ui/Menu';
@@ -67,6 +69,7 @@ import { Details } from './Details';
 import { MoveDialog } from './MoveDialog';
 import { Preview } from './Preview';
 import { ShareDialog } from './ShareDialog';
+import { FileRequestDialog } from './FileRequestDialog';
 
 export function errorText(e: unknown): string {
   if (!(e instanceof ApiError)) return t.errors.generic;
@@ -95,6 +98,8 @@ export function useNodeActions(items: NodeDto[]) {
   const [sharing, setSharing] = useState<NodeDto[] | null>(null);
   const [compressing, setCompressing] = useState<NodeDto[] | null>(null);
   const [decorating, setDecorating] = useState<NodeDto[] | null>(null);
+  const [requesting, setRequesting] = useState<NodeDto | null>(null);
+  const requestsOk = useCatalog().data?.capabilities?.fileRequests === true;
   const [editing, setEditing] = useState<EditRequest | null>(null);
   /** Opens the editor for one Drive file (from the preview). */
   const edit = useCallback((node: NodeDto) => {
@@ -311,6 +316,8 @@ export function useNodeActions(items: NodeDto[]) {
       });
     if (nodes.length && nodes.every((n) => n.kind === 'folder'))
       list.push({ label: t.decor.action, icon: Palette, onSelect: () => setDecorating(nodes) });
+    if (single?.kind === 'folder' && requestsOk && single.trashedAt === null)
+      list.push({ label: t.requests.action, icon: Inbox, onSelect: () => setRequesting(single) });
     list.push({ label: t.files.moveTo, icon: FolderInput, onSelect: () => setMoving(ids) });
     if (single)
       list.push({
@@ -403,6 +410,7 @@ export function useNodeActions(items: NodeDto[]) {
       {editing && <EditorHost request={editing} onClose={() => setEditing(null)} />}
       {details && <Details id={details} onClose={() => setDetails(null)} />}
       {sharing && <ShareDialog nodes={sharing} onClose={() => setSharing(null)} />}
+      {requesting && <FileRequestDialog folder={requesting} onClose={() => setRequesting(null)} />}
       {compressing && <CompressDialog nodes={compressing} onClose={() => setCompressing(null)} />}
       {decorating && (
         <DecorDialog

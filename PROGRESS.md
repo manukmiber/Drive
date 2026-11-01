@@ -68,6 +68,9 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] D2 share ke akun tertentu (ADR-085, 2026-11-01): `node_grants` di D1 akses (`migrations-access/0003`), warisan
   folder di `nodeAccess`, item baru milik pemilik ruang (`spaceOwner`), "Dibagikan dengan saya" (`/untuk-saya`), tab
   Orang di dialog Bagikan, notifikasi `node_shared`, email untuk alamat yang belum terdaftar. Butuh `ACCESS_DB`.
+- [x] D3 link minta file (ADR-086, 2026-11-01): `file_requests` + `file_request_drops` di D1 akses
+  (`migrations-access/0004`), `/minta/{r64}/{s32}` tanpa akun dan tanpa iklan, protokol multipart yang sama atas nama
+  pemilik, subfolder per pengirim, pass 1 jam (Turnstile + password), notifikasi per jam `file_request_files`.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

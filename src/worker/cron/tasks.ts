@@ -13,6 +13,7 @@ import { flushDirtyIndexes } from '../services/drive-index-sync';
 import { runExpiries } from '../services/expiry';
 import { pruneActivity } from '../services/activity';
 import { purgeOldVersions } from '../services/versions';
+import { noticeRequestFiles } from '../services/file-requests';
 import { deletionReminders, processAccountDeletions } from '../services/account';
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
@@ -37,6 +38,12 @@ registerCronTask(CRON.hourly, {
     const r = await flushDirtyIndexes(ctx);
     if (r.written || r.failed) log.info('drive_index_flush', r);
   },
+});
+
+// D3 (ADR-086): one notice per file request link that got files this hour.
+registerCronTask(CRON.hourly, {
+  name: 'file_request_notices',
+  run: async (ctx) => void (await noticeRequestFiles(ctx)),
 });
 
 registerCronTask(CRON.hourly, {

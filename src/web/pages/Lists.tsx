@@ -29,9 +29,11 @@ import {
   listStarred,
   revokeShare,
   searchNodes,
+  listFileRequests,
   sharedWithMe,
   type ShareDto,
 } from '../lib/files';
+import { FileRequestList } from '../components/explorer/FileRequestDialog';
 import { useCatalog } from '../lib/catalog';
 
 function Header({ title, children }: { title: string; children?: React.ReactNode }) {
@@ -197,8 +199,23 @@ export function SharedWithMe() {
   );
 }
 
+/** D3 (ADR-086): the person's file request links, on the Shared page. */
+function RequestLinks() {
+  const q = useQuery({ queryKey: ['file-requests', 'mine'], queryFn: () => listFileRequests() });
+  if (!q.data?.items.length) return null;
+  return (
+    <section className="mx-auto max-w-3xl px-4 py-4" aria-labelledby="minta-semua">
+      <h2 id="minta-semua" className="mb-1 text-sm font-medium">
+        {t.requests.existing}
+      </h2>
+      <FileRequestList items={q.data.items} />
+    </section>
+  );
+}
+
 export function Shared() {
-  const people = useCatalog().data?.capabilities?.peopleShares === true;
+  const caps = useCatalog().data?.capabilities;
+  const people = caps?.peopleShares === true;
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['shares', 'mine'], queryFn: () => listShares() });
   const [showOld, setShowOld] = useState(false);
@@ -370,6 +387,7 @@ export function Shared() {
           <ShareQr url={qrFor.url} title={qrFor.title} />
         </Dialog>
       )}
+      {caps?.fileRequests && <RequestLinks />}
     </div>
   );
 }

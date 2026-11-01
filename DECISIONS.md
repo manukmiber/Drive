@@ -2402,3 +2402,36 @@ Tanggal: 2026-11-01. Status: diterima (pemilik: "Sekalian kerjai. D2 dan D3 abis
 Test (`drive-people.test.ts`, IDOR): view (isi folder, breadcrumb terpotong, tidak bisa ubah/bagikan, sebelah 404,
 pencarian tidak bocor), edit (kuota dan index pemilik, hapus hanya buatan sendiri, tidak bisa keluar ruang pemilik),
 cabut/keluar/ganti peran/izin file saja, email yang belum terdaftar, validasi, ekspor.
+
+## ADR-086 — D3: link minta file, di D1 khusus akses, lewat protokol upload yang sama
+
+Tanggal: 2026-11-01. Status: diterima (pemilik: "Sekalian kerjai. D2 dan D3 abis itu wraping up").
+
+**Keputusan:**
+- Link permintaan adalah jenis link share, jadi disimpan di `zeiko-access` (`migrations-access/0004`):
+  `file_requests` (folder, judul, pesan, tenggat, maks file, maks ukuran per file, wajib nama, hash password, jumlah
+  file, jumlah yang belum diberitahukan, dicabut) dan `file_request_drops` (upload lewat link: nama pengirim, IP sebagai
+  HMAC, ukuran, status). Tidak ada tabel D1 Drive baru. Tanpa `ACCESS_DB` fiturnya tidak ada
+  (`capabilities.fileRequests`, satu fitur readiness dengan D2).
+- **Format link:** `{app}/minta/{r64}/{s32}`, ditandatangani seperti link share (`SHARE_LINK_SECRET`, dengan
+  `_PREV` saat rotasi). Halamannya di SPA (`pages/RequestUpload.tsx`, dua bahasa, tanpa AppShell dan **tanpa iklan**).
+  Halaman publik hanya menampilkan judul, pesan, nama pemilik, tenggat, sisa slot, dan batas ukuran. Folder dan isinya
+  tidak pernah terlihat.
+- **Protokol upload yang sama:** `initUpload` / `uploadPart` / `completeUpload` dari `services/uploads.ts` dengan
+  pemilik link sebagai user yang bertindak. Kuota dipotong dari pool folder secara atomik (`reserveQuota`), scan
+  berjalan seperti biasa, dan file berbahaya ditolak. Urutannya: `POST …/pass` (Turnstile kalau dipasang, password kalau
+  ada) memberi pass 1 jam untuk link itu; `POST …/uploads` mengambil satu slot (`file_count < max_files`, atomik) dan
+  membuat subfolder pengirim (nama dibersihkan, atau "Tanpa nama YYYY-MM-DD"); bagian dan selesai memakai token HMAC
+  per upload (`x-drop-token`). Token tidak bisa dipakai untuk link lain, upload lain, atau upload milik pemilik.
+- **Batas:** maks file per link, maks ukuran per file (413), tenggat (410), dicabut (410), folder di Sampah atau pool
+  readonly/suspended (`unavailable`), kuota habis (413, slot dikembalikan). `file_request_max_open` (config, 50 link
+  aktif per orang). Rate limit per IP: `RL_SHARE_SEND` untuk pass, `RL_UPLOAD` untuk tiap file.
+- **Notifikasi ringkas:** tiap file selesai menambah `pending_notice`; cron per jam `file_request_notices` mengirim
+  satu notifikasi `file_request_files` (lonceng + email, dua bahasa) per link berisi jumlahnya.
+- Dikelola dari menu folder ("Minta file": buat, salin, matikan) dan halaman Dibagikan (daftar semua link). Folder
+  yang dihapus selamanya menutup link-nya. Hapus akun menghapus link dan catatan upload-nya; ekspor data memuat link.
+- Hanya yang aksesnya bukan lewat share orang (D2) yang bisa membuat link.
+
+Test (`file-requests.test.ts`, IDOR): alur pengirim lengkap (subfolder per nama, kuota pemilik, satu notifikasi per jam,
+IP di-hash), wajib nama, password, jumlah, ukuran, tenggat dengan jam palsu, dicabut, kuota habis tanpa sisa cadangan,
+token/pass tidak bisa dipakai di link lain, tanda tangan salah 404, file EICAR ditolak scan, folder di Sampah/dihapus.

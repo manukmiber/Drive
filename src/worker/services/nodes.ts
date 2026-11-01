@@ -6,6 +6,7 @@ import { DAY_MS } from '../../shared/constants';
 import { markIndexDirty } from './drive-index-sync';
 import { grantedOwners } from './grant-lookup';
 import { forgetGrants } from './grants';
+import { closeRequestsOfFolders } from './file-requests';
 import { isFolderColor, isFolderIcon, type FolderDecor } from '../../shared/folder-decor';
 import {
   decodeCursor as decodeSharedCursor,
@@ -779,6 +780,10 @@ export async function deleteSubtree(ctx: Ctx, rootId: string): Promise<DeleteRes
     gone.map((r) => r.id),
   );
   await forgetGrants(
+    ctx,
+    gone.map((r) => r.id),
+  );
+  await closeRequestsOfFolders(
     ctx,
     gone.map((r) => r.id),
   );

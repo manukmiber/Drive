@@ -126,6 +126,36 @@ export interface SharedWithMeItem {
   node: NodeDto;
 }
 export const sharedWithMe = () => api<{ items: SharedWithMeItem[] }>('/api/shared-with-me');
+/** D3 (ADR-086): file request links into a folder. */
+export interface FileRequestDto {
+  id: string;
+  url: string;
+  folderId: string;
+  title: string;
+  message: string | null;
+  deadlineAt: number | null;
+  maxFiles: number | null;
+  maxFileBytes: number | null;
+  requireName: boolean;
+  hasPassword: boolean;
+  fileCount: number;
+  state: 'open' | 'revoked' | 'expired' | 'full' | 'unavailable';
+  createdAt: number;
+}
+export const listFileRequests = (folderId?: string) =>
+  api<{ items: FileRequestDto[] }>(`/api/file-requests${folderId ? `?folderId=${folderId}` : ''}`);
+export const createFileRequest = (input: {
+  folderId: string;
+  title: string;
+  message?: string | null;
+  deadlineAt?: number | null;
+  maxFiles?: number | null;
+  maxFileBytes?: number | null;
+  requireName?: boolean;
+  password?: string | null;
+}) => sendJson<{ request: FileRequestDto }>('POST', '/api/file-requests', input);
+export const revokeFileRequest = (id: string) =>
+  sendJson<void>('DELETE', `/api/file-requests/${id}`);
 /** D1: a file's earlier contents, and how many versions each space keeps. */
 export interface VersionDto {
   id: string;

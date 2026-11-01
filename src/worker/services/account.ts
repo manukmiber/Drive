@@ -3,6 +3,7 @@
 import { DAY_MS } from '../../shared/constants';
 import { deleteActivity, exportActivity } from './activity';
 import { deleteGrantsOfUser, exportGrants } from './grants';
+import { deleteRequestsOfUser, exportRequests } from './file-requests';
 import { deleteUserIndex } from './drive-index-sync';
 import type { Ctx } from '../context';
 import { accessDb } from '../lib/access-db';
@@ -76,6 +77,8 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
     activity: await exportActivity(ctx, userId),
     // D2: items shared with particular people, both ways (ADR-085).
     people: await exportGrants(ctx, userId),
+    // D3: file request links (ADR-086).
+    fileRequests: await exportRequests(ctx, userId),
     shares: await qa(
       'SELECT title, kind, expires_at, download_count, revoked_at, created_at FROM shares WHERE created_by = ?1',
       userId,
@@ -244,6 +247,7 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
     await deleteUserIndex(ctx, id);
     await deleteActivity(ctx, { user: id });
     await deleteGrantsOfUser(ctx, id);
+    await deleteRequestsOfUser(ctx, id);
     log.info('account_deleted', { userId: id });
   }
   return results.length;

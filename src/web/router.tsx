@@ -32,6 +32,7 @@ const Duplicates = page(() => import('./pages/Duplicates'), 'Duplicates');
 const Recent = page(() => import('./pages/Lists'), 'Recent');
 const Search = page(() => import('./pages/Lists'), 'Search');
 const Shared = page(() => import('./pages/Lists'), 'Shared');
+const RequestUpload = page(() => import('./pages/RequestUpload'), 'RequestUpload');
 const SharedWithMe = page(() => import('./pages/Lists'), 'SharedWithMe');
 const Starred = page(() => import('./pages/Lists'), 'Starred');
 const Billing = page(() => import('./pages/Billing'), 'Billing');
@@ -65,6 +66,16 @@ const reportRoute = createRoute({
   },
 });
 
+// D3 (ADR-086): the public side of a file request link, without the app around it.
+const requestRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/minta/$id/$sig',
+  component: function RequestPage() {
+    const { id, sig } = requestRoute.useParams();
+    return <RequestUpload id={id} sig={sig} />;
+  },
+});
+
 const searchRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/cari',
@@ -91,6 +102,7 @@ const routeTree = rootRoute.addChildren([
     component: OAuthAuthorize,
   }),
   reportRoute,
+  requestRoute,
   createRoute({
     getParentRoute: () => rootRoute,
     path: '/keluarga/gabung/$token',
