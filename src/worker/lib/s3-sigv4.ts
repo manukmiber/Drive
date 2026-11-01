@@ -275,6 +275,10 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/** `x-amz-*` headers a request may carry without signing them: they describe the
+ * signature itself (or a session token), not what the request does. */
+const UNSIGNED_AMZ_OK = new Set(['x-amz-content-sha256', 'x-amz-date', 'x-amz-security-token']);
+
 /** Checks the time window and the signature. Throws the S3 error a client expects. */
 export async function verifySignature(
   method: string,
@@ -304,6 +308,19 @@ export async function verifySignature(
   }
   if (!auth.signedHeaders.includes('host')) {
     throw new S3Error('AccessDenied', 'The host header must be signed.');
+  }
+  // Every `x-amz-*` header the request carries must be signed, as SigV4 says.
+  // An unsigned one is whatever the holder of a presigned URL chose to add:
+  // `x-amz-copy-source` turned a PUT link into a copy of any object the key
+  // may read (ADR-088).
+  for (const [name] of headers) {
+    const n = name.toLowerCase();
+    if (n.startsWith('x-amz-') && !UNSIGNED_AMZ_OK.has(n) && !auth.signedHeaders.includes(n)) {
+      throw new S3Error(
+        'AccessDenied',
+        `There were headers present in the request which were not signed: ${n}`,
+      );
+    }
   }
   const creq = canonicalRequest(method, url, query, headers, auth);
   const scope = scopeOf(auth);

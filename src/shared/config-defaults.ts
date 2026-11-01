@@ -115,6 +115,11 @@ export const configSchema = z.object({
   person_share_daily_limit: int().min(0).default(50),
   /** D3 (ADR-086): open file request links per person. */
   file_request_max_open: int().min(0).default(50),
+  /** ADR-088: unfinished drops one link may have at once, and from one address. */
+  file_request_active_drops_max: int().min(1).default(10),
+  file_request_active_drops_per_ip: int().min(1).default(3),
+  /** ADR-088: how long an anonymous drop may stay unfinished (it holds the owner's quota). */
+  file_request_drop_expiry_hours: int().min(1).max(160).default(3),
   share_message_max_chars: int().min(1).default(500),
 
   // ── Archive ──

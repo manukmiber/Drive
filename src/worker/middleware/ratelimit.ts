@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import type { Env } from '../env';
 import { AppError } from '../lib/errors';
 import type { AppBindings } from '../types';
+import { securityEvent } from '../lib/log';
 
 export type RateLimitBinding =
   | 'RL_AUTH'
@@ -28,7 +29,11 @@ export async function enforceRateLimit(
   key: string,
 ): Promise<void> {
   const { success } = await env[binding].limit({ key });
-  if (!success) throw new AppError('RATE_LIMITED', 'too many requests');
+  if (!success) {
+    // The scope only: the rest of the key is an address or an id.
+    securityEvent('ratelimit_hit', { binding, scope: key.split(':')[0] });
+    throw new AppError('RATE_LIMITED', 'too many requests');
+  }
 }
 
 /** Rate limit keyed by user (when signed in) or client IP, plus a route scope. */

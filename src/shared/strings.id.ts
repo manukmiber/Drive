@@ -1823,7 +1823,7 @@ export const t = {
     maxFiles: 'Maks. jumlah file (opsional)',
     maxSizeMb: 'Maks. ukuran per file, MB (opsional)',
     requireName: 'Pengirim wajib menulis nama',
-    password: 'Password (opsional, min. 4 karakter)',
+    password: 'Password (opsional, min. 8 karakter)',
     create: 'Buat link',
     created: 'Link dibuat dan disalin.',
     copy: 'Salin link',

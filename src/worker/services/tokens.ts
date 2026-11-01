@@ -9,6 +9,7 @@ import { sha256Hex, timingSafeEqual } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { randomBase62, ulid } from '../lib/ids';
 import type { SessionUser } from '../types';
+import { securityEvent } from '../lib/log';
 
 export const TOKEN_SCOPES = ['drive.read', 'drive.write', 'share', 'webdav', 's3.manage'] as const;
 export type TokenScope = (typeof TOKEN_SCOPES)[number];
@@ -184,8 +185,12 @@ export async function authenticateToken(
 ): Promise<TokenAuth> {
   const m = /^Bearer\s+(\S+)$/i.exec(header ?? '');
   const token = m?.[1] ?? '';
-  const fail = () =>
-    new AppError('UNAUTHORIZED', 'a valid access token is required', { reason: 'bad_token' });
+  const fail = () => {
+    securityEvent('authn_failure', { what: 'api_token' });
+    return new AppError('UNAUTHORIZED', 'a valid access token is required', {
+      reason: 'bad_token',
+    });
+  };
   if (!TOKEN_RE.test(token)) throw fail();
   const row = await findToken(ctx, token);
   const now = ctx.now();

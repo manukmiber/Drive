@@ -65,6 +65,7 @@ import { indexBindings } from '../services/s3-index';
 import { s3PlanView } from '../services/s3-billing';
 import { s3UrlView } from '../services/s3-urls';
 import type { AppBindings } from '../types';
+import { securityEvent } from '../lib/log';
 
 /** Who the audit log says made an operator's change. */
 export const OPS_ACTOR = 'relay-operator';
@@ -76,6 +77,7 @@ const opsGate: MiddlewareHandler<AppBindings> = async (c, next) => {
   const auth = c.req.header('authorization') ?? '';
   const offered = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   if (token.length < MIN_TOKEN || !timingSafeEqual(offered, token)) {
+    if (offered) securityEvent('authn_failure', { what: 'ops_token' });
     return c.json({ error: { code: 'NOT_FOUND', message: 'not found' } }, 404);
   }
   c.header('cache-control', 'no-store');

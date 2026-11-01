@@ -21,6 +21,8 @@ import { notify } from './notify';
 import { hashPassword, verifyPassword } from './shares';
 import { getActiveSubscription } from './storage';
 import { abortUpload, completeUpload, initUpload, uploadPart, type InitResult } from './uploads';
+import { securityEvent } from '../lib/log';
+import { enforceRateLimit } from '../middleware/ratelimit';
 
 export interface RequestRow {
   id: string;
@@ -204,6 +206,27 @@ export async function revokeRequest(ctx: Ctx, userId: string, id: string): Promi
       .prepare('UPDATE file_requests SET revoked_at = ?2 WHERE id = ?1')
       .bind(id, ctx.now())
       .run();
+  // Unfinished drops hold the owner's quota; closing the link gives it back now
+  // rather than when they expire (ADR-088).
+  await abortActiveDrops(ctx, r);
+}
+
+/** Abort every unfinished drop of a link and give its quota back. */
+async function abortActiveDrops(ctx: Ctx, r: RequestRow): Promise<void> {
+  const A = db(ctx);
+  const { results } = await A.prepare(
+    `SELECT upload_id FROM file_request_drops WHERE request_id = ?1 AND status = 'active'`,
+  )
+    .bind(r.id)
+    .all<{ upload_id: string }>();
+  for (const { upload_id } of results) {
+    await abortUpload(ctx, r.created_by, upload_id).catch(() => undefined);
+    await A.prepare(
+      `UPDATE file_request_drops SET status = 'aborted' WHERE upload_id = ?1 AND status = 'active'`,
+    )
+      .bind(upload_id)
+      .run();
+  }
 }
 
 // ───────────────────────────── the uploader's side ─────────────────────────────
@@ -281,8 +304,14 @@ export async function openDrops(
   const r = await publicRow(ctx, id, sig);
   const state = await stateOf(ctx, r);
   if (state !== 'open') throw new AppError('GONE', 'this request does not take files', { state });
-  if (r.password_hash && !(password && (await verifyPassword(r.password_hash, password))))
-    throw new AppError('FORBIDDEN', 'wrong password', { reason: 'PASSWORD' });
+  if (r.password_hash) {
+    // A guess budget per link, whatever the address (ADR-088).
+    await enforceRateLimit(ctx.env, 'RL_SHARE_SEND', `request-pw:${r.id.slice(0, 16)}`);
+    if (!(password && (await verifyPassword(r.password_hash, password)))) {
+      securityEvent('authn_failure', { what: 'request_password', link: r.id.slice(0, 8) });
+      throw new AppError('FORBIDDEN', 'wrong password', { reason: 'PASSWORD' });
+    }
+  }
   const exp = ctx.now() + PASS_MS;
   return { pass: `${exp}.${await passMac(ctx, r.id, exp)}`, expiresAt: exp };
 }
@@ -316,6 +345,26 @@ export async function startDrop(
       maxBytes: r.max_file_bytes,
     });
   const A = db(ctx);
+  // An unfinished drop holds the owner's quota for its whole size, so how many
+  // one link (and one address) may have at once is capped, and each expires
+  // in hours, not days (ADR-088). Without this anyone holding the link could
+  // fill the owner's quota for six days without sending a byte.
+  const cfg = await ctx.config();
+  const ipKey = await ipHash(ctx, ip);
+  const busy = await A.prepare(
+    `SELECT COUNT(*) AS n, SUM(CASE WHEN ip_hash = ?2 THEN 1 ELSE 0 END) AS mine
+     FROM file_request_drops WHERE request_id = ?1 AND status = 'active' AND created_at > ?3`,
+  )
+    .bind(r.id, ipKey, ctx.now() - cfg.file_request_drop_expiry_hours * 3600_000)
+    .first<{ n: number; mine: number | null }>();
+  if (
+    (busy?.n ?? 0) >= cfg.file_request_active_drops_max ||
+    (busy?.mine ?? 0) >= cfg.file_request_active_drops_per_ip
+  )
+    throw new AppError(
+      'RATE_LIMITED',
+      'too many unfinished uploads on this link; finish one first',
+    );
   // The slot first, so two uploaders can't both take the last one.
   const took = await A.prepare(
     `UPDATE file_requests SET file_count = file_count + 1
@@ -349,11 +398,16 @@ export async function startDrop(
     await release();
     throw e;
   }
+  // The owner's own uploads keep `upload_expiry_hours`; an anonymous drop gets
+  // the shorter `file_request_drop_expiry_hours` (ADR-088).
+  await ctx.env.DB.prepare('UPDATE uploads SET expires_at = ?2 WHERE id = ?1')
+    .bind(started.uploadId, ctx.now() + cfg.file_request_drop_expiry_hours * 3600_000)
+    .run();
   await A.prepare(
     `INSERT INTO file_request_drops (upload_id, request_id, uploader_name, ip_hash, size, status, created_at)
      VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6)`,
   )
-    .bind(started.uploadId, r.id, who || null, await ipHash(ctx, ip), input.size, ctx.now())
+    .bind(started.uploadId, r.id, who || null, ipKey, input.size, ctx.now())
     .run();
   return { ...started, token: await dropToken(ctx, r.id, started.uploadId) };
 }
@@ -450,6 +504,51 @@ export async function cancelDrop(
 }
 
 // ───────────────────────────── upkeep ─────────────────────────────
+
+/**
+ * Hourly, after `expireUploads`: a drop whose upload expired or was aborted
+ * gives its slot back. Before, an abandoned drop kept its slot for good, so a
+ * link with `maxFiles` could be made to read as full without one file sent
+ * (ADR-088).
+ */
+export async function releaseAbandonedDrops(ctx: Ctx, limit = 200): Promise<number> {
+  const A = grantsDb(ctx.env);
+  if (!A) return 0;
+  const cfg = await ctx.config();
+  const { results } = await A.prepare(
+    `SELECT upload_id, request_id FROM file_request_drops
+     WHERE status = 'active' AND created_at <= ?1 ORDER BY created_at LIMIT ?2`,
+  )
+    .bind(ctx.now() - cfg.file_request_drop_expiry_hours * 3600_000, limit)
+    .all<{ upload_id: string; request_id: string }>();
+  if (!results.length) return 0;
+  // The uploads live in the main database; drops in the access one (no join).
+  const live = new Set(
+    (
+      await ctx.env.DB.prepare(
+        `SELECT id FROM uploads WHERE status = 'active' AND id IN (SELECT value FROM json_each(?1))`,
+      )
+        .bind(JSON.stringify(results.map((d) => d.upload_id)))
+        .all<{ id: string }>()
+    ).results.map((u) => u.id),
+  );
+  let freed = 0;
+  for (const d of results) {
+    if (live.has(d.upload_id)) continue;
+    const gone = await A.prepare(
+      `UPDATE file_request_drops SET status = 'aborted' WHERE upload_id = ?1 AND status = 'active'`,
+    )
+      .bind(d.upload_id)
+      .run();
+    if (gone.meta.changes) {
+      await A.prepare('UPDATE file_requests SET file_count = MAX(0, file_count - 1) WHERE id = ?1')
+        .bind(d.request_id)
+        .run();
+      freed++;
+    }
+  }
+  return freed;
+}
 
 /** Hourly: one notice per link that got files since the last one, not one per file. */
 export async function noticeRequestFiles(ctx: Ctx, limit = 100): Promise<number> {

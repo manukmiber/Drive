@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors';
 import { randomBase62 } from '../lib/ids';
 import { timingSafeEqual } from '../lib/crypto';
 import type { AppBindings, SessionUser } from '../types';
+import { securityEvent } from '../lib/log';
 
 export const CSRF_COOKIE = `${COOKIE_PREFIX}.csrf`;
 export const CSRF_HEADER = 'x-csrf-token';
@@ -52,16 +53,13 @@ export const csrfCheck: MiddlewareHandler<AppBindings> = async (c, next) => {
   const path = c.req.path;
   // CSRF only matters when the request carries a session (an ambient credential). Anonymous
   // mutations (abuse reports) are still covered by the Origin check.
-  if (
-    MUTATING.has(c.req.method) &&
-    c.get('user') &&
-    !path.startsWith('/api/auth/') &&
-    !path.startsWith('/api/webhooks/')
-  ) {
+  if (MUTATING.has(c.req.method) && c.get('user') && !path.startsWith('/api/auth/')) {
     const cookie = getCookie(c, CSRF_COOKIE) ?? '';
     const header = c.req.header(CSRF_HEADER) ?? '';
-    if (!cookie || !timingSafeEqual(cookie, header))
+    if (!cookie || !timingSafeEqual(cookie, header)) {
+      securityEvent('authz_fail', { what: 'csrf' });
       throw new AppError('CSRF', 'missing or bad CSRF token');
+    }
   }
   await next();
 };

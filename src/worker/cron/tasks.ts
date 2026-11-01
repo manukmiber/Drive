@@ -13,7 +13,7 @@ import { flushDirtyIndexes } from '../services/drive-index-sync';
 import { runExpiries } from '../services/expiry';
 import { pruneActivity } from '../services/activity';
 import { purgeOldVersions } from '../services/versions';
-import { noticeRequestFiles } from '../services/file-requests';
+import { noticeRequestFiles, releaseAbandonedDrops } from '../services/file-requests';
 import { deletionReminders, processAccountDeletions } from '../services/account';
 import { reconcilePools } from '../services/quota';
 import { expireUploads } from '../services/uploads';
@@ -48,7 +48,11 @@ registerCronTask(CRON.hourly, {
 
 registerCronTask(CRON.hourly, {
   name: 'expire_uploads',
-  run: async (ctx) => void (await expireUploads(ctx)),
+  run: async (ctx) => {
+    await expireUploads(ctx);
+    // ADR-088: drops whose upload is gone give their link's slot back.
+    await releaseAbandonedDrops(ctx);
+  },
 });
 
 // Zeiko S3 multipart uploads nobody finished (ADR-044).

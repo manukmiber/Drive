@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono';
 import { createCtx } from '../context';
 import { AppError } from '../lib/errors';
 import type { AppBindings } from '../types';
+import { securityEvent } from '../lib/log';
 
 export const requestContext: MiddlewareHandler<AppBindings> = async (c, next) => {
   c.set('requestId', c.req.header('cf-ray') ?? crypto.randomUUID());
@@ -40,9 +41,12 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** Mutations must come from APP_ORIGIN (SPEC §14.4). Webhooks authenticate by signature instead. */
 export const originCheck: MiddlewareHandler<AppBindings> = async (c, next) => {
-  if (MUTATING.has(c.req.method) && !c.req.path.startsWith('/api/webhooks/')) {
+  if (MUTATING.has(c.req.method)) {
     const origin = c.req.header('origin');
-    if (origin !== c.env.APP_ORIGIN) throw new AppError('ORIGIN_MISMATCH', 'origin not allowed');
+    if (origin !== c.env.APP_ORIGIN) {
+      securityEvent('authz_fail', { what: 'origin' });
+      throw new AppError('ORIGIN_MISMATCH', 'origin not allowed');
+    }
   }
   await next();
 };

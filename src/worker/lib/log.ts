@@ -18,3 +18,14 @@ export const log = {
 export function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
+
+/** Security events (ADR-088): what the operator can query and alert on in Workers Logs. */
+export type SecurityKind = 'authn_failure' | 'authn_token_reuse' | 'authz_fail' | 'ratelimit_hit';
+
+/**
+ * One security event, as `{"level":"warn","event":"security","kind":…}`. Fields name what was
+ * tried (`what`) and ids or short prefixes; never a secret, an address, an email or a file name.
+ */
+export function securityEvent(kind: SecurityKind, fields?: Fields): void {
+  emit('warn', 'security', { kind, ...fields });
+}

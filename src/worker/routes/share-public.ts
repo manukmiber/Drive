@@ -31,6 +31,7 @@ import {
 import { wibDate } from '../../shared/time';
 import type { AppBindings } from '../types';
 import { appPath } from '../lib/paths';
+import { securityEvent } from '../lib/log';
 
 function deadText(tr: Strings, reason: DeadReason): string {
   const text: Record<DeadReason, string> = {
@@ -236,11 +237,17 @@ export const sharePublic = new Hono<AppBindings>()
 
     if (share.password_hash) {
       if (c.req.method === 'POST') {
+        // A guess budget per link, whatever the address (ADR-088): the
+        // per-address limit alone let a guesser with many addresses through.
+        await enforceRateLimit(c.env, 'RL_SHARE_SEND', `share-pw:${r64.slice(0, 16)}`);
         const form = await c.req.parseBody();
         const ok =
           typeof form.password === 'string' &&
           (await verifyPassword(share.password_hash, form.password));
-        if (!ok) return passwordPage(c, true, r64, await shareAdHtml(c, share.created_by));
+        if (!ok) {
+          securityEvent('authn_failure', { what: 'share_password', link: r64.slice(0, 8) });
+          return passwordPage(c, true, r64, await shareAdHtml(c, share.created_by));
+        }
         const cfg = await ctx.config();
         const exp = Math.floor(ctx.now() / 1000) + cfg.share_password_cookie_minutes * 60;
         setCookie(c, 'zk_sp', await passCookieValue(c.env.DOWNLOAD_SECRET, r64, exp), {

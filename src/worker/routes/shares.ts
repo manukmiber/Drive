@@ -16,6 +16,7 @@ import {
   updateShare,
 } from '../services/shares';
 import type { AppBindings } from '../types';
+import { SHARE_PASSWORD_MIN } from '../../shared/constants';
 
 const hours = z
   .number()
@@ -23,7 +24,8 @@ const hours = z
   .min(0)
   .max(24 * 365 * 5)
   .nullable();
-const password = z.string().min(4).max(128).nullable();
+// ADR-088: at least 8; a 4-digit PIN fell to one address in minutes.
+const password = z.string().min(SHARE_PASSWORD_MIN).max(128).nullable();
 
 export const shares = new Hono<AppBindings>()
   .use('*', requireUser)

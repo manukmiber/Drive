@@ -270,4 +270,27 @@ describe('Zeiko S3 restricted keys', () => {
     });
     expect(((await doc.json()) as { keyId: string }).keyId).toBe(docs.key.id);
   });
+
+  it('a presigned PUT cannot be turned into a copy with an unsigned x-amz header (ADR-088)', async () => {
+    const s = await seeded();
+    const put = await getSignedUrl(
+      s.client,
+      new PutObjectCommand({ Bucket: 'satu', Key: 'tujuan.txt' }),
+      { expiresIn: 60 },
+    );
+    const copied = await s.rt.fetch(
+      new Request(put, {
+        method: 'PUT',
+        body: '',
+        headers: { 'content-length': '0', 'x-amz-copy-source': 'dua/dokumen/b.txt' },
+      }),
+    );
+    expect(copied.status).toBe(403);
+    expect(await copied.text()).toContain('not signed: x-amz-copy-source');
+    // The link still does what it was signed for.
+    const plain = await s.rt.fetch(
+      new Request(put, { method: 'PUT', body: 'x', headers: { 'content-length': '1' } }),
+    );
+    expect(plain.status).toBe(200);
+  });
 });

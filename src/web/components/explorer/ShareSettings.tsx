@@ -2,6 +2,7 @@
 // remove), "show the files first" for folders and bundles, a new link, revoke. Used by the share
 // dialog and by Dibagikan.
 import { useState } from 'react';
+import { SHARE_PASSWORD_MIN } from '../../../shared/constants';
 import { t } from '../../lib/i18n';
 import { regenerateShare, revokeShare, updateShare, type ShareDto } from '../../lib/files';
 import { Button } from '../Button';
@@ -146,7 +147,7 @@ export function ShareSettings({
       <div className="flex flex-wrap gap-2">
         <Button
           variant="secondary"
-          disabled={busy || (password.length > 0 && password.length < 4)}
+          disabled={busy || (password.length > 0 && password.length < SHARE_PASSWORD_MIN)}
           onClick={() => void save()}
         >
           {t.share.save}

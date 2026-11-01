@@ -19,6 +19,7 @@ import {
   TOKEN_SCOPES,
   type TokenScope,
 } from './tokens';
+import { securityEvent } from '../lib/log';
 
 export interface OAuthClient {
   id: string;
@@ -276,6 +277,7 @@ export async function exchangeCode(
   if (!row) throw bad();
   if (row.used_at !== null) {
     // Used twice: whatever the first exchange made is revoked too (RFC 6749 §4.1.2).
+    securityEvent('authn_token_reuse', { what: 'oauth_code', client: p.clientId });
     if (row.grant_id) await revokeGrant(ctx, row.grant_id);
     throw bad();
   }
@@ -334,6 +336,11 @@ export async function refresh(
   if (!grant || grant.client_id !== p.clientId) throw bad();
   if (row.revoked_at !== null) {
     // An old refresh token again: someone else has a copy. End the connection.
+    securityEvent('authn_token_reuse', { what: 'oauth_refresh', client: p.clientId });
+    await ctx.env.NOTIFY_QUEUE.send({
+      type: 'admin_alert',
+      text: `OAuth: refresh token dipakai ulang (client ${p.clientId}); koneksinya diputus.`,
+    });
     await revokeGrant(ctx, grant.id);
     throw bad();
   }

@@ -1796,7 +1796,7 @@ export const en: Strings = {
     maxFiles: 'Max. number of files (optional)',
     maxSizeMb: 'Max. size per file, MB (optional)',
     requireName: 'Senders must give their name',
-    password: 'Password (optional, at least 4 characters)',
+    password: 'Password (optional, at least 8 characters)',
     create: 'Make the link',
     created: 'Link made and copied.',
     copy: 'Copy link',

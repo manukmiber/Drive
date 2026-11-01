@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Copy, Inbox } from 'lucide-react';
 import { useState } from 'react';
+import { SHARE_PASSWORD_MIN } from '../../../shared/constants';
 import { formatDateTime } from '../../../shared/format';
 import { t } from '../../lib/i18n';
 import {
@@ -210,7 +211,9 @@ export function FileRequestDialog({ folder, onClose }: { folder: NodeDto; onClos
             <Button
               type="submit"
               disabled={
-                create.isPending || !title.trim() || (password.length > 0 && password.length < 4)
+                create.isPending ||
+                !title.trim() ||
+                (password.length > 0 && password.length < SHARE_PASSWORD_MIN)
               }
             >
               {t.requests.create}

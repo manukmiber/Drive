@@ -5,7 +5,7 @@
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { z, type ZodObject, type ZodType } from 'zod';
-import { DAY_MS, JSON_BODY_MAX_BYTES } from '../../shared/constants';
+import { DAY_MS, JSON_BODY_MAX_BYTES, SHARE_PASSWORD_MIN } from '../../shared/constants';
 import { sha256Hex } from '../lib/crypto';
 import { AppError } from '../lib/errors';
 import { accessDb } from '../lib/access-db';
@@ -708,7 +708,7 @@ export const ENDPOINTS: readonly Op[] = [
           .nullable()
           .optional(),
         maxDownloads: z.number().int().min(1).max(1_000_000).nullable().optional(),
-        password: z.string().min(4).max(128).nullable().optional(),
+        password: z.string().min(SHARE_PASSWORD_MIN).max(128).nullable().optional(),
         showListing: z.boolean().optional(),
       }),
       responses: { 201: z.object({ share: S.Share }) },

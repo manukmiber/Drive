@@ -2493,3 +2493,29 @@ publik (poin 1), hanya paket berbayar, kuota terpisah.
 2. Boleh dibagikan sama sekali (tidak / hanya ke akun tertentu)? Usul: tidak, untuk versi pertama.
 3. Hanya paket berbayar, dan berapa kuota Brankas?
 4. Setuju teks ToS/Kebijakan Privasi ditambah bagian Brankas (perlu teks dari pemilik)?
+
+## ADR-088 — Pengerasan keamanan dari audit OWASP 1 November (bagian Drive)
+
+Tanggal: 2026-11-01. Status: diterima (pemilik: kerjakan semua temuan yang bisa lewat kode; DR-A02-001 dilewati dulu).
+
+**Keputusan:**
+- **Link minta file (DR-A06-001):** upload lewat link yang belum selesai memegang kuota pemilik sebesar ukurannya,
+  jadi dibatasi: paling banyak `file_request_active_drops_max` (10) per link dan
+  `file_request_active_drops_per_ip` (3) per alamat yang belum selesai, dan kedaluwarsa setelah
+  `file_request_drop_expiry_hours` (3 jam, bukan 144 jam milik upload pemilik). Cron per jam
+  (`releaseAbandonedDrops`, setelah `expireUploads`) mengembalikan slot link dari upload yang sudah kedaluwarsa atau
+  dibatalkan. Mencabut link langsung membatalkan upload yang belum selesai dan mengembalikan kuotanya. Tanpa kolom
+  atau tabel D1 baru.
+- **Zeiko S3 (DR-A04-001):** setiap header `x-amz-*` di request harus ikut ditandatangani (kecuali
+  `x-amz-content-sha256`, `x-amz-date`, `x-amz-security-token`). Tanpa ini, pemegang presigned PUT bisa menambah
+  `x-amz-copy-source` dan menyalin objek lain yang boleh dibaca key-nya.
+- **Password link (DR-A07-003):** minimal 8 karakter (`SHARE_PASSWORD_MIN`) untuk share, link minta file, dan API v1.
+  Link yang sudah ada dengan password lebih pendek tetap jalan. Tebakan password dibatasi per link juga, apa pun
+  alamatnya (`RL_SHARE_SEND`, kunci `share-pw:` / `request-pw:`).
+- **Log keamanan (DR-A09-001):** `securityEvent` (`lib/log.ts`, event `security`, field `kind`) untuk token ops atau
+  API yang salah, password share/request yang salah, rate limit yang kena, Origin/CSRF yang ditolak, dan pemakaian
+  ulang kode atau refresh token OAuth (yang terakhir juga `admin_alert`). Tanpa secret, alamat, email, atau nama
+  file. Pengecualian `/api/webhooks/` yang tidak dipakai route mana pun dihapus dari cek Origin dan CSRF.
+
+**Belum:** DR-A06-002 (laporan CSAM otomatis), DR-A03-001 (CI), DR-A05-001 (ffmpeg), DR-A02-001 (pemindai mock),
+dan cadangan kuota per bagian untuk link minta file.

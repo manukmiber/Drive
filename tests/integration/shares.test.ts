@@ -79,7 +79,7 @@ describe('share links (SPEC §6.1)', () => {
     const { rt, s, root } = await setup('pw@example.com', clock);
     const f = await uploadText(s, root, 'rahasia.txt', 'top secret');
     await rt.settle();
-    const sh = await share(s, { nodeIds: [f.id], password: 'kopi123', maxDownloads: 1 });
+    const sh = await share(s, { nodeIds: [f.id], password: 'kopi-susu-123', maxDownloads: 1 });
     const first = await visit(rt, sh.url);
     expect(first.status).toBe(200);
     expect(await first.text()).toContain('dilindungi password');
@@ -90,7 +90,7 @@ describe('share links (SPEC §6.1)', () => {
     expect(wrong.status).toBe(401);
     const ok = await visit(rt, sh.url, {
       method: 'POST',
-      body: new URLSearchParams({ password: 'kopi123' }),
+      body: new URLSearchParams({ password: 'kopi-susu-123' }),
     });
     expect(ok.status).toBe(303);
     const cookie = ok.headers.get('set-cookie')!.split(';')[0]!;

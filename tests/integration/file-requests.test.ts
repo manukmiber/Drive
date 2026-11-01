@@ -207,6 +207,54 @@ describe('File request links (D3, ADR-086)', () => {
     expect(row).toEqual({ file_count: 0 });
   });
 
+  it('caps unfinished drops, expires them in hours, gives the slot back, and revocation frees the quota (ADR-088)', async () => {
+    const { rt, clock, owner, poolId, folder } = await setup();
+    const r = await makeRequest(owner, folder.id, { maxFiles: 5 });
+    const opened = await anon(rt, 'POST', `${api(r)}/pass`, {});
+    const { pass } = (await opened.json()) as { pass: string };
+    const start = (name: string) =>
+      anon(rt, 'POST', `${api(r)}/uploads`, { name, size: 1000, mime: 'text/plain', pass });
+
+    // One address may hold three unfinished drops on a link, and no more.
+    const held: string[] = [];
+    for (const n of [1, 2, 3]) {
+      const res = await start(`f${n}.txt`);
+      expect(res.status, await res.clone().text()).toBe(201);
+      held.push(((await res.json()) as { uploadId: string }).uploadId);
+    }
+    expect((await start('f4.txt')).status).toBe(429);
+    expect(pool(rt, poolId).reserved_bytes).toBe(3000);
+
+    // An anonymous drop expires in hours, not the owner's six days.
+    const row = rt.d1.sqlite
+      .prepare('SELECT expires_at FROM uploads WHERE id = ?')
+      .get(held[0]!) as {
+      expires_at: number;
+    };
+    expect(row.expires_at).toBe(clock.now() + 3 * 3600_000);
+
+    // Abandoned: the upload expires, the quota comes back, and so do the slots.
+    clock.advance(3 * 3600_000 + 1);
+    await rt.runCron('0 * * * *');
+    expect(pool(rt, poolId).reserved_bytes).toBe(0);
+    const count = rt.access.sqlite.prepare('SELECT file_count FROM file_requests').get();
+    expect(count).toEqual({ file_count: 0 });
+
+    // Revoking the link gives back what its unfinished drops hold at once.
+    const again = await anon(rt, 'POST', `${api(r)}/pass`, {});
+    const fresh = ((await again.json()) as { pass: string }).pass;
+    const late = await anon(rt, 'POST', `${api(r)}/uploads`, {
+      name: 'late.txt',
+      size: 500,
+      mime: 'text/plain',
+      pass: fresh,
+    });
+    expect(late.status).toBe(201);
+    expect(pool(rt, poolId).reserved_bytes).toBe(500);
+    expect((await owner.req('DELETE', `/api/file-requests/${r.id}`)).status).toBeLessThan(300);
+    expect(pool(rt, poolId).reserved_bytes).toBe(0);
+  });
+
   it('a token works for its own upload of its own link only; a bad signature is not found', async () => {
     const { rt, owner, root, folder } = await setup();
     const other = await createFolder(owner, root, 'Lain');

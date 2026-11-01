@@ -16,6 +16,8 @@ export const SIMPLE_UPLOAD_MAX_BYTES = 16 * MIB;
 
 /** Share link format (SPEC §6.1). */
 export const SHARE_ID_LENGTH = 64;
+/** The shortest password a share or file request link may have (ADR-088). */
+export const SHARE_PASSWORD_MIN = 8;
 export const SHARE_SIG_LENGTH = 32;
 
 /** File name limits (SPEC §14.4). */

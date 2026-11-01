@@ -20,6 +20,7 @@ import {
   startDrop,
 } from '../services/file-requests';
 import type { AppBindings } from '../types';
+import { SHARE_PASSWORD_MIN } from '../../shared/constants';
 
 const nodeId = z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/);
 
@@ -43,7 +44,7 @@ export const fileRequests = new Hono<AppBindings>()
         maxFiles: z.number().int().min(1).max(10_000).nullish(),
         maxFileBytes: z.number().int().min(1).nullish(),
         requireName: z.boolean().optional(),
-        password: z.string().min(4).max(200).nullish(),
+        password: z.string().min(SHARE_PASSWORD_MIN).max(200).nullish(),
       }),
     ),
     async (c) =>
