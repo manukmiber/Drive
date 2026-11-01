@@ -9,10 +9,15 @@ import { deleteBucket } from '../services/s3-objects';
 import {
   browseObjects,
   cancelWebUpload,
+  deletedObjects,
   deleteKeys,
   finishWebUpload,
   objectLink,
+  objectVersions,
+  removeVersion,
+  restoreVersion,
   sendWebPart,
+  setVersioningFromApp,
   startWebUpload,
   uploadObject,
   webUploadParts,
@@ -88,15 +93,72 @@ export const s3 = new Hono<AppBindings>()
       );
     },
   )
-  .patch('/buckets/:name', validate('json', z.object({ public: z.boolean() })), async (c) => {
+  .patch(
+    '/buckets/:name',
+    validate(
+      'json',
+      z
+        .object({
+          public: z.boolean().optional(),
+          // ADR-092: versioning can be turned on or suspended, never back to "never on".
+          versioning: z.enum(['Enabled', 'Suspended']).optional(),
+        })
+        .refine((b) => b.public !== undefined || b.versioning !== undefined),
+    ),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const userId = c.get('user')!.id;
+      const acc = await activeAccount(ctx, userId);
+      const b = c.req.valid('json');
+      const name = c.req.param('name');
+      if (b.public !== undefined) await s3Call(() => setBucketPublic(ctx, userId, name, b.public!));
+      if (b.versioning) await s3Call(() => setVersioningFromApp(ctx, acc, name, b.versioning!));
+      return c.body(null, 204);
+    },
+  )
+  // ADR-092: an object's versions, objects that were deleted, bringing one back, removing one.
+  .get('/buckets/:name/versions', validate('query', z.object({ key: objectKey })), async (c) => {
     const ctx = c.get('ctx');
-    const userId = c.get('user')!.id;
-    await activeAccount(ctx, userId);
-    await s3Call(() =>
-      setBucketPublic(ctx, userId, c.req.param('name'), c.req.valid('json').public),
+    const acc = await activeAccount(ctx, c.get('user')!.id);
+    return c.json(
+      await s3Call(() => objectVersions(ctx, acc, c.req.param('name'), c.req.valid('query').key)),
     );
-    return c.body(null, 204);
   })
+  .get(
+    '/buckets/:name/deleted',
+    validate('query', z.object({ prefix: z.string().max(1024).default('') })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      return c.json({
+        items: await s3Call(() =>
+          deletedObjects(ctx, acc, c.req.param('name'), c.req.valid('query').prefix),
+        ),
+      });
+    },
+  )
+  .post(
+    '/buckets/:name/versions/restore',
+    validate('json', z.object({ key: objectKey, versionId: z.string().min(1).max(64) })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      const b = c.req.valid('json');
+      await s3Call(() => restoreVersion(ctx, acc, c.req.param('name'), b.key, b.versionId));
+      return c.body(null, 204);
+    },
+  )
+  .post(
+    '/buckets/:name/versions/delete',
+    validate('json', z.object({ key: objectKey, versionId: z.string().min(1).max(64) })),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const acc = await activeAccount(ctx, c.get('user')!.id);
+      const b = c.req.valid('json');
+      await s3Call(() => removeVersion(ctx, acc, c.req.param('name'), b.key, b.versionId));
+      return c.body(null, 204);
+    },
+  )
   // The account's own address (ADR-048): bought through /api/billing/checkout.
   .post('/url/check', async (c) =>
     c.json({ url: await checkS3Url(c.get('ctx'), c.get('user')!.id) }),
@@ -139,6 +201,7 @@ export const s3 = new Hono<AppBindings>()
           .max(7 * 24 * 3600)
           .default(3600),
         download: z.boolean().default(true),
+        versionId: z.string().min(1).max(64).optional(),
       }),
     ),
     async (c) => {
@@ -147,7 +210,15 @@ export const s3 = new Hono<AppBindings>()
       const b = c.req.valid('json');
       return c.json(
         await s3Call(() =>
-          objectLink(ctx, acc, c.req.param('name'), b.key, b.expiresInSeconds, b.download),
+          objectLink(
+            ctx,
+            acc,
+            c.req.param('name'),
+            b.key,
+            b.expiresInSeconds,
+            b.download,
+            b.versionId,
+          ),
         ),
       );
     },

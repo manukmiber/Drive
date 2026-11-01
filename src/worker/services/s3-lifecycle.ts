@@ -1,6 +1,7 @@
 // Lifecycle rules for Zeiko S3 buckets (ADR-072): Put/Get/DeleteBucketLifecycleConfiguration and the
 // hourly run that carries them out. Supported: Expiration (Days or Date) and
-// AbortIncompleteMultipartUpload, filtered by prefix, object size and object tags (ADR-076).
+// AbortIncompleteMultipartUpload, filtered by prefix, object size and object tags (ADR-076), and for
+// versioned buckets NoncurrentVersionExpiration and ExpiredObjectDeleteMarker (ADR-092).
 // Anything else in a rule is refused out loud (MalformedXML / NotImplemented), never silently ignored.
 import { DAY_MS } from '../../shared/constants';
 import type { Ctx } from '../context';
@@ -9,7 +10,8 @@ import { S3Error } from '../lib/s3-errors';
 import { esc, xmlElements, xmlText } from '../lib/s3-xml';
 import { getAccount, ownBucket, type BucketRow } from './s3';
 import { indexDb } from './s3-index';
-import { deleteObjects, dropUpload, type UploadRow } from './s3-objects';
+import { deleteNoncurrent, deleteObjects, dropUpload, type UploadRow } from './s3-objects';
+import { lockBlocks } from './s3-versions';
 import { hasTags, tagElements, tagXml, validateTags, type Tag } from './s3-tags';
 
 export interface LifecycleRule {
@@ -28,6 +30,10 @@ export interface LifecycleRule {
   expirationDate?: number;
   /** Unfinished multipart uploads are aborted this many days after they began. */
   abortDays?: number;
+  /** ADR-092: older versions go this many days after they stopped being current. */
+  noncurrentDays?: number;
+  /** ADR-092: a delete marker left with no versions behind it goes. */
+  expiredMarkers?: boolean;
 }
 
 const MALFORMED =
@@ -55,9 +61,8 @@ function childTags(xml: string): string[] {
 /** Elements Zeiko S3 knows but doesn't do yet: a clear 501 instead of a silent skip. */
 const NOT_YET: Record<string, string> = {
   Transition: 'Transition (storage classes)',
-  NoncurrentVersionTransition: 'NoncurrentVersionTransition (versioning)',
-  NoncurrentVersionExpiration: 'NoncurrentVersionExpiration (versioning)',
-  ExpiredObjectDeleteMarker: 'ExpiredObjectDeleteMarker (versioning)',
+  NoncurrentVersionTransition: 'NoncurrentVersionTransition (storage classes)',
+  NewerNoncurrentVersions: 'NewerNoncurrentVersions',
 };
 
 function only(xml: string, allowed: string[], where: string): void {
@@ -101,10 +106,27 @@ export function validateLifecycle(rules: LifecycleRule[], maxRules: number): Lif
     if (ids.has(id)) throw new S3Error('InvalidArgument', 'Rule ID must be unique.');
     ids.add(id);
     const hasExpiry = r.expirationDays !== undefined || r.expirationDate !== undefined;
-    if (!hasExpiry && r.abortDays === undefined)
+    if (
+      !hasExpiry &&
+      r.abortDays === undefined &&
+      r.noncurrentDays === undefined &&
+      !r.expiredMarkers
+    )
       throw new S3Error(
         'InvalidRequest',
-        'At least one action needs to be specified in a rule (Expiration or AbortIncompleteMultipartUpload).',
+        'At least one action needs to be specified in a rule (Expiration, NoncurrentVersionExpiration or AbortIncompleteMultipartUpload).',
+      );
+    if (r.expiredMarkers && hasExpiry)
+      throw malformed(
+        'ExpiredObjectDeleteMarker cannot be specified with Days or Date in a Lifecycle Expiration Policy.',
+      );
+    if (
+      r.noncurrentDays !== undefined &&
+      (!Number.isInteger(r.noncurrentDays) || r.noncurrentDays < 1)
+    )
+      throw new S3Error(
+        'InvalidArgument',
+        "'NoncurrentDays' for NoncurrentVersionExpiration action must be a positive integer",
       );
     if (r.expirationDays !== undefined && r.expirationDate !== undefined)
       throw malformed('Expiration takes either Days or Date, not both.');
@@ -146,6 +168,11 @@ export function validateLifecycle(rules: LifecycleRule[], maxRules: number): Lif
         'InvalidRequest',
         'AbortIncompleteMultipartUpload cannot be specified with Tags.',
       );
+    if ((tags || sized) && r.expiredMarkers)
+      throw new S3Error(
+        'InvalidRequest',
+        'ExpiredObjectDeleteMarker cannot be specified with an object tag or size filter.',
+      );
     return {
       id,
       enabled: r.enabled,
@@ -156,6 +183,8 @@ export function validateLifecycle(rules: LifecycleRule[], maxRules: number): Lif
       ...(r.expirationDays !== undefined ? { expirationDays: r.expirationDays } : {}),
       ...(r.expirationDate !== undefined ? { expirationDate: r.expirationDate } : {}),
       ...(r.abortDays !== undefined ? { abortDays: r.abortDays } : {}),
+      ...(r.noncurrentDays !== undefined ? { noncurrentDays: r.noncurrentDays } : {}),
+      ...(r.expiredMarkers ? { expiredMarkers: true } : {}),
     };
   });
 }
@@ -192,7 +221,15 @@ export function parseLifecycleXml(xml: string, maxRules: number): LifecycleRule[
   const rules = xmlElements(root, 'Rule').map((rule): LifecycleRule => {
     only(
       rule,
-      ['ID', 'Status', 'Filter', 'Prefix', 'Expiration', 'AbortIncompleteMultipartUpload'],
+      [
+        'ID',
+        'Status',
+        'Filter',
+        'Prefix',
+        'Expiration',
+        'AbortIncompleteMultipartUpload',
+        'NoncurrentVersionExpiration',
+      ],
       'Rule',
     );
     const status = xmlText(rule, 'Status');
@@ -206,14 +243,27 @@ export function parseLifecycleXml(xml: string, maxRules: number): LifecycleRule[
     const scope = filter !== undefined ? parseFilter(filter) : { prefix: legacyPrefix ?? '' };
     let expirationDays: number | undefined;
     let expirationDate: number | undefined;
+    let expiredMarkers = false;
     const expiration = xmlElements(rule, 'Expiration')[0];
     if (expiration !== undefined) {
-      only(expiration, ['Days', 'Date'], 'Expiration');
+      only(expiration, ['Days', 'Date', 'ExpiredObjectDeleteMarker'], 'Expiration');
       expirationDays = wholeNumber(xmlText(expiration, 'Days'), 'Days', 1);
       const date = xmlText(expiration, 'Date');
       if (date !== null) expirationDate = midnightDate(date);
-      if (expirationDays === undefined && expirationDate === undefined)
-        throw malformed('Expiration needs Days or Date.');
+      const marker = xmlText(expiration, 'ExpiredObjectDeleteMarker');
+      if (marker !== null && marker !== 'true' && marker !== 'false')
+        throw malformed('ExpiredObjectDeleteMarker must be true or false.');
+      expiredMarkers = marker === 'true';
+      if (expirationDays === undefined && expirationDate === undefined && marker === null)
+        throw malformed('Expiration needs Days, Date or ExpiredObjectDeleteMarker.');
+    }
+    let noncurrentDays: number | undefined;
+    const noncurrent = xmlElements(rule, 'NoncurrentVersionExpiration')[0];
+    if (noncurrent !== undefined) {
+      only(noncurrent, ['NoncurrentDays'], 'NoncurrentVersionExpiration');
+      noncurrentDays = wholeNumber(xmlText(noncurrent, 'NoncurrentDays'), 'NoncurrentDays', 1);
+      if (noncurrentDays === undefined)
+        throw malformed('NoncurrentVersionExpiration needs NoncurrentDays.');
     }
     let abortDays: number | undefined;
     const abort = xmlElements(rule, 'AbortIncompleteMultipartUpload')[0];
@@ -230,6 +280,8 @@ export function parseLifecycleXml(xml: string, maxRules: number): LifecycleRule[
       ...(expirationDays !== undefined ? { expirationDays } : {}),
       ...(expirationDate !== undefined ? { expirationDate } : {}),
       ...(abortDays !== undefined ? { abortDays } : {}),
+      ...(noncurrentDays !== undefined ? { noncurrentDays } : {}),
+      ...(expiredMarkers ? { expiredMarkers } : {}),
     };
   });
   return validateLifecycle(rules, maxRules);
@@ -255,12 +307,18 @@ export function lifecycleXml(rules: LifecycleRule[]): string {
           ? `<Expiration><Days>${r.expirationDays}</Days></Expiration>`
           : r.expirationDate !== undefined
             ? `<Expiration><Date>${new Date(r.expirationDate).toISOString()}</Date></Expiration>`
-            : '';
+            : r.expiredMarkers
+              ? `<Expiration><ExpiredObjectDeleteMarker>true</ExpiredObjectDeleteMarker></Expiration>`
+              : '';
+      const noncurrent =
+        r.noncurrentDays !== undefined
+          ? `<NoncurrentVersionExpiration><NoncurrentDays>${r.noncurrentDays}</NoncurrentDays></NoncurrentVersionExpiration>`
+          : '';
       const abort =
         r.abortDays !== undefined
           ? `<AbortIncompleteMultipartUpload><DaysAfterInitiation>${r.abortDays}</DaysAfterInitiation></AbortIncompleteMultipartUpload>`
           : '';
-      return `<Rule><ID>${esc(r.id)}</ID><Filter>${combined ? `<And>${conditions}</And>` : conditions}</Filter><Status>${r.enabled ? 'Enabled' : 'Disabled'}</Status>${expiration}${abort}</Rule>`;
+      return `<Rule><ID>${esc(r.id)}</ID><Filter>${combined ? `<And>${conditions}</And>` : conditions}</Filter><Status>${r.enabled ? 'Enabled' : 'Disabled'}</Status>${expiration}${noncurrent}${abort}</Rule>`;
     })
     .join('');
   return `<?xml version="1.0" encoding="UTF-8"?>\n<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${body}</LifecycleConfiguration>`;
@@ -305,6 +363,53 @@ export function expiryCutoff(now: number, days: number): number {
   return (Math.floor(now / DAY_MS) - days) * DAY_MS;
 }
 
+interface NoncurrentRow {
+  key: string;
+  version_id: string;
+  size: number;
+  modified_at: number;
+  noncurrent_at: number;
+  tags_json: string | null;
+  lock_mode: 'GOVERNANCE' | 'COMPLIANCE' | null;
+  lock_until: number | null;
+  legal_hold: number;
+}
+
+/** The rule's filter alone (prefix, tags, size), without its dates. */
+function ruleScope(
+  r: LifecycleRule,
+  o: { key: string; size: number; tags_json?: string | null },
+): boolean {
+  if (!r.enabled || !o.key.startsWith(r.prefix)) return false;
+  if (r.tags?.length && !hasTags(o.tags_json, r.tags)) return false;
+  if (r.sizeGreaterThan !== undefined && !(o.size > r.sizeGreaterThan)) return false;
+  if (r.sizeLessThan !== undefined && !(o.size < r.sizeLessThan)) return false;
+  return true;
+}
+
+/** Delete markers that are the latest and have no versions behind them, in a prefix. */
+async function dropLoneMarkers(
+  db: D1Database,
+  userId: string,
+  bucket: string,
+  prefix: string,
+  limit: number,
+): Promise<number> {
+  const res = await db
+    .prepare(
+      `DELETE FROM s3_versions WHERE bucket = ?1 AND user_id = ?2 AND (key, version_id) IN (
+         SELECT m.key, m.version_id FROM s3_versions m
+         WHERE m.bucket = ?1 AND m.user_id = ?2 AND m.key >= ?3 AND m.delete_marker = 1 AND m.noncurrent_at IS NULL
+           AND substr(m.key, 1, length(?3)) = ?3
+           AND NOT EXISTS (SELECT 1 FROM s3_versions w WHERE w.bucket = ?1 AND w.key = m.key AND w.version_id != m.version_id)
+           AND NOT EXISTS (SELECT 1 FROM s3_objects o WHERE o.bucket = ?1 AND o.key = m.key)
+         LIMIT ?4)`,
+    )
+    .bind(bucket, userId, prefix, limit)
+    .run();
+  return res.meta.changes ?? 0;
+}
+
 export function ruleCovers(
   r: LifecycleRule,
   o: { key: string; size: number; modified_at: number; tags_json?: string | null },
@@ -322,6 +427,9 @@ export function ruleCovers(
 interface Cursor {
   rule: number;
   after: string;
+  /** ADR-092: the rule's older versions are being looked at (`after` + `vid` = the last one). */
+  nc?: boolean;
+  vid?: string;
 }
 
 /**
@@ -408,13 +516,51 @@ async function bucketTurn(
     }
   }
 
-  // One rule's objects, from the cursor on, a page at a time.
+  // Delete markers with nothing behind them (ExpiredObjectDeleteMarker): few, so at a pass's start.
+  let lone = 0;
+  if (!b.lifecycle_cursor)
+    for (const r of rules)
+      if (r.enabled && r.expiredMarkers)
+        lone += await dropLoneMarkers(db, b.user_id, b.name, r.prefix, scanRows);
+
+  // One rule's objects, then its older versions, from the cursor on, a page at a time.
   while (cursor.rule < rules.length) {
     const rule = rules[cursor.rule]!;
+    if (cursor.nc) {
+      if (!rule.enabled || rule.noncurrentDays === undefined) {
+        cursor = { rule: cursor.rule + 1, after: '' };
+        continue;
+      }
+      const { results } = await db
+        .prepare(
+          `SELECT key, version_id, size, modified_at, noncurrent_at, tags_json, lock_mode, lock_until, legal_hold
+           FROM s3_versions
+           WHERE bucket = ?1 AND user_id = ?2 AND key >= ?3 AND delete_marker = 0 AND noncurrent_at IS NOT NULL
+             AND (key > ?4 OR (key = ?4 AND version_id > ?5))
+           ORDER BY key, version_id LIMIT ?6`,
+        )
+        .bind(b.name, b.user_id, rule.prefix, cursor.after, cursor.vid ?? '', scanRows)
+        .all<NoncurrentRow>();
+      const inPrefix = results.filter((o) => o.key.startsWith(rule.prefix));
+      const cutoff = expiryCutoff(now, rule.noncurrentDays);
+      // Kept by Object Lock: lifecycle never removes a locked version (Amazon's rule).
+      const due = inPrefix.filter(
+        (o) => o.noncurrent_at < cutoff && ruleScope(rule, o) && !lockBlocks(o, now, false),
+      );
+      if (due.length) await deleteNoncurrent(ctx, account, b.name, due);
+      const done = results.length < scanRows || inPrefix.length < results.length;
+      const last = results[results.length - 1];
+      const next: Cursor =
+        done || !last
+          ? { rule: cursor.rule + 1, after: '' }
+          : { rule: cursor.rule, after: last.key, nc: true, vid: last.version_id };
+      await finish(next.rule >= rules.length ? null : next);
+      return { deleted: due.length + lone, aborted };
+    }
     const expires =
       rule.enabled && (rule.expirationDays !== undefined || rule.expirationDate !== undefined);
     if (!expires || (rule.expirationDate !== undefined && now < rule.expirationDate)) {
-      cursor = { rule: cursor.rule + 1, after: '' };
+      cursor = { rule: cursor.rule, after: '', nc: true };
       continue;
     }
     const { results } = await db
@@ -426,14 +572,15 @@ async function bucketTurn(
       .all<{ key: string; size: number; modified_at: number; tags_json: string | null }>();
     const inPrefix = results.filter((o) => o.key.startsWith(rule.prefix));
     const due = inPrefix.filter((o) => ruleCovers(rule, o, now)).map((o) => o.key);
+    // In a versioned bucket this leaves a delete marker and keeps the version (ADR-092).
     if (due.length) await deleteObjects(ctx, account, b.name, due);
     const done = results.length < scanRows || inPrefix.length < results.length;
     const next: Cursor = done
-      ? { rule: cursor.rule + 1, after: '' }
+      ? { rule: cursor.rule, after: '', nc: true }
       : { rule: cursor.rule, after: results[results.length - 1]!.key };
-    await finish(next.rule >= rules.length ? null : next);
-    return { deleted: due.length, aborted };
+    await finish(next);
+    return { deleted: due.length + lone, aborted };
   }
   await finish(null);
-  return { deleted: 0, aborted };
+  return { deleted: lone, aborted };
 }

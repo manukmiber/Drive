@@ -18,8 +18,18 @@ import {
   putObject,
   uploadPart,
   validateKey,
+  copyObject,
+  deleteVersion,
   type ListCursor,
 } from './s3-objects';
+import { indexDb } from './s3-index';
+import {
+  getVersionRow,
+  listObjectVersions,
+  setBucketVersioning,
+  versioningOf,
+  type Versioning,
+} from './s3-versions';
 
 export interface BrowseResult {
   prefix: string;
@@ -119,11 +129,17 @@ export async function objectLink(
   key: string,
   expiresSeconds: number,
   download: boolean,
+  /** ADR-092: a link to that version (signed with it, so it can't be changed into another). */
+  versionId?: string,
 ): Promise<{ url: string; expiresAt: number; keyId: string }> {
   readable(account);
   await ownBucket(ctx, account.userId, bucket);
   validateKey(key);
-  if (!(await getObjectRow(ctx, account, bucket, key)))
+  if (versionId) {
+    const db = await indexDb(ctx.env, account.indexBinding);
+    const v = await getVersionRow(db, account.userId, bucket, key, versionId);
+    if (!v || v.delete_marker) throw new AppError('NOT_FOUND', 'no such version');
+  } else if (!(await getObjectRow(ctx, account, bucket, key)))
     throw new AppError('NOT_FOUND', 'no such object');
   if (!ctx.env.S3_ORIGIN) throw new AppError('FORBIDDEN', 'Zeiko S3 is not available');
   const cfg = await ctx.config();
@@ -135,11 +151,14 @@ export async function objectLink(
     Math.min(cfg.s3_link_max_seconds, keyLeft, Math.floor(expiresSeconds)),
   );
   const url = new URL(`${ctx.env.S3_ORIGIN}/${awsEncode(bucket, false)}/${awsEncode(key, true)}`);
+  const params: string[] = [];
   if (download) {
     const name = key.slice(key.lastIndexOf('/') + 1) || key;
     // AWS encoding (%20), not URLSearchParams' "+": S3 query values read "+" as a plus sign.
-    url.search = `?response-content-disposition=${awsEncode(contentDisposition(name), false)}`;
+    params.push(`response-content-disposition=${awsEncode(contentDisposition(name), false)}`);
   }
+  if (versionId) params.push(`versionId=${awsEncode(versionId, false)}`);
+  if (params.length) url.search = `?${params.join('&')}`;
   const now = Date.now();
   return {
     url: await presignUrl({
@@ -306,4 +325,139 @@ export async function cancelWebUpload(
   readable(account);
   await ownBucket(ctx, account.userId, bucket);
   await abortUpload(ctx, account, bucket, key, uploadId);
+}
+
+// ───────────────────────────── versions (ADR-092) ─────────────────────────────
+
+export interface WebVersion {
+  versionId: string;
+  isLatest: boolean;
+  deleteMarker: boolean;
+  size: number;
+  modifiedAt: number;
+  /** Object Lock on this version, if any. */
+  lock: {
+    mode: 'GOVERNANCE' | 'COMPLIANCE' | null;
+    until: number | null;
+    legalHold: boolean;
+  } | null;
+}
+
+/** Every version of one object (newest first), for the page's Versions panel. */
+export async function objectVersions(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+): Promise<{ versioning: Versioning; versions: WebVersion[] }> {
+  readable(account);
+  const b = await ownBucket(ctx, account.userId, bucket);
+  validateKey(key);
+  const res = await listObjectVersions(ctx, account, bucket, {
+    prefix: key,
+    delimiter: '',
+    maxKeys: 200,
+  });
+  const db = await indexDb(ctx.env, account.indexBinding);
+  const versions: WebVersion[] = [];
+  for (const v of res.versions.filter((x) => x.key === key)) {
+    let lock: WebVersion['lock'] = null;
+    if (!v.deleteMarker) {
+      const row = await getVersionRow(db, account.userId, bucket, key, v.versionId);
+      if (row && (row.lock_until || row.legal_hold))
+        lock = {
+          mode: row.lock_mode ?? null,
+          until: row.lock_until ?? null,
+          legalHold: Boolean(row.legal_hold),
+        };
+    }
+    versions.push({
+      versionId: v.versionId,
+      isLatest: v.isLatest,
+      deleteMarker: v.deleteMarker,
+      size: v.size,
+      modifiedAt: v.modifiedAt,
+      lock,
+    });
+  }
+  return { versioning: versioningOf(b), versions };
+}
+
+/** Objects in one folder level whose latest version is a delete marker (they can be brought back). */
+export async function deletedObjects(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  prefix: string,
+): Promise<Array<{ key: string; deletedAt: number; markerId: string }>> {
+  readable(account);
+  await ownBucket(ctx, account.userId, bucket);
+  const db = await indexDb(ctx.env, account.indexBinding);
+  const { results } = await db
+    .prepare(
+      `SELECT key, version_id, modified_at FROM s3_versions
+       WHERE bucket = ?1 AND user_id = ?2 AND key >= ?3 AND substr(key, 1, length(?3)) = ?3
+         AND delete_marker = 1 AND noncurrent_at IS NULL
+         AND instr(substr(key, length(?3) + 1), '/') = 0
+       ORDER BY key LIMIT 200`,
+    )
+    .bind(bucket, account.userId, prefix)
+    .all<{ key: string; version_id: string; modified_at: number }>();
+  return results.map((r) => ({ key: r.key, deletedAt: r.modified_at, markerId: r.version_id }));
+}
+
+/**
+ * Brings a version back: a delete marker that is the latest goes (the version before it shows
+ * again); an older version is copied to be the newest, as the S3 console does.
+ */
+export async function restoreVersion(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+  versionId: string,
+): Promise<void> {
+  writable(account);
+  const b = await ownBucket(ctx, account.userId, bucket);
+  validateKey(key);
+  const db = await indexDb(ctx.env, account.indexBinding);
+  const v = await getVersionRow(db, account.userId, bucket, key, versionId);
+  if (!v) throw new AppError('NOT_FOUND', 'no such version');
+  if (v.delete_marker) {
+    if (v.is_latest) await deleteVersion(ctx, account, bucket, key, versionId);
+    return;
+  }
+  if (v.is_latest) return;
+  await copyObject(ctx, account, {
+    from: { bucket, key, versionId },
+    to: { bucket, key },
+    replace: false,
+    contentType: null,
+    meta: {},
+    versioning: versioningOf(b),
+  });
+}
+
+/** Removes one version for good (Object Lock may refuse). */
+export async function removeVersion(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+  versionId: string,
+): Promise<void> {
+  readable(account);
+  await ownBucket(ctx, account.userId, bucket);
+  validateKey(key);
+  await deleteVersion(ctx, account, bucket, key, versionId);
+}
+
+export async function setVersioningFromApp(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  status: 'Enabled' | 'Suspended',
+): Promise<void> {
+  writable(account);
+  await setBucketVersioning(ctx, account.userId, bucket, status);
 }

@@ -93,6 +93,43 @@ const MIGRATIONS: string[][] = [
     `ALTER TABLE s3_uploads ADD COLUMN checksum_json TEXT`,
     `ALTER TABLE s3_upload_parts ADD COLUMN checksum TEXT`,
   ],
+  // v7 (ADR-092, S5): versions. `s3_objects` keeps the current version of each key (so plain listings
+  // stay as they were), with its version id (NULL = the "null" version) and Object Lock state;
+  // `s3_versions` keeps every older version and every delete marker. `noncurrent_at` = when a version
+  // stopped being the current one; NULL only for a delete marker that is the latest of its key.
+  [
+    `ALTER TABLE s3_objects ADD COLUMN version_id TEXT`,
+    `ALTER TABLE s3_objects ADD COLUMN lock_mode TEXT`,
+    `ALTER TABLE s3_objects ADD COLUMN lock_until INTEGER`,
+    `ALTER TABLE s3_objects ADD COLUMN legal_hold INTEGER NOT NULL DEFAULT 0`,
+    `CREATE TABLE IF NOT EXISTS s3_versions (
+       user_id       TEXT NOT NULL,
+       bucket        TEXT NOT NULL,
+       key           TEXT NOT NULL,
+       version_id    TEXT NOT NULL,
+       delete_marker INTEGER NOT NULL DEFAULT 0,
+       blob_id       TEXT NOT NULL,
+       size          INTEGER NOT NULL,
+       etag          TEXT NOT NULL,
+       content_type  TEXT,
+       meta_json     TEXT,
+       scan_status   TEXT NOT NULL DEFAULT 'pending',
+       sha256        TEXT,
+       modified_at   INTEGER NOT NULL,
+       tags_json     TEXT,
+       parts         INTEGER,
+       part_size     INTEGER,
+       checksum_json TEXT,
+       replicated    INTEGER NOT NULL DEFAULT 0,
+       noncurrent_at INTEGER,
+       lock_mode     TEXT,
+       lock_until    INTEGER,
+       legal_hold    INTEGER NOT NULL DEFAULT 0,
+       PRIMARY KEY (bucket, key, version_id)
+     ) WITHOUT ROWID`,
+    `CREATE INDEX IF NOT EXISTS s3_versions_user_idx ON s3_versions (user_id, bucket)`,
+    `CREATE INDEX IF NOT EXISTS s3_versions_noncurrent_idx ON s3_versions (bucket, noncurrent_at)`,
+  ],
 ];
 export const INDEX_SCHEMA_VERSION = MIGRATIONS.length;
 

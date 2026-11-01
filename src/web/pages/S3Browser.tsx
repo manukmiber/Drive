@@ -2,13 +2,14 @@
 // file, a few at once by the device's own setting; files bigger than a part go up in parts with
 // pause, resume and cancel, S4/ADR-075), new folder, download, temporary link, delete. Downloads and
 // links are ordinary presigned URLs.
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ChevronRight,
   Download,
   File as FileIcon,
   Folder,
   FolderPlus,
+  History,
   Link2,
   Pause,
   Play,
@@ -66,14 +67,177 @@ function errorText(e: unknown): string {
   return t.errors.generic;
 }
 
-async function presign(bucket: string, key: string, seconds: number) {
+async function presign(bucket: string, key: string, seconds: number, versionId?: string) {
   return postJson<{ url: string; expiresAt: number; keyId: string }>(
     `${base(bucket)}/objects/link`,
     {
       key,
       expiresInSeconds: seconds,
       download: true,
+      ...(versionId ? { versionId } : {}),
     },
+  );
+}
+
+export type Versioning = '' | 'Enabled' | 'Suspended';
+
+interface WebVersion {
+  versionId: string;
+  isLatest: boolean;
+  deleteMarker: boolean;
+  size: number;
+  modifiedAt: number;
+  lock: { mode: string | null; until: number | null; legalHold: boolean } | null;
+}
+
+/** ADR-092: one object's versions, newest first: download, restore, delete for good. */
+function VersionsDialog({
+  bucket,
+  objectKey,
+  hasKey,
+  canWrite,
+  onClose,
+  onChanged,
+}: {
+  bucket: string;
+  objectKey: string;
+  hasKey: boolean;
+  canWrite: boolean;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const q = useQuery({
+    queryKey: ['s3-versions', bucket, objectKey],
+    queryFn: () =>
+      api<{ versions: WebVersion[] }>(
+        `${base(bucket)}/versions?${new URLSearchParams({ key: objectKey })}`,
+      ),
+  });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  const name = objectKey.slice(objectKey.lastIndexOf('/') + 1) || objectKey;
+  async function act(versionId: string, what: 'restore' | 'delete' | 'download') {
+    setBusy(versionId);
+    try {
+      if (what === 'download') {
+        const { url } = await presign(bucket, objectKey, 600, versionId);
+        const a = document.createElement('a');
+        a.href = url;
+        a.rel = 'noopener';
+        a.click();
+      } else {
+        await postJson(`${base(bucket)}/versions/${what}`, { key: objectKey, versionId });
+        toast(what === 'restore' ? t.s3.restored : t.s3.versionDeleted);
+        await q.refetch();
+        onChanged();
+      }
+    } catch (e) {
+      toast(errorText(e));
+    } finally {
+      setBusy(null);
+      setConfirm(null);
+    }
+  }
+  const list = q.data?.versions ?? [];
+  return (
+    <Dialog open title={t.s3.versionsTitle(name)} onClose={onClose}>
+      {q.isPending ? (
+        <p className="text-sm text-[var(--fg-muted)]">{t.common.loading}</p>
+      ) : q.isError ? (
+        <p role="alert" className="text-sm text-red-600">
+          {errorText(q.error)}
+        </p>
+      ) : list.length < 2 && !list.some((v) => v.deleteMarker) ? (
+        <p className="text-sm text-[var(--fg-muted)]">{t.s3.versionsEmpty}</p>
+      ) : null}
+      <ul className="mt-1 max-h-[55vh] divide-y divide-[var(--border)] overflow-y-auto text-sm">
+        {list.map((v) => (
+          <li key={v.versionId} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-2">
+                {v.deleteMarker ? (
+                  <Trash2 className="h-4 w-4 shrink-0 text-[var(--fg-muted)]" aria-hidden="true" />
+                ) : (
+                  <History className="h-4 w-4 shrink-0 text-[var(--fg-muted)]" aria-hidden="true" />
+                )}
+                <span className="tabular-nums">{formatDateTime(v.modifiedAt)}</span>
+                {v.isLatest && (
+                  <span className="rounded-full bg-brand-50 px-2 text-xs text-brand-800 dark:bg-brand-800/40 dark:text-brand-100">
+                    {t.s3.versionLatest}
+                  </span>
+                )}
+              </span>
+              <span className="mt-0.5 block text-xs text-[var(--fg-muted)]">
+                {v.deleteMarker ? t.s3.versionMarker : formatBytes(v.size)}
+                {v.lock?.legalHold && ` · ${t.s3.versionLegalHold}`}
+                {v.lock?.until && v.lock.until > q.dataUpdatedAt
+                  ? ` · ${t.s3.versionLockedUntil(formatDateTime(v.lock.until))}`
+                  : ''}
+              </span>
+            </span>
+            {!v.deleteMarker && (
+              <button
+                type="button"
+                className="rounded-full p-2 hover:bg-[var(--bg-subtle)] disabled:opacity-40"
+                disabled={!hasKey || busy !== null}
+                onClick={() => void act(v.versionId, 'download')}
+                aria-label={t.s3.versionDownload}
+                title={hasKey ? t.s3.versionDownload : t.s3.needKey}
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            )}
+            {!v.isLatest && !v.deleteMarker && (
+              <Button
+                variant="secondary"
+                className="h-8 px-3 text-xs"
+                disabled={!canWrite || busy !== null}
+                onClick={() => void act(v.versionId, 'restore')}
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> {t.s3.restore}
+              </Button>
+            )}
+            {v.isLatest && v.deleteMarker && (
+              <Button
+                variant="secondary"
+                className="h-8 px-3 text-xs"
+                disabled={!canWrite || busy !== null}
+                onClick={() => void act(v.versionId, 'restore')}
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> {t.s3.restore}
+              </Button>
+            )}
+            {confirm === v.versionId ? (
+              <span className="flex w-full items-center justify-end gap-2 text-xs">
+                <span className="text-red-600">{t.s3.versionDeleteConfirm}</span>
+                <Button variant="ghost" className="h-8 px-2" onClick={() => setConfirm(null)}>
+                  {t.common.cancel}
+                </Button>
+                <Button
+                  variant="danger"
+                  className="h-8 px-2"
+                  disabled={busy !== null}
+                  onClick={() => void act(v.versionId, 'delete')}
+                >
+                  {t.s3.versionDelete}
+                </Button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                className="rounded-full p-2 text-red-600 hover:bg-[var(--bg-subtle)] disabled:opacity-40"
+                disabled={busy !== null}
+                onClick={() => setConfirm(v.versionId)}
+                aria-label={t.s3.versionDelete}
+                title={t.s3.versionDelete}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </Dialog>
   );
 }
 
@@ -81,11 +245,16 @@ export function S3Browser({
   bucket,
   canWrite,
   hasKey,
+  versioning,
+  onVersioning,
   onClose,
 }: {
   bucket: string;
   canWrite: boolean;
   hasKey: boolean;
+  /** ADR-092: the bucket's versioning, and a way to change it. */
+  versioning: Versioning;
+  onVersioning: (status: 'Enabled' | 'Suspended') => Promise<void>;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -99,7 +268,26 @@ export function S3Browser({
   const [naming, setNaming] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [linkFor, setLinkFor] = useState<string | null>(null);
+  const [versionsFor, setVersionsFor] = useState<string | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const deleted = useQuery({
+    queryKey: ['s3-deleted', bucket, prefix],
+    enabled: showDeleted && versioning !== '',
+    queryFn: () =>
+      api<{ items: Array<{ key: string; deletedAt: number; markerId: string }> }>(
+        `${base(bucket)}/deleted?${new URLSearchParams({ prefix })}`,
+      ),
+  });
+  async function restoreDeleted(key: string, markerId: string) {
+    try {
+      await postJson(`${base(bucket)}/versions/restore`, { key, versionId: markerId });
+      toast(t.s3.restored);
+      await Promise.all([refresh(), deleted.refetch()]);
+    } catch (e) {
+      toast(errorText(e));
+    }
+  }
   const key = ['s3-objects', bucket, prefix];
   const q = useInfiniteQuery({
     queryKey: key,
@@ -377,6 +565,47 @@ export function S3Browser({
       {!hasKey && <p className="mt-2 text-xs text-[var(--fg-muted)]">{t.s3.needKey}</p>}
       {!canWrite && <p className="mt-2 text-xs text-amber-700">{t.s3.uploadsPaused}</p>}
 
+      <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-[var(--bg-subtle)] px-3 py-2 text-sm">
+        <History className="h-4 w-4 shrink-0 text-[var(--fg-muted)]" aria-hidden="true" />
+        <span className="font-medium">
+          {versioning === 'Enabled'
+            ? t.s3.versioningOn
+            : versioning === 'Suspended'
+              ? t.s3.versioningPaused
+              : t.s3.versioning}
+        </span>
+        {versioning === 'Enabled' ? (
+          <Button
+            variant="ghost"
+            className="h-8 px-2 text-xs"
+            disabled={!canWrite}
+            onClick={() => void onVersioning('Suspended')}
+          >
+            {t.s3.versioningSuspend}
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            className="h-8 px-3 text-xs"
+            disabled={!canWrite}
+            onClick={() => void onVersioning('Enabled')}
+          >
+            {t.s3.versioningEnable}
+          </Button>
+        )}
+        {versioning !== '' && (
+          <label className="ml-auto flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={showDeleted}
+              onChange={(e) => setShowDeleted(e.target.checked)}
+            />
+            {t.s3.showDeleted}
+          </label>
+        )}
+        <span className="basis-full text-xs text-[var(--fg-muted)]">{t.s3.versioningHint}</span>
+      </div>
+
       {sending.length > 0 && (
         <ul className="mt-3 space-y-1 text-xs">
           {sending.map((r) => (
@@ -496,6 +725,17 @@ export function S3Browser({
                       aria-hidden="true"
                     />
                     <span className="break-all">{tail(o.key, prefix)}</span>
+                    {versioning !== '' && (
+                      <button
+                        type="button"
+                        className="ml-auto rounded-full p-1 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+                        onClick={() => setVersionsFor(o.key)}
+                        aria-label={`${t.s3.versionsButton}: ${tail(o.key, prefix)}`}
+                        title={t.s3.versionsButton}
+                      >
+                        <History className="h-4 w-4" />
+                      </button>
+                    )}
                   </span>
                 </td>
                 <td className="py-2 text-right whitespace-nowrap tabular-nums">
@@ -506,6 +746,44 @@ export function S3Browser({
                 </td>
               </tr>
             ))}
+            {showDeleted &&
+              (deleted.data?.items ?? []).map((d) => (
+                <tr key={`deleted:${d.key}`} className="text-[var(--fg-muted)]">
+                  <td />
+                  <td className="py-2">
+                    <span className="flex items-center gap-2">
+                      <Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span className="break-all line-through">{tail(d.key, prefix)}</span>
+                      <span className="rounded-full bg-[var(--bg-subtle)] px-2 text-xs">
+                        {t.s3.deletedLabel}
+                      </span>
+                      <span className="ml-auto flex items-center gap-1">
+                        <button
+                          type="button"
+                          className="rounded-full p-1 hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+                          onClick={() => setVersionsFor(d.key)}
+                          aria-label={`${t.s3.versionsButton}: ${tail(d.key, prefix)}`}
+                          title={t.s3.versionsButton}
+                        >
+                          <History className="h-4 w-4" />
+                        </button>
+                        <Button
+                          variant="secondary"
+                          className="h-7 px-2 text-xs"
+                          disabled={!canWrite}
+                          onClick={() => void restoreDeleted(d.key, d.markerId)}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> {t.s3.restore}
+                        </Button>
+                      </span>
+                    </span>
+                  </td>
+                  <td />
+                  <td className="hidden py-2 pl-4 whitespace-nowrap sm:table-cell">
+                    {formatDateTime(d.deletedAt)}
+                  </td>
+                </tr>
+              ))}
           </tbody>
         </table>
         {q.isPending && <p className="py-4 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>}
@@ -556,6 +834,19 @@ export function S3Browser({
       </Dialog>
       {linkFor && (
         <LinkDialog bucket={bucket} objectKey={linkFor} onClose={() => setLinkFor(null)} />
+      )}
+      {versionsFor && (
+        <VersionsDialog
+          bucket={bucket}
+          objectKey={versionsFor}
+          hasKey={hasKey}
+          canWrite={canWrite}
+          onClose={() => setVersionsFor(null)}
+          onChanged={() => {
+            void refresh();
+            void deleted.refetch();
+          }}
+        />
       )}
     </section>
   );

@@ -2668,3 +2668,43 @@ tanggal `diambil`; di explorer ada tombol "Tampilkan sebagai galeri" untuk folde
   file yang dibagikan orang (D2) belum masuk Galeri.
 - **Thumbnail yang belum ada** (mis. upload WebDAV/Telegram lama): dibuat di browser saat tampil, hanya kalau
   penonton boleh mengubah file itu (route thumbnail butuh edit), paling banyak dua bersamaan; selain itu ikon.
+
+## ADR-092 — S5: Versioning dan Object Lock di Zeiko S3
+
+Tanggal: 2026-11-01. Status: diterima. Jawaban pemilik (2026-11-01): **versi lama dihitung ke kuota dan tagihan**
+("seperti AWS"); **objek berkunci COMPLIANCE ikut dihapus** di tahap hapus dunning (kunci tidak berlaku melewati masa
+paket yang dibayar). Kalimat ToS untuk yang kedua ditulis pemilik sendiri (teks ToS hanya boleh diubah pemilik); usul:
+"Kunci objek (Object Lock) hanya berlaku selama paket Zeiko S3 dibayar. Kalau paket tidak dibayar sampai tahap hapus,
+semua objek dihapus, termasuk yang dikunci."
+
+**Versioning (commit pertama):**
+- Tiga keadaan seperti Amazon: belum pernah (NULL), `Enabled`, `Suspended` di `s3_buckets.versioning` (migrasi 0022).
+  Tidak bisa kembali ke "belum pernah".
+- Index per akun (langkah v7 di `s3-index.ts`): `s3_objects` tetap berisi versi **terbaru** tiap key (listing biasa
+  tidak berubah dan tetap cepat), ditambah `version_id` (NULL = versi "null"), `lock_mode`, `lock_until`, `legal_hold`.
+  Versi lama dan delete marker di tabel baru `s3_versions` (PK bucket, key, version_id). `noncurrent_at` = kapan versi
+  berhenti jadi terbaru; NULL hanya untuk delete marker yang sedang jadi versi terbaru. Invarian: tiap key punya tepat
+  satu versi terbaru: baris `s3_objects`-nya, atau (kalau tidak ada) delete marker dengan `noncurrent_at IS NULL`.
+- Setiap tulis/hapus yang menyentuh versi = satu batch D1 (satu transaksi), termasuk syarat If-Match/If-None-Match
+  (ADR-068). Hapus banyak key memakai `json_each`: jumlah statement tetap, tidak satu per key.
+- Version id = ULID (26 karakter, urut waktu). Versi "null" ditulis saat Suspended dan menggantikan versi null lama.
+- API: Put/GetBucketVersioning (MFA Delete → NotImplemented), ListObjectVersions (key-marker/version-id-marker,
+  delimiter, encoding), `versionId` di GetObject, HeadObject, DeleteObject, DeleteObjects, tagging, GetObjectAttributes,
+  dan sumber CopyObject/UploadPartCopy; header `x-amz-version-id`, `x-amz-delete-marker`,
+  `x-amz-copy-source-version-id`. GET pada delete marker → 405; GET tanpa versi saat terbaru delete marker → 404 dengan
+  `x-amz-delete-marker: true`. Orang asing (bucket publik) hanya membaca versi terbaru.
+- Menghapus versi terbaru secara permanen membuat versi sebelumnya jadi terbaru (`promoteNewest`). Memulihkan = salin
+  versi lama jadi versi baru (seperti konsol S3), atau hapus delete marker.
+- Kuota, tagihan, rekonsiliasi malam, replika 3 salinan, scan (versi yang tertimpa sebelum selesai di-scan tetap
+  di-scan; versi terinfeksi dihapus dan versi sebelumnya naik), hapus bucket (harus kosong termasuk versi), hapus akun,
+  dan ekspor data mencakup semua versi.
+- Lifecycle: `NoncurrentVersionExpiration` (NoncurrentDays, dihitung dari `noncurrent_at`, dibulatkan seperti Amazon;
+  `NewerNoncurrentVersions` → NotImplemented) dan `Expiration/ExpiredObjectDeleteMarker`. Expiration biasa di bucket
+  bervers membuat delete marker. Lifecycle tidak pernah menghapus versi yang dikunci.
+- Halaman `/s3`: saklar "Simpan versi lama"/Jeda per bucket, "Riwayat versi" per objek (unduh versi lewat presigned
+  URL yang menandatangani `versionId`, pulihkan, hapus permanen), dan "Tampilkan yang dihapus" untuk memulihkan file.
+
+**Yang masih kurang untuk Veeam dan tool backup lain:** Veeam memeriksa `GetObjectLockConfiguration` dan retensi per
+objek (bagian kedua ADR ini), lalu memakai `x-amz-checksum`/Content-MD5 (sudah ada). Belum ada: `NewerNoncurrentVersions`,
+SOSAPI (`.system-d26a9498-…/system.xml`/`capacity.xml` yang dibaca Veeam untuk kapasitas), dan replikasi per versi
+lintas akun.

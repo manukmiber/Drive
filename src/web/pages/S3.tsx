@@ -250,6 +250,8 @@ interface S3Bucket {
   cors: CorsRule[] | null;
   logging: LoggingConfig | null;
   lifecycle: LifecycleRule[] | null;
+  /** ADR-092 */
+  versioning: '' | 'Enabled' | 'Suspended';
 }
 
 /** ADR-072, as the API keeps it. */
@@ -1527,6 +1529,20 @@ function S3Page() {
           bucket={browsing}
           canWrite={!suspended && acc.billingState === 'ok'}
           hasKey={d.keys.length > 0}
+          versioning={d.buckets.find((b) => b.name === browsing)?.versioning ?? ''}
+          onVersioning={async (status) => {
+            try {
+              await api(`/api/s3/buckets/${encodeURIComponent(browsing)}`, {
+                method: 'PATCH',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ versioning: status }),
+              });
+              toast(t.s3.versioningChanged);
+              await refresh();
+            } catch (e) {
+              toast(e instanceof ApiError ? e.message : t.errors.generic);
+            }
+          }}
           onClose={() => setBrowsing(null)}
         />
       )}

@@ -738,6 +738,9 @@ export const s3Buckets = sqliteTable('s3_buckets', {
   lifecycleJson: text('lifecycle_json'),
   lifecycleCursor: text('lifecycle_cursor'),
   lifecycleAt: ms('lifecycle_at').notNull(),
+  // ADR-092: versioning state and Object Lock.
+  versioning: text('versioning'),
+  objectLockJson: text('object_lock_json'),
 });
 
 export const s3Subscriptions = sqliteTable('s3_subscriptions', {

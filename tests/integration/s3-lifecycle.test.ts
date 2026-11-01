@@ -104,6 +104,14 @@ describe('Zeiko S3 lifecycle', () => {
           '<NoncurrentVersionExpiration><NoncurrentDays>1</NoncurrentDays></NoncurrentVersionExpiration>',
         ),
       ),
+    ).toBe('ok');
+    // Versioning arrived (ADR-092); keeping the newest N older versions did not.
+    expect(
+      code(
+        rule(
+          '<NoncurrentVersionExpiration><NoncurrentDays>1</NoncurrentDays><NewerNoncurrentVersions>2</NewerNoncurrentVersions></NoncurrentVersionExpiration>',
+        ),
+      ),
     ).toBe('NotImplemented');
     expect(code(rule('<Expiration><Days>0</Days></Expiration>'))).toBe('InvalidArgument');
     expect(code(rule('<Expiration><Date>2027-01-01T05:00:00Z</Date></Expiration>'))).toBe(

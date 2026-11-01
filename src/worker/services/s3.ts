@@ -407,6 +407,10 @@ export interface BucketRow {
   logging_json?: string | null;
   /** Lifecycle rules as JSON (ADR-072); null = none. */
   lifecycle_json?: string | null;
+  /** ADR-092: null (never turned on), 'Enabled' or 'Suspended'. */
+  versioning?: string | null;
+  /** ADR-092: Object Lock, {mode, days?, years?}; null = the bucket has none. */
+  object_lock_json?: string | null;
 }
 
 /** Amazon's bucket naming rules (path-style addressing, so dots are allowed). */
@@ -422,7 +426,7 @@ export function validBucketName(name: string): boolean {
 
 export async function getBucket(ctx: Ctx, name: string): Promise<BucketRow | null> {
   return ctx.env.DB.prepare(
-    `SELECT name, user_id, public, blocked_at, created_at, cors_json, logging_json, lifecycle_json FROM s3_buckets WHERE name = ?1`,
+    `SELECT name, user_id, public, blocked_at, created_at, cors_json, logging_json, lifecycle_json, versioning, object_lock_json FROM s3_buckets WHERE name = ?1`,
   )
     .bind(name)
     .first<BucketRow>();
@@ -439,7 +443,7 @@ export async function ownBucket(ctx: Ctx, userId: string, name: string): Promise
 
 export async function listBuckets(ctx: Ctx, userId: string): Promise<BucketRow[]> {
   const { results } = await ctx.env.DB.prepare(
-    `SELECT name, user_id, public, blocked_at, created_at, cors_json, logging_json, lifecycle_json FROM s3_buckets WHERE user_id = ?1 ORDER BY name`,
+    `SELECT name, user_id, public, blocked_at, created_at, cors_json, logging_json, lifecycle_json, versioning, object_lock_json FROM s3_buckets WHERE user_id = ?1 ORDER BY name`,
   )
     .bind(userId)
     .all<BucketRow>();
@@ -762,6 +766,11 @@ export async function s3Overview(ctx: Ctx, userId: string) {
           logging: b.logging_json ? (JSON.parse(b.logging_json) as unknown) : null,
           /** ADR-072: its lifecycle rules, for the bucket's lifecycle editor. */
           lifecycle: b.lifecycle_json ? (JSON.parse(b.lifecycle_json) as unknown) : null,
+          /** ADR-092: '' (never on), 'Enabled' or 'Suspended'. */
+          versioning:
+            b.versioning === 'Enabled' || b.versioning === 'Suspended' ? b.versioning : '',
+          /** ADR-092: Object Lock and its default retention, if the bucket has it. */
+          objectLock: b.object_lock_json ? (JSON.parse(b.object_lock_json) as unknown) : null,
         }))
       : [],
   };

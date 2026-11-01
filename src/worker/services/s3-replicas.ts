@@ -69,12 +69,16 @@ async function markReplicated(
   row: { user_id: string; bucket: string; key: string; blob_id: string },
   value: 0 | 1,
 ): Promise<void> {
-  await db
-    .prepare(
-      `UPDATE s3_objects SET replicated = ?5 WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`,
-    )
-    .bind(row.bucket, row.key, row.user_id, row.blob_id, value)
-    .run();
+  // The version may have become an older one meanwhile (ADR-092): it is copied all the same.
+  await db.batch(
+    ['s3_objects', 's3_versions'].map((t) =>
+      db
+        .prepare(
+          `UPDATE ${t} SET replicated = ?5 WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`,
+        )
+        .bind(row.bucket, row.key, row.user_id, row.blob_id, value),
+    ),
+  );
 }
 
 /** After a passed scan: the object's two extra copies, for an account on 3 copies. */
@@ -117,7 +121,11 @@ export async function replicateAccount(
   const { results } = await db
     .prepare(
       `SELECT user_id, bucket, key, blob_id, size FROM s3_objects
-       WHERE user_id = ?1 AND replicated = 0 AND scan_status IN ('clean', 'skipped') LIMIT 50`,
+       WHERE user_id = ?1 AND replicated = 0 AND scan_status IN ('clean', 'skipped')
+       UNION ALL
+       SELECT user_id, bucket, key, blob_id, size FROM s3_versions
+       WHERE user_id = ?1 AND replicated = 0 AND delete_marker = 0 AND scan_status IN ('clean', 'skipped')
+       LIMIT 50`,
     )
     .bind(userId)
     .all<{ user_id: string; bucket: string; key: string; blob_id: string; size: number }>();
@@ -138,20 +146,23 @@ export async function unreplicateAccount(ctx: Ctx, userId: string): Promise<bool
   const db = await indexDb(ctx.env, acc.index_binding);
   const { results } = await db
     .prepare(
-      `SELECT user_id, bucket, key, blob_id FROM s3_objects WHERE user_id = ?1 AND replicated = 1 LIMIT 500`,
+      `SELECT user_id, bucket, key, blob_id FROM s3_objects WHERE user_id = ?1 AND replicated = 1
+       UNION ALL SELECT user_id, bucket, key, blob_id FROM s3_versions WHERE user_id = ?1 AND replicated = 1
+       LIMIT 500`,
     )
     .bind(userId)
     .all<{ user_id: string; bucket: string; key: string; blob_id: string }>();
   if (!results.length) return true;
   const keys = results.map((r) => s3BlobKey(userId, r.blob_id));
   for (const b of replicaBuckets(ctx.env)) await b.delete(keys);
+  const blobs = JSON.stringify(results.map((r) => r.blob_id));
   await db.batch(
-    results.map((r) =>
+    ['s3_objects', 's3_versions'].map((t) =>
       db
         .prepare(
-          `UPDATE s3_objects SET replicated = 0 WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`,
+          `UPDATE ${t} SET replicated = 0 WHERE user_id = ?1 AND blob_id IN (SELECT value FROM json_each(?2))`,
         )
-        .bind(r.bucket, r.key, r.user_id, r.blob_id),
+        .bind(userId, blobs),
     ),
   );
   return results.length < 500;
@@ -195,6 +206,8 @@ export async function sweepReplication(ctx: Ctx): Promise<number> {
     const behind = await db
       .prepare(
         `SELECT 1 AS x FROM s3_objects WHERE user_id = ?1 AND replicated = 0
+           AND scan_status IN ('clean', 'skipped') AND modified_at < ?2
+         UNION ALL SELECT 1 FROM s3_versions WHERE user_id = ?1 AND replicated = 0 AND delete_marker = 0
            AND scan_status IN ('clean', 'skipped') AND modified_at < ?2 LIMIT 1`,
       )
       .bind(a.user_id, ctx.now() - 60 * 60_000)

@@ -28,6 +28,20 @@ import { afterVirusTotal } from './scan';
 import { deleteReplicas, replicateObject } from './s3-replicas';
 import { releaseS3Url } from './s3-urls';
 import { dropBucketStats, pruneBucketStats } from './s3-stats';
+import {
+  archiveCurrent,
+  bucketVersioning,
+  checkVersionId,
+  dropNullVersion,
+  getVersionRow,
+  lockBlocks,
+  nextVersionId,
+  NO_CURRENT,
+  OBJ_COLS,
+  promoteNewest,
+  retireMarker,
+  type Versioning,
+} from './s3-versions';
 
 export const MAX_KEY_BYTES = 1024;
 /** One PUT or CopyObject (Amazon's limit too; bigger objects are multipart). */
@@ -70,6 +84,12 @@ export interface ObjectRow {
   part_size?: number | null;
   /** The checksum the client sent and Zeiko S3 checked (`StoredChecksum`, ADR-076). */
   checksum_json?: string | null;
+  /** ADR-092: the version id; null/absent = the "null" version (an unversioned write). */
+  version_id?: string | null;
+  /** Object Lock (ADR-092): retention mode and until when (ms), and a legal hold. */
+  lock_mode?: 'GOVERNANCE' | 'COMPLIANCE' | null;
+  lock_until?: number | null;
+  legal_hold?: number;
 }
 
 export type ChecksumType = 'FULL_OBJECT' | 'COMPOSITE';
@@ -205,25 +225,40 @@ async function checkWrite(
     throw new S3Error('PreconditionFailed', PRECONDITION);
 }
 
-type Replaced = { blob_id: string; size: number } | null;
+type Dropped = Array<{ blob_id: string; size: number }>;
+
+/** Rows a statement returned that are versions gone for good (bytes to free), not delete markers. */
+function goneRows(
+  res: D1Result | undefined,
+  keep?: (r: Record<string, unknown>) => boolean,
+): Dropped {
+  return ((res?.results ?? []) as Array<Record<string, unknown>>)
+    .filter((r) => !r.delete_marker && (!keep || keep(r)))
+    .map((r) => ({ blob_id: String(r.blob_id), size: Number(r.size) }));
+}
 
 /**
- * Puts `row` in place of whatever had its name; returns what it replaced. With a condition, the
- * condition is part of the same D1 batch, so of two writers only one can see it hold:
- * `won: false` means nothing was written (`extra` still runs).
+ * Puts `row` in place of whatever had its name, as the bucket's versioning says (ADR-092):
+ * unversioned, the old object goes; Enabled, it becomes an older version; Suspended, a null
+ * version goes and any other becomes an older version. Returns what is gone for good (bytes to free).
+ * With a condition, the condition is part of the same D1 batch, so of two writers only one can see
+ * it hold: `won: false` means nothing was written (`extra` still runs).
  */
 async function replaceRow(
   db: D1Database,
   row: ObjectRow,
   extra: D1PreparedStatement[] = [],
-  cond?: WriteCondition | null,
-): Promise<{ won: boolean; old: Replaced }> {
+  cond: WriteCondition | null | undefined,
+  mode: Versioning,
+  now: number,
+): Promise<{ won: boolean; dropped: Dropped }> {
   const name = `bucket = ?1 AND key = ?2 AND user_id = ?3`;
+  const versioned = mode !== '';
   const insert = (tail: string) =>
     db
       .prepare(
-        `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at, tags_json, parts, part_size, checksum_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)${tail}`,
+        `INSERT INTO s3_objects (user_id, bucket, key, blob_id, size, etag, content_type, meta_json, scan_status, sha256, modified_at, tags_json, parts, part_size, checksum_json, version_id, lock_mode, lock_until, legal_hold)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)${tail}`,
       )
       .bind(
         row.user_id,
@@ -241,35 +276,80 @@ async function replaceRow(
         row.parts ?? null,
         row.part_size ?? null,
         row.checksum_json ?? null,
+        row.version_id ?? null,
+        row.lock_mode ?? null,
+        row.lock_until ?? null,
+        row.legal_hold ?? 0,
       );
+  /** Which replaced current rows are gone (not kept as an older version). */
+  const replacedGone = (r: Record<string, unknown>) =>
+    !versioned || (mode === 'Suspended' && r.version_id === null);
   if (!cond) {
-    const [deleted] = await db.batch([
+    const pre: D1PreparedStatement[] = versioned
+      ? [
+          retireMarker(db, row, now),
+          ...(mode === 'Suspended' ? [dropNullVersion(db, row)] : []),
+          archiveCurrent(db, row, now, mode === 'Enabled'),
+        ]
+      : [];
+    const res = await db.batch([
+      ...pre,
       db
-        .prepare(`DELETE FROM s3_objects WHERE ${name} RETURNING blob_id, size`)
+        .prepare(`DELETE FROM s3_objects WHERE ${name} RETURNING blob_id, size, version_id`)
         .bind(row.bucket, row.key, row.user_id),
       insert(''),
       ...extra,
     ]);
-    return { won: true, old: (deleted?.results[0] as Replaced | undefined) ?? null };
+    const nulls = mode === 'Suspended' ? goneRows(res[1]) : [];
+    return { won: true, dropped: [...nulls, ...goneRows(res[pre.length], replacedGone)] };
   }
   if ('ifNoneMatch' in cond) {
-    const [added] = await db.batch([
+    // Nothing current under the name (a delete marker may be the latest, as on Amazon).
+    const pre: D1PreparedStatement[] = versioned
+      ? [
+          retireMarker(db, row, now, NO_CURRENT),
+          ...(mode === 'Suspended' ? [dropNullVersion(db, row, NO_CURRENT)] : []),
+        ]
+      : [];
+    const res = await db.batch([
+      ...pre,
       insert(` ON CONFLICT (bucket, key) DO NOTHING RETURNING blob_id`),
       ...extra,
     ]);
-    return { won: Boolean(added?.results.length), old: null };
+    const added = res[pre.length];
+    return {
+      won: Boolean(added?.results.length),
+      dropped: mode === 'Suspended' ? goneRows(res[1]) : [],
+    };
   }
   // If-Match: the old row is read and replaced in one transaction, only while its ETag is the one
   // asked for. Every column is set, as a fresh INSERT would (replicated: the new bytes have no copies).
-  const [before, updated] = await db.batch([
+  const pre: D1PreparedStatement[] = versioned
+    ? [
+        ...(mode === 'Suspended'
+          ? [
+              dropNullVersion(
+                db,
+                row,
+                ` AND EXISTS (SELECT 1 FROM s3_objects o WHERE o.bucket = ?1 AND o.key = ?2 AND o.etag = ?4 AND o.version_id IS NOT NULL)`,
+                cond.ifMatch,
+              ),
+            ]
+          : []),
+        archiveCurrent(db, row, now, mode === 'Enabled', cond.ifMatch),
+      ]
+    : [];
+  const res = await db.batch([
+    ...pre,
     db
-      .prepare(`SELECT blob_id, size FROM s3_objects WHERE ${name} AND etag = ?4`)
+      .prepare(`SELECT blob_id, size, version_id FROM s3_objects WHERE ${name} AND etag = ?4`)
       .bind(row.bucket, row.key, row.user_id, cond.ifMatch),
     db
       .prepare(
         `UPDATE s3_objects SET blob_id = ?5, size = ?6, etag = ?7, content_type = ?8, meta_json = ?9,
            scan_status = ?10, sha256 = ?11, modified_at = ?12, tags_json = ?13, parts = ?14,
-           part_size = ?15, checksum_json = ?16, replicated = 0
+           part_size = ?15, checksum_json = ?16, replicated = 0, version_id = ?17, lock_mode = ?18,
+           lock_until = ?19, legal_hold = ?20
          WHERE ${name} AND etag = ?4 RETURNING blob_id`,
       )
       .bind(
@@ -289,12 +369,25 @@ async function replaceRow(
         row.parts ?? null,
         row.part_size ?? null,
         row.checksum_json ?? null,
+        row.version_id ?? null,
+        row.lock_mode ?? null,
+        row.lock_until ?? null,
+        row.legal_hold ?? 0,
       ),
     ...extra,
   ]);
-  if (!updated?.results.length) return { won: false, old: null };
-  return { won: true, old: (before?.results[0] as Replaced | undefined) ?? null };
+  const updated = res[pre.length + 1];
+  if (!updated?.results.length) return { won: false, dropped: [] };
+  const nulls = mode === 'Suspended' ? goneRows(res[0]) : [];
+  return { won: true, dropped: [...nulls, ...goneRows(res[pre.length], replacedGone)] };
 }
+
+/** Frees the bytes of versions that are gone for good. */
+async function dropAll(ctx: Ctx, userId: string, dropped: Dropped): Promise<void> {
+  for (const d of dropped) if (d.blob_id) await dropBlob(ctx, userId, d.blob_id);
+}
+
+const droppedBytes = (d: Dropped) => d.reduce((n, x) => n + x.size, 0);
 
 async function dropBlob(ctx: Ctx, userId: string, blobId: string): Promise<void> {
   const key = s3BlobKey(userId, blobId);
@@ -321,6 +414,8 @@ export interface PutInput {
   tags?: Tag[] | null;
   /** x-amz-checksum-* (ADR-076): checked by `verify`, kept with the object. */
   checksum?: BodyChecksum | null;
+  /** The bucket's versioning (ADR-092), when the caller has the bucket already. */
+  versioning?: Versioning;
 }
 
 export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): Promise<ObjectRow> {
@@ -332,6 +427,7 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
     );
   const db = await indexDb(ctx.env, account.indexBinding);
   const userId = account.userId;
+  const mode = input.versioning ?? (await bucketVersioning(ctx, userId, input.bucket));
   await checkWrite(ctx, account, input.bucket, input.key, input.condition);
   await reserveBytes(ctx, userId, input.size);
   const blobId = ulid(ctx.now());
@@ -375,12 +471,13 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
             v: await input.checksum.value(),
           })
         : null,
+      version_id: nextVersionId(mode, ctx.now()),
     };
-    const { won, old } = await replaceRow(db, row, [], input.condition);
+    const { won, dropped } = await replaceRow(db, row, [], input.condition, mode, ctx.now());
     // Another writer got there first: this one's bytes go (below), as on any failed upload.
     if (!won) throw new S3Error('PreconditionFailed', PRECONDITION);
-    await commitBytes(ctx, userId, input.size, row.size - (old?.size ?? 0));
-    if (old) await dropBlob(ctx, userId, old.blob_id);
+    await commitBytes(ctx, userId, input.size, row.size - droppedBytes(dropped));
+    await dropAll(ctx, userId, dropped);
     await scanRequest(ctx, row);
     return row;
   } catch (e) {
@@ -403,34 +500,174 @@ export async function getObjectRow(
     .first<ObjectRow>();
 }
 
+/** What one delete did (DeleteObject's headers, DeleteObjects' <Deleted>). */
+export interface DeleteOutcome {
+  key: string;
+  /** The version that was named and removed for good. */
+  versionId?: string;
+  /** A delete marker was made (no version named), or the version removed was one. */
+  deleteMarker?: boolean;
+  /** The id of the delete marker that was made. */
+  markerVersionId?: string;
+}
+
+/** Bytes of versions gone for good leave R2 and the account's storage. */
+async function freeDropped(ctx: Ctx, userId: string, dropped: Dropped): Promise<void> {
+  const gone = dropped.filter((d) => d.blob_id);
+  if (!gone.length) return;
+  await commitBytes(ctx, userId, 0, -droppedBytes(gone));
+  const r2Keys = gone.map((g) => s3BlobKey(userId, g.blob_id));
+  for (let i = 0; i < r2Keys.length; i += 1000) {
+    const batch = r2Keys.slice(i, i + 1000);
+    await Promise.all([ctx.env.BUCKET.delete(batch), deleteReplicas(ctx.env, batch)]).catch(
+      (e: unknown) =>
+        log.warn('s3_blob_delete_failed', { count: batch.length, message: String(e) }),
+    );
+  }
+}
+
+/**
+ * Deletes keys the way the bucket's versioning says (ADR-092): unversioned, the objects go;
+ * otherwise each key gets a delete marker and its current version is kept as an older one
+ * (Suspended: a null version goes and the marker is the null version). A fixed handful of
+ * statements whatever the number of keys.
+ */
 export async function deleteObjects(
   ctx: Ctx,
   account: S3Account,
   bucket: string,
   keys: string[],
-): Promise<void> {
-  if (!keys.length) return;
+  versioning?: Versioning,
+): Promise<DeleteOutcome[]> {
+  const unique = [...new Set(keys)];
+  if (!unique.length) return [];
+  const mode = versioning ?? (await bucketVersioning(ctx, account.userId, bucket));
   const db = await indexDb(ctx.env, account.indexBinding);
-  const results = await db.batch(
-    keys.map((k) =>
-      db
-        .prepare(
-          `DELETE FROM s3_objects WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 RETURNING blob_id, size`,
-        )
-        .bind(bucket, k, account.userId),
-    ),
-  );
-  const gone = results.flatMap((r) => r.results as Array<{ blob_id: string; size: number }>);
-  if (!gone.length) return;
-  await commitBytes(ctx, account.userId, 0, -gone.reduce((n, g) => n + g.size, 0));
-  const r2Keys = gone.map((g) => s3BlobKey(account.userId, g.blob_id));
-  await Promise.all([ctx.env.BUCKET.delete(r2Keys), deleteReplicas(ctx.env, r2Keys)]).catch(
-    (e: unknown) => log.warn('s3_blob_delete_failed', { count: gone.length, message: String(e) }),
-  );
+  const userId = account.userId;
+  const now = ctx.now();
+  const list = JSON.stringify(unique);
+  const IN = `bucket = ?1 AND user_id = ?2 AND key IN (SELECT value FROM json_each(?3))`;
+  if (mode === '') {
+    const res = await db
+      .prepare(`DELETE FROM s3_objects WHERE ${IN} RETURNING blob_id, size`)
+      .bind(bucket, userId, list)
+      .all();
+    await freeDropped(ctx, userId, goneRows(res));
+    return unique.map((key) => ({ key }));
+  }
+  const suspended = mode === 'Suspended';
+  const markers = unique.map((k) => [k, suspended ? 'null' : ulid(now)] as const);
+  const stmts = [
+    db
+      .prepare(`UPDATE s3_versions SET noncurrent_at = ?4 WHERE ${IN} AND noncurrent_at IS NULL`)
+      .bind(bucket, userId, list, now),
+    ...(suspended
+      ? [
+          db
+            .prepare(
+              `DELETE FROM s3_versions WHERE ${IN} AND version_id = 'null' RETURNING blob_id, size, delete_marker`,
+            )
+            .bind(bucket, userId, list),
+        ]
+      : []),
+    db
+      .prepare(
+        `INSERT INTO s3_versions (version_id, delete_marker, noncurrent_at, ${OBJ_COLS})
+         SELECT COALESCE(version_id, 'null'), 0, ?4, ${OBJ_COLS} FROM s3_objects
+         WHERE ${IN}${suspended ? ' AND version_id IS NOT NULL' : ''}`,
+      )
+      .bind(bucket, userId, list, now),
+    db
+      .prepare(`DELETE FROM s3_objects WHERE ${IN} RETURNING blob_id, size, version_id`)
+      .bind(bucket, userId, list),
+    db
+      .prepare(
+        `INSERT INTO s3_versions (user_id, bucket, key, version_id, delete_marker, blob_id, size, etag,
+           scan_status, modified_at, noncurrent_at)
+         SELECT ?2, ?1, json_extract(value, '$[0]'), json_extract(value, '$[1]'), 1, '', 0, '', 'clean', ?4, NULL
+         FROM json_each(?3)`,
+      )
+      .bind(bucket, userId, JSON.stringify(markers), now),
+  ];
+  const res = await db.batch(stmts);
+  const dropped = [
+    ...(suspended ? goneRows(res[1]) : []),
+    ...goneRows(res[stmts.length - 2], (r) => suspended && r.version_id === null),
+  ];
+  await freeDropped(ctx, userId, dropped);
+  return markers.map(([key, id]) => ({ key, deleteMarker: true, markerVersionId: id }));
+}
+
+/** Lifecycle (ADR-092): older versions that are due go for good, unless a lock came on meanwhile. */
+export async function deleteNoncurrent(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  versions: Array<{ key: string; version_id: string }>,
+): Promise<void> {
+  if (!versions.length) return;
+  const db = await indexDb(ctx.env, account.indexBinding);
+  const res = await db
+    .prepare(
+      `DELETE FROM s3_versions WHERE bucket = ?1 AND user_id = ?2 AND noncurrent_at IS NOT NULL
+         AND NOT (legal_hold = 1 OR COALESCE(lock_until, 0) > ?4)
+         AND (key, version_id) IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?3))
+       RETURNING blob_id, size, delete_marker`,
+    )
+    .bind(
+      bucket,
+      account.userId,
+      JSON.stringify(versions.map((v) => [v.key, v.version_id])),
+      ctx.now(),
+    )
+    .all();
+  await freeDropped(ctx, account.userId, goneRows(res));
+}
+
+/**
+ * DeleteObject with a versionId (ADR-092): that version goes for good, unless Object Lock keeps it.
+ * If it was the latest, the newest one left takes its place. A version that isn't there is no error.
+ */
+export async function deleteVersion(
+  ctx: Ctx,
+  account: S3Account,
+  bucket: string,
+  key: string,
+  versionId: string,
+  bypassGovernance = false,
+): Promise<DeleteOutcome> {
+  checkVersionId(versionId);
+  const db = await indexDb(ctx.env, account.indexBinding);
+  const userId = account.userId;
+  const now = ctx.now();
+  const v = await getVersionRow(db, userId, bucket, key, versionId);
+  if (!v) return { key, versionId };
+  if (lockBlocks(v, now, bypassGovernance))
+    throw new S3Error('AccessDenied', 'Access Denied because object protected by object lock.');
+  // The lock is checked again inside the delete itself, against a hold set in between.
+  const guard = ` AND NOT (legal_hold = 1 OR (COALESCE(lock_until, 0) > ?5 AND (lock_mode = 'COMPLIANCE' OR ?6 = 0)))`;
+  const name = `bucket = ?1 AND key = ?2 AND user_id = ?3`;
+  const binds = [bucket, key, userId, versionId, now, bypassGovernance ? 1 : 0];
+  const res = await db.batch([
+    db
+      .prepare(
+        `DELETE FROM s3_objects WHERE ${name} AND COALESCE(version_id, 'null') = ?4${guard} RETURNING blob_id, size`,
+      )
+      .bind(...binds),
+    db
+      .prepare(
+        `DELETE FROM s3_versions WHERE ${name} AND version_id = ?4${guard} RETURNING blob_id, size, delete_marker`,
+      )
+      .bind(...binds),
+    ...promoteNewest(db, bucket, key, userId),
+  ]);
+  await freeDropped(ctx, userId, [...goneRows(res[0]), ...goneRows(res[1])]);
+  return { key, versionId, ...(v.delete_marker ? { deleteMarker: true } : {}) };
 }
 
 export interface CopyInput {
-  from: { bucket: string; key: string };
+  /** `versionId`: copy that version (ADR-092); absent = the current one. */
+  from: { bucket: string; key: string; versionId?: string | null };
   to: { bucket: string; key: string };
   /** REPLACE takes the request's metadata; COPY (default) keeps the source's. */
   replace: boolean;
@@ -442,6 +679,37 @@ export interface CopyInput {
   condition?: WriteCondition | null;
   /** x-amz-tagging-directive REPLACE with these tags; absent = the source's tags (COPY). */
   tags?: Tag[] | null;
+  /** The destination bucket's versioning, when the caller has it (ADR-092). */
+  versioning?: Versioning;
+}
+
+/**
+ * The source of a copy: its current version, or the version asked for (ADR-092). A delete marker
+ * can't be copied: as the latest it reads as a missing key, by id it is an invalid request.
+ */
+export async function copySourceRow(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  from: { bucket: string; key: string; versionId?: string | null },
+): Promise<ObjectRow> {
+  if (from.versionId) {
+    const db = await indexDb(ctx.env, account.indexBinding);
+    const v = await getVersionRow(db, account.userId, from.bucket, from.key, from.versionId);
+    if (!v)
+      throw new S3Error('NoSuchVersion', 'The specified version does not exist.', {
+        Key: from.key,
+        VersionId: from.versionId,
+      });
+    if (v.delete_marker)
+      throw new S3Error(
+        'InvalidRequest',
+        'The source of a copy request may not specifically refer to a delete marker by version id.',
+      );
+    return v;
+  }
+  const src = await getObjectRow(ctx, account, from.bucket, from.key);
+  if (!src) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: from.key });
+  return src;
 }
 
 /** The x-amz-copy-source-if-* headers of CopyObject and UploadPartCopy. */
@@ -484,17 +752,30 @@ export async function copyObject(
   validateKey(input.to.key);
   const userId = account.userId;
   await ownBucket(ctx, userId, input.from.bucket);
-  const src = await getObjectRow(ctx, account, input.from.bucket, input.from.key);
-  if (!src)
-    throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: input.from.key });
+  const src = await copySourceRow(ctx, account, input.from);
   copyPreconditions(src, input.source);
   const db = await indexDb(ctx.env, account.indexBinding);
-  const same = input.from.bucket === input.to.bucket && input.from.key === input.to.key;
+  const mode = input.versioning ?? (await bucketVersioning(ctx, userId, input.to.bucket));
+  // In place, only the metadata changes; with versioning the copy is a new version with its own bytes.
+  const same =
+    mode === '' &&
+    !input.from.versionId &&
+    input.from.bucket === input.to.bucket &&
+    input.from.key === input.to.key;
   await checkWrite(ctx, account, input.to.bucket, input.to.key, input.condition);
   const contentType = input.replace ? input.contentType : src.content_type;
   const meta = input.replace ? metaJson(input.meta) : src.meta_json;
   const tags = input.tags !== undefined ? tagsJson(input.tags) : src.tags_json;
   const now = ctx.now();
+  const toItself =
+    !input.from.versionId &&
+    input.from.bucket === input.to.bucket &&
+    input.from.key === input.to.key;
+  if (toItself && !same && !input.replace && input.tags === undefined)
+    throw new S3Error(
+      'InvalidRequest',
+      'This copy request is illegal because it is trying to copy an object to itself without changing the object’s metadata.',
+    );
   if (same) {
     if (!input.replace && input.tags === undefined)
       throw new S3Error(
@@ -567,11 +848,16 @@ export async function copyObject(
         storedChecksum(src.checksum_json)?.t === 'FULL_OBJECT' ? src.checksum_json : null,
       // The bytes are the source's: so is the scan result.
       modified_at: now,
+      version_id: nextVersionId(mode, now),
+      // Retention and holds belong to the version that has them, never to a copy (Amazon's rule).
+      lock_mode: null,
+      lock_until: null,
+      legal_hold: 0,
     };
-    const { won, old } = await replaceRow(db, row, [], input.condition);
+    const { won, dropped } = await replaceRow(db, row, [], input.condition, mode, now);
     if (!won) throw new S3Error('PreconditionFailed', PRECONDITION);
-    await commitBytes(ctx, userId, src.size, src.size - (old?.size ?? 0));
-    if (old) await dropBlob(ctx, userId, old.blob_id);
+    await commitBytes(ctx, userId, src.size, src.size - droppedBytes(dropped));
+    await dropAll(ctx, userId, dropped);
     await scanRequest(ctx, row);
     return row;
   } catch (e) {
@@ -684,8 +970,12 @@ export async function listObjects(
 
 /** Is there anything at all in this bucket (objects or unfinished uploads)? */
 async function bucketUse(db: D1Database, userId: string, bucket: string) {
+  // Older versions and delete markers keep a bucket in use too (Amazon's rule, ADR-092).
   const obj = await db
-    .prepare(`SELECT 1 AS x FROM s3_objects WHERE bucket = ?1 AND user_id = ?2 LIMIT 1`)
+    .prepare(
+      `SELECT 1 AS x FROM s3_objects WHERE bucket = ?1 AND user_id = ?2
+       UNION ALL SELECT 1 FROM s3_versions WHERE bucket = ?1 AND user_id = ?2 LIMIT 1`,
+    )
     .bind(bucket, userId)
     .first<{ x: number }>();
   return Boolean(obj);
@@ -723,18 +1013,25 @@ export async function deleteBucket(ctx: Ctx, account: S3Account, name: string): 
     .run();
 }
 
+/** Everything left under a deleted bucket's name goes for good, every version included. */
 async function purgeBucketRows(ctx: Ctx, account: S3Account, db: D1Database, bucket: string) {
-  const { results } = await db
-    .prepare(`SELECT key FROM s3_objects WHERE bucket = ?1 AND user_id = ?2 LIMIT 1000`)
-    .bind(bucket, account.userId)
-    .all<{ key: string }>();
-  if (results.length)
-    await deleteObjects(
-      ctx,
-      account,
-      bucket,
-      results.map((r) => r.key),
-    );
+  const res = await db.batch([
+    db
+      .prepare(
+        `DELETE FROM s3_objects WHERE bucket = ?1 AND user_id = ?2
+           AND key IN (SELECT key FROM s3_objects WHERE bucket = ?1 AND user_id = ?2 LIMIT 1000)
+         RETURNING blob_id, size`,
+      )
+      .bind(bucket, account.userId),
+    db
+      .prepare(
+        `DELETE FROM s3_versions WHERE bucket = ?1 AND user_id = ?2
+           AND (key, version_id) IN (SELECT key, version_id FROM s3_versions WHERE bucket = ?1 AND user_id = ?2 LIMIT 1000)
+         RETURNING blob_id, size, delete_marker`,
+      )
+      .bind(bucket, account.userId),
+  ]);
+  await freeDropped(ctx, account.userId, [...goneRows(res[0]), ...goneRows(res[1])]);
 }
 
 // ───────────────────────────── multipart ─────────────────────────────
@@ -928,14 +1225,13 @@ export async function copyPart(
   key: string,
   uploadId: string,
   partNumber: number,
-  from: { bucket: string; key: string },
+  from: { bucket: string; key: string; versionId?: string | null },
   range: string | null,
   conditions: SourceConditions,
 ): Promise<{ etag: string; modifiedAt: number }> {
   checkPartNumber(partNumber);
   await ownBucket(ctx, account.userId, from.bucket);
-  const src = await getObjectRow(ctx, account, from.bucket, from.key);
-  if (!src) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: from.key });
+  const src = await copySourceRow(ctx, account, from);
   copyPreconditions(src, conditions);
   let offset = 0;
   let length = src.size;
@@ -1071,6 +1367,7 @@ export async function completeUpload(
     );
   const total = chosen.reduce((n, p) => n + p.size, 0);
   const reserved = stored.reduce((n, p) => n + p.size, 0);
+  const mode = await bucketVersioning(ctx, account.userId, bucket);
   // Failing here keeps the upload: the client may still abort it, or complete it without the condition.
   await checkWrite(ctx, account, bucket, key, condition);
   let obj: R2Object;
@@ -1098,8 +1395,9 @@ export async function completeUpload(
     scan_status: total === 0 ? 'clean' : 'pending',
     sha256: null,
     modified_at: ctx.now(),
+    version_id: nextVersionId(mode, ctx.now()),
   };
-  const { won, old } = await replaceRow(
+  const { won, dropped } = await replaceRow(
     db,
     row,
     [
@@ -1107,6 +1405,8 @@ export async function completeUpload(
       db.prepare(`DELETE FROM s3_uploads WHERE id = ?1`).bind(up.id),
     ],
     condition,
+    mode,
+    ctx.now(),
   );
   if (!won) {
     // Another write landed while R2 joined the parts. R2 has used the upload up, so it goes, and
@@ -1118,8 +1418,8 @@ export async function completeUpload(
       'A conflicting operation occurred. Start a new multipart upload and try again.',
     );
   }
-  await commitBytes(ctx, account.userId, reserved, total - (old?.size ?? 0));
-  if (old) await dropBlob(ctx, account.userId, old.blob_id);
+  await commitBytes(ctx, account.userId, reserved, total - droppedBytes(dropped));
+  await dropAll(ctx, account.userId, dropped);
   await scanRequest(ctx, row);
   return row;
 }
@@ -1256,8 +1556,12 @@ export async function reconcileS3(ctx: Ctx, limit = 20): Promise<number> {
   for (const a of results) {
     try {
       const db = await indexDb(ctx.env, a.index_binding);
+      // Older versions count as much as current ones (ADR-092).
       const sum = await db
-        .prepare(`SELECT COALESCE(SUM(size), 0) AS s FROM s3_objects WHERE user_id = ?1`)
+        .prepare(
+          `SELECT (SELECT COALESCE(SUM(size), 0) FROM s3_objects WHERE user_id = ?1)
+                + (SELECT COALESCE(SUM(size), 0) FROM s3_versions WHERE user_id = ?1) AS s`,
+        )
         .bind(a.user_id)
         .first<{ s: number }>();
       const actual = sum?.s ?? 0;
@@ -1321,6 +1625,36 @@ export async function purgeS3Account(ctx: Ctx, userId: string, batches = 8): Pro
       ),
     );
   }
+  // Older versions and delete markers too, Object Lock or not: a lock does not outlive the account
+  // (the owner's answer, ADR-092).
+  for (let i = 0; i < batches; i++) {
+    const { results } = await db
+      .prepare(
+        `SELECT bucket, key, version_id, blob_id, delete_marker FROM s3_versions WHERE user_id = ?1 LIMIT 500`,
+      )
+      .bind(userId)
+      .all<{
+        bucket: string;
+        key: string;
+        version_id: string;
+        blob_id: string;
+        delete_marker: number;
+      }>();
+    if (!results.length) break;
+    const keys = results.filter((r) => !r.delete_marker).map((r) => s3BlobKey(userId, r.blob_id));
+    if (keys.length) {
+      await ctx.env.BUCKET.delete(keys);
+      await deleteReplicas(ctx.env, keys);
+    }
+    await db
+      .prepare(
+        `DELETE FROM s3_versions WHERE user_id = ?1 AND (bucket, key, version_id) IN
+           (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]'), json_extract(value, '$[2]')
+            FROM json_each(?2))`,
+      )
+      .bind(userId, JSON.stringify(results.map((r) => [r.bucket, r.key, r.version_id])))
+      .run();
+  }
   const { results: ups } = await db
     .prepare(`SELECT * FROM s3_uploads WHERE user_id = ?1 LIMIT 50`)
     .bind(userId)
@@ -1328,7 +1662,8 @@ export async function purgeS3Account(ctx: Ctx, userId: string, batches = 8): Pro
   for (const up of ups) await dropUpload(ctx, db, up);
   const left = await db
     .prepare(
-      `SELECT 1 AS x FROM s3_objects WHERE user_id = ?1 UNION ALL SELECT 1 FROM s3_uploads WHERE user_id = ?1 LIMIT 1`,
+      `SELECT 1 AS x FROM s3_objects WHERE user_id = ?1 UNION ALL SELECT 1 FROM s3_uploads WHERE user_id = ?1
+       UNION ALL SELECT 1 FROM s3_versions WHERE user_id = ?1 LIMIT 1`,
     )
     .bind(userId)
     .first<{ x: number }>();
@@ -1357,13 +1692,21 @@ export async function processS3Scan(
   const account = await getAccount(ctx, msg.userId);
   if (!account || account.status === 'deleting') return 'noop';
   const db = await indexDb(ctx.env, account.indexBinding);
-  const row = await db
-    .prepare(
-      `SELECT * FROM s3_objects WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`,
-    )
-    .bind(msg.bucket, msg.key, msg.userId, msg.blobId)
-    .first<ObjectRow>();
-  // Replaced or deleted since: nothing to scan.
+  const find = (table: string) =>
+    db
+      .prepare(
+        `SELECT * FROM ${table} WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`,
+      )
+      .bind(msg.bucket, msg.key, msg.userId, msg.blobId)
+      .first<ObjectRow>();
+  // Replaced since, in a versioned bucket: the bytes are an older version now, still scanned (ADR-092).
+  let table: 's3_objects' | 's3_versions' = 's3_objects';
+  let row = await find(table);
+  if (!row) {
+    table = 's3_versions';
+    row = await find(table);
+  }
+  // Deleted since: nothing to scan.
   if (!row || (row.scan_status !== 'pending' && row.scan_status !== 'error')) return 'noop';
   const cfg = await ctx.config();
   const r2Key = s3BlobKey(msg.userId, msg.blobId);
@@ -1378,7 +1721,7 @@ export async function processS3Scan(
   if (result.status === 'error') {
     if (attempts >= cfg.scan_max_attempts) {
       await db
-        .prepare(`UPDATE s3_objects SET scan_status = 'error' WHERE ${same}`)
+        .prepare(`UPDATE ${table} SET scan_status = 'error' WHERE ${same}`)
         .bind(msg.bucket, msg.key, msg.userId, msg.blobId)
         .run();
       await ctx.env.NOTIFY_QUEUE.send({
@@ -1431,17 +1774,21 @@ export async function processS3Scan(
   }
   if (status !== 'infected') {
     await db
-      .prepare(`UPDATE s3_objects SET scan_status = ?5, sha256 = ?6 WHERE ${same}`)
+      .prepare(`UPDATE ${table} SET scan_status = ?5, sha256 = ?6 WHERE ${same}`)
       .bind(msg.bucket, msg.key, msg.userId, msg.blobId, status, result.sha256)
       .run();
     // Passed: a 3-copy plan's other two copies (ADR-047).
     await replicateObject(ctx, account, row);
     return status;
   }
-  const gone = await db
-    .prepare(`DELETE FROM s3_objects WHERE ${same} RETURNING size`)
-    .bind(msg.bucket, msg.key, msg.userId, msg.blobId)
-    .first<{ size: number }>();
+  // An infected version goes whatever its lock: if it was the current one, the one before it is.
+  const [del] = await db.batch([
+    db
+      .prepare(`DELETE FROM ${table} WHERE ${same} RETURNING size`)
+      .bind(msg.bucket, msg.key, msg.userId, msg.blobId),
+    ...promoteNewest(db, msg.bucket, msg.key, msg.userId),
+  ]);
+  const gone = del?.results[0] as { size: number } | undefined;
   if (gone) await commitBytes(ctx, msg.userId, 0, -gone.size);
   await dropBlob(ctx, msg.userId, msg.blobId);
   if (result.sha256) {
@@ -1463,14 +1810,43 @@ export async function processS3Scan(
 
 // ───────────────────────────── tags (ADR-076) ─────────────────────────────
 
+/** The row a request names: the current version, or the one in `versionId` (ADR-092). */
+export async function namedVersion(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  bucket: string,
+  key: string,
+  versionId?: string | null,
+): Promise<{ row: ObjectRow; table: 's3_objects' | 's3_versions' }> {
+  if (!versionId) {
+    const row = await getObjectRow(ctx, account, bucket, key);
+    if (!row) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });
+    return { row, table: 's3_objects' };
+  }
+  checkVersionId(versionId);
+  const db = await indexDb(ctx.env, account.indexBinding);
+  const v = await getVersionRow(db, account.userId, bucket, key, versionId);
+  if (!v)
+    throw new S3Error('NoSuchVersion', 'The specified version does not exist.', {
+      Key: key,
+      VersionId: versionId,
+    });
+  if (v.delete_marker)
+    throw new S3Error(
+      'MethodNotAllowed',
+      'The specified method is not allowed against this resource.',
+    );
+  return { row: v, table: v.is_latest ? 's3_objects' : 's3_versions' };
+}
+
 export async function getObjectTags(
   ctx: Ctx,
   account: Pick<S3Account, 'userId' | 'indexBinding'>,
   bucket: string,
   key: string,
+  versionId?: string | null,
 ): Promise<Tag[]> {
-  const row = await getObjectRow(ctx, account, bucket, key);
-  if (!row) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });
+  const { row } = await namedVersion(ctx, account, bucket, key, versionId);
   return parseTags(row.tags_json);
 }
 
@@ -1481,11 +1857,15 @@ export async function setObjectTags(
   bucket: string,
   key: string,
   tags: Tag[],
+  versionId?: string | null,
 ): Promise<void> {
   const db = await indexDb(ctx.env, account.indexBinding);
+  const { row, table } = await namedVersion(ctx, account, bucket, key, versionId);
   const res = await db
-    .prepare(`UPDATE s3_objects SET tags_json = ?4 WHERE bucket = ?1 AND key = ?2 AND user_id = ?3`)
-    .bind(bucket, key, account.userId, tagsJson(tags))
+    .prepare(
+      `UPDATE ${table} SET tags_json = ?5 WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`,
+    )
+    .bind(bucket, key, account.userId, row.blob_id, tagsJson(tags))
     .run();
   if (!res.meta.changes)
     throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });

@@ -50,7 +50,7 @@ tercatat di `PROGRESS.md` · **Niche** = berguna untuk sebagian orang. Ukuran: S
 | S2  | Tulis bersyarat `If-None-Match` / `If-Match` (sekarang diabaikan)  | Wajib (bug) | S      | –          | selesai (ADR-068) |
 | S3  | Lifecycle: hapus otomatis, batalkan multipart menggantung          | Wajib       | M      | –          | selesai (ADR-072) |
 | S4  | Upload multipart dari halaman `/s3`                                | Sisa        | S      | –          | selesai (ADR-075) |
-| S5  | Versioning + Object Lock                                           | Niche       | L      | S3         | belum             |
+| S5  | Versioning + Object Lock                                           | Niche       | L      | S3         | selesai (ADR-092) |
 | S6  | Kelas Infrequent Access                                            | Niche       | M      | S3         | belum             |
 | S7  | Website statis di domain sendiri                                   | Niche       | M      | –          | batal (ADR-070)   |
 | S8  | Tagging, GetObject `partNumber`, checksum, PostObject              | Niche       | M      | –          | selesai (ADR-076) |

@@ -283,7 +283,9 @@ describe('File request links (D3, ADR-086)', () => {
         })
       ).status,
     ).toBe(404);
-    expect((await anon(rt, 'GET', `${api(a).slice(0, -1)}x`)).status).toBe(404);
+    // A changed last character (never the same one it had) is not found.
+    const bent = `${api(a).slice(0, -1)}${api(a).endsWith('x') ? 'y' : 'x'}`;
+    expect((await anon(rt, 'GET', bent)).status).toBe(404);
     // The owner's own upload ids are not reachable through a link.
     const mine = await owner.req('POST', '/api/uploads', {
       parentId: folder.id,

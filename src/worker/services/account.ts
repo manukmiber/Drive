@@ -121,7 +121,7 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
         userId,
       ),
       buckets: await q(
-        'SELECT name, public, created_at, cors_json, logging_json FROM s3_buckets WHERE user_id = ?1',
+        'SELECT name, public, created_at, cors_json, logging_json, lifecycle_json, versioning, object_lock_json FROM s3_buckets WHERE user_id = ?1',
         userId,
       ),
       plan:

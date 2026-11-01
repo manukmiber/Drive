@@ -98,6 +98,10 @@ lewat fase R di `docs/ROADMAP.md`.
   satu tulis index per batch; cron `media_backfill` untuk file lama; `GET /api/gallery` (+ v1) dengan sintaks D6;
   halaman `/galeri` (grid tervirtualisasi per bulan/hari, pilih banyak, pratinjau berurutan, thumbnail dibuat di
   browser bila perlu), di sidebar dan navigasi bawah HP; "Tampilkan sebagai galeri" di folder dan hasil cari.
+- [x] S5 Versioning + Object Lock Zeiko S3 (ADR-092, 2026-11-01): `s3_versions` di index per akun (v7), versi terbaru
+  tetap di `s3_objects`; Put/GetBucketVersioning, ListObjectVersions, `versionId` di GET/HEAD/DELETE/Copy/tagging,
+  delete marker, pemulihan, versi lama dihitung ke kuota; lifecycle NoncurrentVersionExpiration +
+  ExpiredObjectDeleteMarker; halaman `/s3`: saklar versi, riwayat versi, file terhapus. Migrasi D1 0022.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

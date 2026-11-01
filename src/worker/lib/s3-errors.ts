@@ -43,6 +43,11 @@ const STATUS = {
   NoSuchBucket: 404,
   NoSuchCORSConfiguration: 404,
   NoSuchKey: 404,
+  IllegalVersioningConfigurationException: 400,
+  NoSuchObjectLockConfiguration: 404,
+  ObjectLockConfigurationNotFoundError: 404,
+  InvalidBucketState: 409,
+  NoSuchVersion: 404,
   NoSuchLifecycleConfiguration: 404,
   NoSuchUpload: 404,
   NotImplemented: 501,
@@ -67,6 +72,8 @@ export class S3Error extends Error {
     message?: string,
     /** Extra elements in the error body (e.g. BucketName). */
     readonly extra: Record<string, string> = {},
+    /** Extra response headers (e.g. x-amz-delete-marker, ADR-092). */
+    readonly headers: Record<string, string> = {},
   ) {
     super(message ?? code);
     this.name = 'S3Error';
@@ -82,7 +89,11 @@ export function s3ErrorResponse(
   requestId: string,
   head: boolean,
 ): Response {
-  const headers = new Headers({ 'x-amz-request-id': requestId, 'Cache-Control': 'no-store' });
+  const headers = new Headers({
+    ...e.headers,
+    'x-amz-request-id': requestId,
+    'Cache-Control': 'no-store',
+  });
   // HEAD responses have no body; 304 never has one.
   if (head || e.status === 304) return new Response(null, { status: e.status, headers });
   const extra = Object.entries(e.extra)

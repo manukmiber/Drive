@@ -60,6 +60,16 @@ import {
   setBucketLogging,
 } from '../services/s3-stats';
 import { getFromAnyCopy } from '../services/s3-replicas';
+import {
+  checkVersionId,
+  getVersionRow,
+  latestMarker,
+  listObjectVersions,
+  setBucketVersioning,
+  versionIdOf,
+  versioningOf,
+} from '../services/s3-versions';
+import { indexDb } from '../services/s3-index';
 import { s3UrlOwner } from '../services/s3-urls';
 import {
   bucketCors,
@@ -101,7 +111,9 @@ import {
   createUpload,
   deleteBucket,
   deleteObjects,
+  deleteVersion,
   getObjectRow,
+  namedVersion,
   getObjectTags,
   setObjectTags,
   listObjects,
@@ -164,7 +176,6 @@ const UNSUPPORTED_SUB = [
   'retention',
   'select',
   'torrent',
-  'versions',
   'website',
 ];
 
@@ -313,6 +324,22 @@ function scopeAllows(scope: KeyScope, need: Need, bucket: string | null, key?: s
 }
 
 /** Refuses a signed request its key's scope doesn't cover; `key` = an object key or a list prefix. */
+/**
+ * x-amz-bypass-governance-retention (ADR-092): only a key with full access may use it (S1);
+ * anything else asking for it is refused rather than quietly ignored.
+ */
+function governanceBypass(r: Req): boolean {
+  if (r.raw.headers.get('x-amz-bypass-governance-retention')?.toLowerCase() !== 'true')
+    return false;
+  const { scope } = needAuth(r);
+  if (scope.buckets !== null || scope.prefix !== null || scope.access !== 'rw')
+    throw new S3Error(
+      'AccessDenied',
+      'Only a key with full access may bypass governance-mode retention.',
+    );
+  return true;
+}
+
 function permit(r: Req, need: Need, bucket: string | null, key?: string): void {
   if (r.auth && !scopeAllows(r.auth.scope, need, bucket, key))
     throw new S3Error('AccessDenied', 'Access Denied');
@@ -592,12 +619,14 @@ function aclPublic(value: string | null): boolean | null {
   );
 }
 
-function parseCopySource(v: string): { bucket: string; key: string } {
+function parseCopySource(v: string): { bucket: string; key: string; versionId: string | null } {
   let s = v.trim();
   const q = s.indexOf('?');
+  let versionId: string | null = null;
   if (q !== -1) {
-    if (!/^\?versionId=null$/.test(s.slice(q)))
-      throw new S3Error('InvalidArgument', 'Zeiko S3 has no object versions.');
+    const m = /^\?versionId=([^&]+)$/.exec(s.slice(q));
+    if (!m) throw new S3Error('InvalidArgument', 'Copy Source can only name a versionId.');
+    versionId = checkVersionId(decodeComponent(m[1]!));
     s = s.slice(0, q);
   }
   s = decodeComponent(s);
@@ -608,7 +637,7 @@ function parseCopySource(v: string): { bucket: string; key: string } {
       'InvalidArgument',
       'Copy Source must mention the source bucket and key: sourcebucket/sourcekey.',
     );
-  return { bucket: s.slice(0, slash), key: s.slice(slash + 1) };
+  return { bucket: s.slice(0, slash), key: s.slice(slash + 1), versionId };
 }
 
 function owner(userId: string): XmlObject {
@@ -757,7 +786,8 @@ async function bucketOp(r: Req): Promise<Response> {
     !q.has('acl') &&
     !q.has('cors') &&
     !q.has('logging') &&
-    !q.has('lifecycle')
+    !q.has('lifecycle') &&
+    !q.has('versioning')
   ) {
     if (sub)
       throw new S3Error('NotImplemented', `The ${sub} configuration is not supported by Zeiko S3.`);
@@ -780,6 +810,8 @@ async function bucketOp(r: Req): Promise<Response> {
   if (q.has('cors')) return corsOp(r, bucket);
   if (q.has('logging')) return loggingOp(r, bucket);
   if (q.has('lifecycle')) return lifecycleOp(r, bucket);
+  if (q.has('versioning')) return versioningOp(r, bucket);
+  if (q.has('versions') && r.method === 'GET') return listVersions(r, bucket);
   switch (r.method) {
     case 'HEAD':
       r.op = 'HeadBucket';
@@ -814,10 +846,6 @@ async function bucketOp(r: Req): Promise<Response> {
           `<?xml version="1.0" encoding="UTF-8"?>\n<LocationConstraint xmlns="${S3_NS}">${S3_REGION}</LocationConstraint>`,
         );
       }
-      if (q.has('versioning')) {
-        r.op = 'GetBucketVersioning';
-        return xmlResponse(xmlDoc('VersioningConfiguration', {}));
-      }
       if (q.has('acl')) {
         r.op = 'GetBucketAcl';
         permit(r, 'read', name);
@@ -834,6 +862,107 @@ async function bucketOp(r: Req): Promise<Response> {
         'The specified method is not allowed against this resource.',
       );
   }
+}
+
+/** Get/PutBucketVersioning (ADR-092). There is no way back to unversioned, as on Amazon. */
+async function versioningOp(r: Req, bucket: BucketRow): Promise<Response> {
+  const auth = needAuth(r);
+  if (r.method === 'GET') {
+    r.op = 'GetBucketVersioning';
+    const v = versioningOf(bucket);
+    return xmlResponse(xmlDoc('VersioningConfiguration', v ? { Status: v } : {}));
+  }
+  if (r.method !== 'PUT')
+    throw new S3Error(
+      'MethodNotAllowed',
+      'The specified method is not allowed against this resource.',
+    );
+  r.op = 'PutBucketVersioning';
+  permit(r, 'manage', bucket.name);
+  const xml = await readSmallBody(r);
+  if (!xmlElements(xml, 'VersioningConfiguration').length)
+    throw new S3Error(
+      'MalformedXML',
+      'The XML you provided was not well-formed or did not validate against our published schema.',
+    );
+  if (xmlText(xml, 'MfaDelete') === 'Enabled')
+    throw new S3Error('NotImplemented', 'MFA Delete is not supported by Zeiko S3.');
+  const status = xmlText(xml, 'Status');
+  if (status !== 'Enabled' && status !== 'Suspended')
+    throw new S3Error(
+      'IllegalVersioningConfigurationException',
+      'The Versioning element must be specified with Status Enabled or Suspended.',
+    );
+  await setBucketVersioning(r.ctx, auth.userId, bucket.name, status);
+  return new Response(null, { status: 200 });
+}
+
+/** ListObjectVersions (ADR-092): every version and delete marker, a page at a time. */
+async function listVersions(r: Req, bucket: BucketRow): Promise<Response> {
+  const auth = needAuth(r);
+  r.op = 'ListObjectVersions';
+  const q = r.query;
+  const encoding = q.get('encoding-type');
+  if (encoding !== undefined && encoding !== 'url')
+    throw new S3Error('InvalidArgument', 'Invalid Encoding Method specified in Request');
+  const enc = (s: string) => (encoding === 'url' ? urlEncodeS3(s) : s);
+  const prefix = q.get('prefix') ?? '';
+  permit(r, 'read', bucket.name, prefix);
+  const delimiter = q.get('delimiter') ?? '';
+  const maxKeys = maxParam(q, 'max-keys', 1000, 1000);
+  const keyMarker = q.get('key-marker') ?? '';
+  const versionIdMarker = q.get('version-id-marker') ?? '';
+  if (versionIdMarker && !keyMarker)
+    throw new S3Error(
+      'InvalidArgument',
+      'A version-id marker cannot be specified without a key marker.',
+    );
+  const res = await listObjectVersions(r.ctx, auth.account, bucket.name, {
+    prefix,
+    delimiter,
+    maxKeys,
+    ...(keyMarker ? { keyMarker } : {}),
+    ...(versionIdMarker ? { versionIdMarker: checkVersionId(versionIdMarker) } : {}),
+  });
+  const me = owner(auth.userId);
+  const versions = res.versions.filter((v) => !v.deleteMarker);
+  const markers = res.versions.filter((v) => v.deleteMarker);
+  return xmlResponse(
+    xmlDoc('ListVersionsResult', {
+      Name: bucket.name,
+      Prefix: enc(prefix),
+      KeyMarker: enc(keyMarker),
+      VersionIdMarker: versionIdMarker,
+      ...(res.truncated && res.nextKeyMarker !== null
+        ? {
+            NextKeyMarker: enc(res.nextKeyMarker),
+            ...(res.nextVersionIdMarker ? { NextVersionIdMarker: res.nextVersionIdMarker } : {}),
+          }
+        : {}),
+      MaxKeys: maxKeys,
+      ...(delimiter ? { Delimiter: enc(delimiter) } : {}),
+      IsTruncated: res.truncated,
+      ...(encoding ? { EncodingType: encoding } : {}),
+      Version: versions.map((v) => ({
+        Key: enc(v.key),
+        VersionId: v.versionId,
+        IsLatest: v.isLatest,
+        LastModified: iso(v.modifiedAt),
+        ETag: quoted(v.etag),
+        Size: v.size,
+        StorageClass: 'STANDARD',
+        Owner: me,
+      })),
+      DeleteMarker: markers.map((v) => ({
+        Key: enc(v.key),
+        VersionId: v.versionId,
+        IsLatest: v.isLatest,
+        LastModified: iso(v.modifiedAt),
+        Owner: me,
+      })),
+      CommonPrefixes: res.prefixes.map((p) => ({ Prefix: enc(p) })),
+    }),
+  );
 }
 
 /** Get/Put/DeleteBucketCors (ADR-055). */
@@ -980,9 +1109,12 @@ async function deleteMany(r: Req, bucket: BucketRow): Promise<Response> {
     );
   const quiet = xmlText(xml, 'Quiet') === 'true';
   const ok: string[] = [];
+  const named: Array<{ key: string; versionId: string }> = [];
   const errors: XmlObject[] = [];
+  const bypass = governanceBypass(r);
   for (const o of objects) {
     const key = xmlText(o, 'Key') ?? '';
+    const versionId = xmlText(o, 'VersionId');
     try {
       validateKey(key);
       if (!scopeAllows(auth.scope, 'write', bucket.name, key))
@@ -994,16 +1126,38 @@ async function deleteMany(r: Req, bucket: BucketRow): Promise<Response> {
           'NotImplemented',
           `Deleting with the ${cond} condition is not supported.`,
         );
-      ok.push(key);
+      if (versionId !== null) named.push({ key, versionId: checkVersionId(versionId) });
+      else ok.push(key);
     } catch (e) {
       const err = isS3Error(e) ? e : new S3Error('InternalError');
-      errors.push({ Key: key, Code: err.code, Message: err.message });
+      errors.push({
+        Key: key,
+        ...(versionId ? { VersionId: versionId } : {}),
+        Code: err.code,
+        Message: err.message,
+      });
     }
   }
-  await deleteObjects(r.ctx, auth.account, bucket.name, ok);
+  const done = await deleteObjects(r.ctx, auth.account, bucket.name, ok, versioningOf(bucket));
+  // Named versions one by one: each may be kept by Object Lock on its own (ADR-092).
+  for (const n of named) {
+    try {
+      done.push(await deleteVersion(r.ctx, auth.account, bucket.name, n.key, n.versionId, bypass));
+    } catch (e) {
+      const err = isS3Error(e) ? e : new S3Error('InternalError');
+      errors.push({ Key: n.key, VersionId: n.versionId, Code: err.code, Message: err.message });
+    }
+  }
   return xmlResponse(
     xmlDoc('DeleteResult', {
-      Deleted: quiet ? [] : ok.map((k) => ({ Key: k })),
+      Deleted: quiet
+        ? []
+        : done.map((d) => ({
+            Key: d.key,
+            ...(d.versionId ? { VersionId: d.versionId } : {}),
+            ...(d.deleteMarker ? { DeleteMarker: true } : {}),
+            ...(d.markerVersionId ? { DeleteMarkerVersionId: d.markerVersionId } : {}),
+          })),
       Error: errors,
     }),
   );
@@ -1105,8 +1259,58 @@ async function readObject(
         'Cannot specify both Range header and partNumber query parameter',
       );
   }
-  const row = await getObjectRow(r.ctx, account, bucket.name, r.key!);
-  if (!row) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: r.key! });
+  const versionId = r.query.get('versionId');
+  const versioned = versioningOf(bucket) !== '';
+  let row: ObjectRow | null;
+  if (versionId !== undefined) {
+    // Older versions are for the owner's keys only; strangers read what is current (ADR-092).
+    if (!r.auth) throw new S3Error('AccessDenied', 'Access Denied');
+    const db = await indexDb(r.ctx.env, account.indexBinding);
+    const v = await getVersionRow(
+      db,
+      account.userId,
+      bucket.name,
+      r.key!,
+      checkVersionId(versionId),
+    );
+    if (!v)
+      throw new S3Error('NoSuchVersion', 'The specified version does not exist.', {
+        Key: r.key!,
+        VersionId: versionId,
+      });
+    if (v.delete_marker)
+      throw new S3Error(
+        'MethodNotAllowed',
+        'The specified method is not allowed against this resource.',
+        { Method: r.method, ResourceType: 'DeleteMarker' },
+        {
+          'x-amz-delete-marker': 'true',
+          'x-amz-version-id': v.version_id,
+          'Last-Modified': new Date(v.modified_at).toUTCString(),
+          Allow: 'DELETE',
+        },
+      );
+    row = v;
+  } else {
+    row = await getObjectRow(r.ctx, account, bucket.name, r.key!);
+    if (!row) {
+      const marker =
+        versioned && r.auth
+          ? await latestMarker(
+              await indexDb(r.ctx.env, account.indexBinding),
+              account.userId,
+              bucket.name,
+              r.key!,
+            )
+          : null;
+      throw new S3Error(
+        'NoSuchKey',
+        'The specified key does not exist.',
+        { Key: r.key! },
+        marker ? { 'x-amz-delete-marker': 'true', 'x-amz-version-id': marker } : {},
+      );
+    }
+  }
   r.objectSize = row.size;
   // Strangers only get objects the security scan has passed (SPEC §14.2: pending = owner only).
   if (!r.auth && row.scan_status !== 'clean' && row.scan_status !== 'skipped')
@@ -1132,6 +1336,7 @@ async function readObject(
     if (t !== null && modified > t) throw fail412();
   }
   const headers = objectHeaders(row, r);
+  if (versioned || row.version_id) headers.set('x-amz-version-id', versionIdOf(row));
   const tagCount = parseTags(row.tags_json).length;
   if (!head && r.auth && tagCount) headers.set('x-amz-tagging-count', String(tagCount));
   const notModified =
@@ -1288,9 +1493,11 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
     const tagging = (h.get('x-amz-tagging-directive') ?? 'COPY').toUpperCase();
     if (tagging !== 'COPY' && tagging !== 'REPLACE')
       throw new S3Error('InvalidArgument', 'Unknown tagging directive.');
+    const mode = versioningOf(bucket);
     const row = await copyObject(r.ctx, auth.account, {
       from,
       to: { bucket: bucket.name, key },
+      versioning: mode,
       replace: directive === 'REPLACE',
       contentType: h.get('content-type'),
       meta: metaFromHeaders(h),
@@ -1298,11 +1505,20 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       condition: writeCondition(h),
       ...(tagging === 'REPLACE' ? { tags: tagsFromHeader(h.get('x-amz-tagging')) ?? [] } : {}),
     });
+    const srcBucket = from.bucket === bucket.name ? bucket : await getBucket(r.ctx, from.bucket);
     return xmlResponse(
       xmlDoc('CopyObjectResult', { LastModified: iso(row.modified_at), ETag: quoted(row.etag) }),
+      200,
+      {
+        ...(mode ? { 'x-amz-version-id': versionIdOf(row) } : {}),
+        ...(from.versionId || (srcBucket && versioningOf(srcBucket))
+          ? { 'x-amz-copy-source-version-id': from.versionId ?? 'null' }
+          : {}),
+      },
     );
   }
   r.op = 'PutObject';
+  const mode = versioningOf(bucket);
   const condition = writeCondition(h);
   const md5Hex = contentMd5Hex(h);
   const meta = metaFromHeaders(h);
@@ -1319,11 +1535,16 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       condition,
       tags: tagsFromHeader(h.get('x-amz-tagging')),
       checksum: body.checksum ?? null,
+      versioning: mode,
       ...(body.verify ? { verify: body.verify } : {}),
     });
     return new Response(null, {
       status: 200,
-      headers: { ETag: quoted(row.etag), ...(await checksumHeaders(body.checksum)) },
+      headers: {
+        ETag: quoted(row.etag),
+        ...(mode ? { 'x-amz-version-id': versionIdOf(row) } : {}),
+        ...(await checksumHeaders(body.checksum)),
+      },
     });
   } catch (e) {
     throw body.failure() ?? e;
@@ -1444,8 +1665,27 @@ async function objectOp(r: Req): Promise<Response> {
       r.op = 'DeleteObject';
       noConditions(r);
       validateKey(key);
-      await deleteObjects(r.ctx, auth.account, bucket.name, [key]);
-      return new Response(null, { status: 204 });
+      {
+        const versionId = q.get('versionId');
+        const [d] =
+          versionId !== undefined
+            ? [
+                await deleteVersion(
+                  r.ctx,
+                  auth.account,
+                  bucket.name,
+                  key,
+                  checkVersionId(versionId),
+                  governanceBypass(r),
+                ),
+              ]
+            : await deleteObjects(r.ctx, auth.account, bucket.name, [key], versioningOf(bucket));
+        const headers: Record<string, string> = {};
+        if (d?.deleteMarker) headers['x-amz-delete-marker'] = 'true';
+        const id = d?.versionId ?? d?.markerVersionId;
+        if (id) headers['x-amz-version-id'] = id;
+        return new Response(null, { status: 204, headers });
+      }
     case 'POST':
       if (q.has('uploads')) {
         r.op = 'CreateMultipartUpload';
@@ -1505,6 +1745,9 @@ async function objectOp(r: Req): Promise<Response> {
         );
         const origin = r.ctx.env.S3_ORIGIN!;
         const sum = storedChecksum(row.checksum_json);
+        const versionHeader: Record<string, string> = versioningOf(bucket)
+          ? { 'x-amz-version-id': versionIdOf(row) }
+          : {};
         return xmlResponse(
           xmlDoc('CompleteMultipartUploadResult', {
             Location: `${origin}/${encodeURIComponent(bucket.name)}/${key.split('/').map(encodeURIComponent).join('/')}`,
@@ -1513,6 +1756,8 @@ async function objectOp(r: Req): Promise<Response> {
             ETag: quoted(row.etag),
             ...(sum ? { [`Checksum${sum.a}`]: sum.v, ChecksumType: sum.t } : {}),
           }),
+          200,
+          versionHeader,
         );
       }
       throw new S3Error('NotImplemented', 'This POST request is not supported by Zeiko S3.');
@@ -1546,8 +1791,7 @@ async function attributesOp(
     );
   if (wanted.some((w) => !OBJECT_ATTRIBUTES.includes(w)))
     throw new S3Error('InvalidArgument', 'Invalid attribute name specified.');
-  const row = await getObjectRow(r.ctx, account, bucket.name, key);
-  if (!row) throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });
+  const { row } = await namedVersion(r.ctx, account, bucket.name, key, r.query.get('versionId'));
   const sum = storedChecksum(row.checksum_json);
   const body: XmlObject = {};
   if (wanted.includes('ETag')) body.ETag = row.etag;
@@ -1584,6 +1828,7 @@ async function attributesOp(
   if (wanted.includes('ObjectSize')) body.ObjectSize = row.size;
   return xmlResponse(xmlDoc('GetObjectAttributesResponse', body), 200, {
     'Last-Modified': new Date(row.modified_at).toUTCString(),
+    ...(versioningOf(bucket) || row.version_id ? { 'x-amz-version-id': versionIdOf(row) } : {}),
   });
 }
 
@@ -1595,22 +1840,28 @@ async function taggingOp(
   key: string,
 ): Promise<Response> {
   validateKey(key);
+  const versionId = r.query.get('versionId');
+  const vh: Record<string, string> = versionId ? { 'x-amz-version-id': versionId } : {};
   switch (r.method) {
     case 'GET':
       r.op = 'GetObjectTagging';
-      return xmlResponse(taggingXml(await getObjectTags(r.ctx, account, bucket.name, key)));
+      return xmlResponse(
+        taggingXml(await getObjectTags(r.ctx, account, bucket.name, key, versionId)),
+        200,
+        vh,
+      );
     case 'PUT': {
       r.op = 'PutObjectTagging';
       noConditions(r);
       const tags = tagsFromXml(await readSmallBody(r));
-      await setObjectTags(r.ctx, account, bucket.name, key, tags);
-      return new Response(null, { status: 200 });
+      await setObjectTags(r.ctx, account, bucket.name, key, tags, versionId);
+      return new Response(null, { status: 200, headers: vh });
     }
     case 'DELETE':
       r.op = 'DeleteObjectTagging';
       noConditions(r);
-      await setObjectTags(r.ctx, account, bucket.name, key, []);
-      return new Response(null, { status: 204 });
+      await setObjectTags(r.ctx, account, bucket.name, key, [], versionId);
+      return new Response(null, { status: 204, headers: vh });
     default:
       throw new S3Error(
         'MethodNotAllowed',
