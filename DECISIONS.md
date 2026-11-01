@@ -2435,3 +2435,59 @@ Tanggal: 2026-11-01. Status: diterima (pemilik: "Sekalian kerjai. D2 dan D3 abis
 Test (`file-requests.test.ts`, IDOR): alur pengirim lengkap (subfolder per nama, kuota pemilik, satu notifikasi per jam,
 IP di-hash), wajib nama, password, jumlah, ukuran, tenggat dengan jam palsu, dicabut, kuota habis tanpa sisa cadangan,
 token/pass tidak bisa dipakai di link lain, tanda tangan salah 404, file EICAR ditolak scan, folder di Sampah/dihapus.
+
+## ADR-087 — D16: Brankas terenkripsi end-to-end (analisis, belum dibangun)
+
+Tanggal: 2026-11-01. Status: **diusulkan**, menunggu pemilik. Tidak ada kode untuk ini.
+
+**Apa itu.** Satu folder khusus "Brankas" yang isinya dienkripsi di browser/aplikasi sebelum diunggah. Server hanya
+menyimpan byte acak (nama file juga dienkripsi). Kunci tidak pernah sampai ke Zeiko.
+
+**Yang otomatis hilang di Brankas** (berlaku untuk semua pilihan di bawah):
+- Pemindaian: ClamAV, VirusTotal (ADR-046), dan pencocokan hash CSAM/blocklist (SPEC §14) tidak bisa melihat isinya.
+  Hash blocklist juga tidak bisa dipakai, karena ciphertext tiap upload berbeda.
+- Pemrosesan server: Kompres server (ADR-031), pratinjau `/p`, thumbnail, cari kembar (D11), cari isi/OCR (D6/D7),
+  galeri (D8). Yang tetap bisa: pratinjau dan editor di browser setelah didekripsi (ADR-050/051 sudah jalan di browser).
+- Dedup di dalam pool juga hilang (ciphertext berbeda). Versi (D1) tetap bisa, karena tiap versi blob sendiri.
+
+**Takedown dan laporan (Permenkominfo 5/2020, ToS §3/§6).** Kewajiban PSE adalah memutus akses ke konten yang
+dilaporkan, bukan membacanya. Usulan:
+1. **Brankas tidak bisa dibagikan lewat link publik atau D3.** Konten ilegal yang tersebar lewat Zeiko hampir
+   selalu lewat link. Tanpa link publik, Brankas hanya untuk pemiliknya, dan risiko penyebarannya setara dengan
+   menyimpan file terenkripsi sendiri.
+2. Kalau share Brankas tetap diinginkan: hanya ke akun tertentu (D2) dengan kunci yang dibungkus untuk penerima.
+   Laporan dari penerima menyertakan kunci file yang dilaporkan (dibuka di browser pelapor), jadi operator bisa
+   menilai isinya dan memutus akses (blokir blob, cabut izin, tangguhkan akun) dalam SLA 1×24 jam / 4 jam.
+3. Perintah aparat atas akun: Zeiko bisa menyerahkan ciphertext dan metadata (ukuran, waktu, IP sesi), bukan isinya.
+   Ini harus tertulis jelas di ToS dan Kebijakan Privasi (teks pemilik, ADR-045: perlu persetujuan pemilik).
+4. Batas yang membuat penyalahgunaan mahal: Brankas hanya untuk paket berbayar, kuota Brankas terpisah dan kecil
+   (mis. 10–20% kuota), tanpa upload anonim.
+
+**Lupa kunci.** Tanpa kunci, isi Brankas hilang selamanya; Zeiko tidak bisa membantu. Yang bisa: kode pemulihan
+(24 kata) ditampilkan sekali saat Brankas dibuat dan wajib dikonfirmasi; peringatan jelas di UI; opsi "hapus Brankas
+dan mulai lagi".
+
+**Dampak lain.** Keluarga: Brankas selalu di ruang pribadi, tidak pernah di Drive Keluarga (kepala keluarga tidak bisa
+melihat isinya). Ekspor data: ciphertext + manifest terenkripsi, plus alat dekripsi di browser. Hapus akun: sama dengan
+file lain. Index R2 (ADR-064): entri Brankas hanya membawa id, ukuran, waktu, dan nama terenkripsi.
+
+### Pilihan desain
+
+| | A. Passkey (WebAuthn PRF) | B. Kata sandi Brankas + Argon2id di browser | C. Gabungan: B sebagai dasar, passkey sebagai pembuka cepat |
+|---|---|---|---|
+| Cara kerja | Kunci utama dibungkus dengan output PRF dari passkey | Kunci utama dibungkus dengan kunci dari Argon2id(kata sandi) | Kunci utama dibungkus dua kali: kata sandi + tiap passkey |
+| Untung | Tanpa kata sandi baru; tahan phishing; cepat | Jalan di semua browser/HP; mudah dijelaskan | Bisa dibuka di perangkat mana pun, cepat di perangkat sendiri |
+| Rugi | PRF belum ada di semua browser/HP (Firefox Android, WebView lama); kehilangan semua passkey = kehilangan Brankas | Kata sandi lemah bisa ditebak offline dari blob kunci; Argon2id lambat di HP murah (± 1–2 detik dengan 64 MB) | Paling banyak kode dan UI; dua jalan yang harus diaudit |
+| Pemulihan | Kode pemulihan wajib | Kode pemulihan wajib | Kode pemulihan wajib |
+
+Enkripsi file sama untuk semua pilihan: AES-256-GCM per potongan (sesuai part upload), kunci file acak dibungkus kunci
+utama, nama file dienkripsi terpisah. Semua lewat WebCrypto, tanpa library kripto baru kecuali Argon2 (WASM).
+
+**Usulan:** C kalau pemilik ingin Brankas dipakai luas; B kalau ingin cepat dan sederhana. Untuk keduanya: tanpa link
+publik (poin 1), hanya paket berbayar, kuota terpisah.
+
+**Pertanyaan untuk pemilik:**
+1. Jadi dibangun? Kalau ya: A, B, atau C?
+2. Boleh dibagikan sama sekali (tidak / hanya ke akun tertentu)? Usul: tidak, untuk versi pertama.
+3. Hanya paket berbayar, dan berapa kuota Brankas?
+4. Setuju teks ToS/Kebijakan Privasi ditambah bagian Brankas (perlu teks dari pemilik)?

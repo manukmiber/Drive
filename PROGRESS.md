@@ -71,6 +71,8 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] D3 link minta file (ADR-086, 2026-11-01): `file_requests` + `file_request_drops` di D1 akses
   (`migrations-access/0004`), `/minta/{r64}/{s32}` tanpa akun dan tanpa iklan, protokol multipart yang sama atas nama
   pemilik, subfolder per pengirim, pass 1 jam (Turnstile + password), notifikasi per jam `file_request_files`.
+- [x] D16 analisis Brankas end-to-end (ADR-087, diusulkan): dampak ke scan/takedown/pemulihan/share/keluarga/ekspor,
+  pilihan A passkey PRF, B kata sandi + Argon2id, C gabungan. **Menunggu jawaban pemilik** (4 pertanyaan di ADR).
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 
