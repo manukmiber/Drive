@@ -6,5 +6,8 @@
   "kvId": "da96bcde410f45f28c29c08de2bd6009",
   "zoneId": "5415dcb451e5e4d466fbab72618ec480",
   "s3Replicas": true,
-  "s3CnameTarget": "custom-s3.zeiko.biz.id"
+  "s3CnameTarget": "custom-s3.zeiko.biz.id",
+  "accessDb": {
+    "id": "8aef192e-e8d6-48e6-9ccd-655e86063dbb"
+  }
 }

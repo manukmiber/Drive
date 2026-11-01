@@ -52,8 +52,13 @@ lewat fase R di `docs/ROADMAP.md`.
 - [ ] Pemilik: migrasi `0021` di D1 remote (bersama `0020`) + deploy.
 - [x] R5 link share di D1 khusus akses (ADR-079, 2026-10-29): `ACCESS_DB` (`zeiko-access`), `migrations-access/`,
   tanpa join lintas database; tanpa binding, D1 utama yang menjawab.
-- [ ] Pemilik: buat `zeiko-access-production`, migrasi access, salin baris share, isi `accessDb` di
-  `deploy/production.json`, deploy (`DEPLOY.md`).
+- [x] Di production (pemilik, 2026-11-01, "Wrapping up itu setelah test langsung deploy semua"): migrasi `0020` dan
+  `0021` di D1 production (bookmark Time Travel sebelum migrasi
+  `00000277-00000000-00005116-78d6da3395f54ec28533bd9081a19532`); `zeiko-access-production`
+  (`8aef192e-e8d6-48e6-9ccd-655e86063dbb`) dibuat, migrasi access `0001`–`0004`, baris `shares` 28, `share_items` 28,
+  `share_sends` 2 disalin (token/OAuth/idempotency 0 baris); `accessDb` di `deploy/production.json`.
+- [ ] Deploy Worker `zeiko-production` dengan binding `ACCESS_DB` (`npm run build && npx wrangler deploy --env production
+  --containers-rollout=none`), lalu cek jumlah `shares` di D1 utama masih 28 (kalau bertambah, salin barisnya).
 - [x] R6 sebagian (ADR-080, 2026-10-29): token API, OAuth (grant, code), Idempotency-Key di D1 khusus akses. Sesi
   Better Auth tetap di D1 utama bersama `users` sampai R7.
 - [x] D11 cari file kembar (ADR-081, 2026-10-29): `/kembar`, `GET /api/drive/duplicates` (+ v1), dari index pribadi
