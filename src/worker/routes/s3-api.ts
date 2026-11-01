@@ -19,14 +19,18 @@ import {
   isCrc,
   type ChecksumAlg,
 } from '../lib/checksums';
-import { base64UrlDecode, base64UrlEncode, toHex } from '../lib/crypto';
+import { base64UrlDecode, base64UrlEncode, timingSafeEqual, toHex } from '../lib/crypto';
 import { parseRange } from '../lib/http';
 import { errorMessage, log } from '../lib/log';
 import { isS3Error, S3Error, s3ErrorResponse } from '../lib/s3-errors';
 import {
+  ALGORITHM,
   decodeComponent,
+  hmacHex,
+  parseAmzDate,
   parseAuth,
   parseQuery,
+  signingKey,
   STREAMING_SIGNED,
   STREAMING_SIGNED_TRAILER,
   STREAMING_UNSIGNED_TRAILER,
@@ -47,6 +51,7 @@ import {
 import { clientIp } from '../middleware/ratelimit';
 import { meterS3Egress } from '../services/s3-billing';
 import { parseTags, taggingXml, tagsFromHeader, tagsFromXml } from '../services/s3-tags';
+import { checkPostPolicy, isPostForm, readPostForm } from '../services/s3-post';
 import {
   bucketLogging,
   loggingXml,
@@ -222,15 +227,11 @@ function locate(
   return { bucket: decodeComponent(rest.slice(0, slash)), key: key || null };
 }
 
-async function authenticate(
-  ctx: Ctx,
-  req: Request,
-  url: URL,
-  pairs: Array<[string, string]>,
-): Promise<Auth | null> {
-  const parsed = parseAuth(req.headers, pairs);
-  if (!parsed) return null;
-  const key = await lookupKey(ctx, parsed.accessKeyId);
+type ActiveKey = NonNullable<Awaited<ReturnType<typeof lookupKey>>>;
+
+/** A key that exists, isn't revoked and hasn't expired (ADR-071). */
+async function activeKey(ctx: Ctx, accessKeyId: string): Promise<ActiveKey> {
+  const key = await lookupKey(ctx, accessKeyId);
   if (!key || key.revoked || key.accountStatus === 'deleting')
     throw new S3Error(
       'InvalidAccessKeyId',
@@ -238,15 +239,11 @@ async function authenticate(
     );
   if (key.scope.expiresAt !== null && Date.now() >= key.scope.expiresAt)
     throw new S3Error('InvalidAccessKeyId', 'The AWS Access Key Id you provided has expired.');
-  const verified = await verifySignature(
-    req.method,
-    url,
-    pairs,
-    req.headers,
-    parsed,
-    key.secret,
-    Date.now(),
-  );
+  return key;
+}
+
+/** The key's account, if it may act now: active, and paid up enough for `writing` (ADR-047). */
+async function keyAccount(ctx: Ctx, key: ActiveKey, writing: boolean): Promise<S3Account> {
   const account = await getAccount(ctx, key.userId);
   if (!account || account.status === 'deleting')
     throw new S3Error(
@@ -258,11 +255,32 @@ async function authenticate(
   // Unpaid bills (ADR-047): read-only still reads, lists and deletes; locked does nothing.
   if (account.billingState === 'locked')
     throw new S3Error('AccountProblem', 'This Zeiko S3 account is locked until its bill is paid.');
-  if (
-    account.billingState === 'readonly' &&
-    (req.method === 'PUT' || (req.method === 'POST' && !pairs.some(([k]) => k === 'delete')))
-  )
+  if (account.billingState === 'readonly' && writing)
     throw new S3Error('AccountProblem', 'Uploads are paused until the Zeiko S3 bill is paid.');
+  return account;
+}
+
+async function authenticate(
+  ctx: Ctx,
+  req: Request,
+  url: URL,
+  pairs: Array<[string, string]>,
+): Promise<Auth | null> {
+  const parsed = parseAuth(req.headers, pairs);
+  if (!parsed) return null;
+  const key = await activeKey(ctx, parsed.accessKeyId);
+  const verified = await verifySignature(
+    req.method,
+    url,
+    pairs,
+    req.headers,
+    parsed,
+    key.secret,
+    Date.now(),
+  );
+  const writing =
+    req.method === 'PUT' || (req.method === 'POST' && !pairs.some(([k]) => k === 'delete'));
+  const account = await keyAccount(ctx, key, writing);
   await touchKey(ctx, parsed.accessKeyId, key);
   return {
     accessKeyId: parsed.accessKeyId,
@@ -1601,6 +1619,151 @@ async function taggingOp(
   }
 }
 
+/** PostObject (ADR-076): an HTML form upload, allowed by a policy the bucket owner signed. */
+async function postObject(r: Req): Promise<Response> {
+  r.op = 'PostObject';
+  const bucket = await getBucket(r.ctx, r.bucket!);
+  if (!bucket)
+    throw new S3Error('NoSuchBucket', 'The specified bucket does not exist.', {
+      BucketName: r.bucket!,
+    });
+  const form = await readPostForm(r.raw);
+  const f = form.fields;
+  const need = (name: string) => {
+    const v = f.get(name);
+    if (v === undefined)
+      throw new S3Error('InvalidArgument', `Bucket POST must contain a field named '${name}'.`);
+    return v;
+  };
+  // Nobody uploads without the owner's policy (buckets are never publicly writable, ToS §4).
+  const policy = f.get('policy');
+  if (policy === undefined || !f.has('x-amz-signature'))
+    throw new S3Error('AccessDenied', 'Access Denied');
+  const keyField = need('key');
+  if (!form.file)
+    throw new S3Error('InvalidArgument', 'POST requires exactly one file upload per request.');
+  if (need('x-amz-algorithm') !== ALGORITHM)
+    throw new S3Error('InvalidArgument', 'Only AWS4-HMAC-SHA256 is supported.');
+  const credential = need('x-amz-credential').split('/');
+  const [accessKeyId, date, region, service, term] = credential;
+  if (
+    credential.length !== 5 ||
+    !accessKeyId ||
+    !/^\d{8}$/.test(date ?? '') ||
+    !region ||
+    service !== 's3' ||
+    term !== 'aws4_request'
+  )
+    throw new S3Error(
+      'InvalidArgument',
+      'x-amz-credential must be "<key>/<YYYYMMDD>/<region>/s3/aws4_request".',
+    );
+  const amzDate = need('x-amz-date');
+  if (parseAmzDate(amzDate) === null || amzDate.slice(0, 8) !== date)
+    throw new S3Error('InvalidArgument', 'x-amz-date is not valid for this credential.');
+  const key = await activeKey(r.ctx, accessKeyId);
+  const sk = await signingKey(key.secret, date!, region);
+  const signature = need('x-amz-signature');
+  if (!timingSafeEqual(await hmacHex(sk, policy), signature))
+    throw new S3Error(
+      'SignatureDoesNotMatch',
+      'The request signature we calculated does not match the signature you provided. Check your key and signing method.',
+    );
+  const account = await keyAccount(r.ctx, key, true);
+  await touchKey(r.ctx, accessKeyId, key);
+  const scope = `${date}/${region}/s3/aws4_request`;
+  r.auth = {
+    accessKeyId,
+    userId: key.userId,
+    account,
+    parsed: {
+      kind: 'header',
+      accessKeyId,
+      date: date!,
+      region,
+      service: 's3',
+      amzDate,
+      signedHeaders: [],
+      signature,
+      payloadHash: UNSIGNED_PAYLOAD,
+    },
+    verified: { signingKey: sk, scope, amzDate, signature },
+    scope: key.scope,
+  };
+  if (bucket.user_id !== key.userId) throw new S3Error('AccessDenied', 'Access Denied');
+  r.stats = bucket;
+  checkPostPolicy(policy, f, bucket.name, form.file.size, r.ctx.now());
+  const objectKey = keyField.replaceAll('${filename}', form.file.filename);
+  r.key = objectKey;
+  validateKey(objectKey);
+  permit(r, 'write', bucket.name, objectKey);
+  const acl = f.get('acl');
+  if (acl !== undefined && acl !== 'private' && !(acl === 'public-read' && bucket.public))
+    throw new S3Error(
+      'NotImplemented',
+      'Object ACLs are not supported; make the bucket public instead.',
+    );
+  if ([...f.keys()].some((k) => k.startsWith('x-amz-checksum-')))
+    throw new S3Error('NotImplemented', 'Checksums on POST uploads are not supported by Zeiko S3.');
+  const h = new Headers();
+  for (const [k, v] of f)
+    if (
+      k.startsWith('x-amz-meta-') ||
+      [
+        'cache-control',
+        'content-disposition',
+        'content-encoding',
+        'content-language',
+        'expires',
+      ].includes(k)
+    )
+      h.set(k, v);
+  const tagging = f.get('tagging');
+  r.bytesIn = form.file.size;
+  const row = await putObject(r.ctx, account, {
+    bucket: bucket.name,
+    key: objectKey,
+    body: form.file.stream,
+    size: form.file.size,
+    contentType: f.get('content-type') ?? form.file.contentType,
+    meta: metaFromHeaders(h),
+    tags: tagging !== undefined ? tagsFromXml(tagging) : null,
+  });
+  const etag = quoted(row.etag);
+  const location = `${r.ctx.env.S3_ORIGIN!}/${encodeURIComponent(bucket.name)}/${objectKey.split('/').map(encodeURIComponent).join('/')}`;
+  const redirect = f.get('success_action_redirect') ?? f.get('redirect');
+  if (redirect) {
+    let to: URL | null = null;
+    try {
+      to = new URL(redirect);
+    } catch {
+      // Not a URL: Amazon answers as if there were none.
+    }
+    if (to && (to.protocol === 'https:' || to.protocol === 'http:')) {
+      to.searchParams.set('bucket', bucket.name);
+      to.searchParams.set('key', objectKey);
+      to.searchParams.set('etag', etag);
+      return new Response(null, { status: 303, headers: { Location: to.toString(), ETag: etag } });
+    }
+  }
+  const status = f.get('success_action_status');
+  if (status === '201')
+    return xmlResponse(
+      xmlDoc('PostResponse', {
+        Location: location,
+        Bucket: bucket.name,
+        Key: objectKey,
+        ETag: etag,
+      }),
+      201,
+      { ETag: etag, Location: location },
+    );
+  return new Response(null, {
+    status: status === '200' ? 200 : 204,
+    headers: { ETag: etag, Location: location },
+  });
+}
+
 /** On an own address: only its owner's key, and only its owner's buckets (else they don't exist). */
 async function ownerOnly(r: Req): Promise<void> {
   if (r.hostOwner === null) return;
@@ -1616,6 +1779,9 @@ async function ownerOnly(r: Req): Promise<void> {
 
 async function dispatch(r: Req): Promise<Response> {
   await ownerOnly(r);
+  // An HTML form upload carries its signature in the form, not in the request (ADR-076).
+  if (r.bucket && r.key === null && r.method === 'POST' && !r.auth && isPostForm(r.raw.headers))
+    return postObject(r);
   if (!r.bucket) {
     if (r.method !== 'GET')
       throw new S3Error(

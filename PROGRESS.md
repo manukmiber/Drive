@@ -295,7 +295,8 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] 3. Checksum: CRC32/CRC32C/CRC64NVME/SHA-1/SHA-256 diperiksa (header, trailer aws-chunked), disimpan (index v6),
   dikembalikan dengan checksum mode; multipart COMPOSITE/FULL_OBJECT; GetObjectAttributes. CRC hanya sampai
   `s3_checksum_crc_max_bytes` (8 MiB, batas CPU Workers Free).
-- [ ] 4. PostObject.
+- [x] 4. PostObject (2026-11-01): form HTML + policy SigV4, kondisi Amazon, file dialirkan ke R2 tanpa ditampung,
+  jawaban 204/200/201/303; key harus aktif, milik pemilik bucket, izin `write`, akun tidak readonly.
 
 ## Upload multipart dari `/s3` (S4, ADR-075, 2026-10-29)
 - [x] File di atas satu part (32 MiB) naik per part lewat `/api/s3/buckets/:name/uploads/*`: paralel, coba ulang per

@@ -2054,6 +2054,30 @@ Test: `tests/integration/s3-part-number.test.ts`.
 
 Test: `tests/unit/checksums.test.ts`, `tests/integration/s3-checksums.test.ts`.
 
+### 4. PostObject (2026-11-01)
+- Upload dari form HTML (`POST /{bucket}` dengan `multipart/form-data`) seperti Amazon: field `key` (dengan
+  `${filename}`), `policy` base64 yang ditandatangani SigV4 (`x-amz-algorithm`, `-credential`, `-date`, `-signature`),
+  lalu `file`, yang harus menjadi field terakhir. Bisa dibuat dengan `createPresignedPost` dari
+  `@aws-sdk/s3-presigned-post` (devDependency, dipakai test).
+- **Tanpa policy tidak ada upload:** bucket tidak pernah bisa ditulis publik (ToS §4). Key penanda tangan harus aktif,
+  milik pemilik bucket, punya izin `write` untuk key itu (ADR-071), dan akunnya tidak readonly/terkunci (ADR-047).
+- **Policy:** `expiration`, kondisi `eq`, `starts-with`, `{field: value}`, dan `content-length-range`. Setiap field form
+  harus disebut di kondisi (kecuali `x-amz-signature`, `policy`, `file`, `x-ignore-*`), seperti Amazon. Error Amazon:
+  `AccessDenied` (kedaluwarsa, kondisi gagal, field lebih), `SignatureDoesNotMatch`, `EntityTooLarge`/`EntityTooSmall`,
+  `InvalidPolicyDocument`, `MalformedPOSTRequest`, `MaxMessageLengthExceeded`.
+- **Streaming** (`services/s3-post.ts`): field kecil dibaca dulu (paling banyak 20 KB, seperti Amazon), lalu file
+  dialirkan ke R2 tanpa ditampung. Ukurannya dihitung dari `Content-Length` dikurangi penutup form, karena R2 butuh
+  ukuran di depan; penutup dicek di ujung, dan kalau tidak cocok upload gagal tanpa tersimpan. Batas body 100 MB
+  (batas Cloudflare).
+- Field yang dipakai: `Content-Type` (atau tipe bagian file), `Cache-Control`, `Content-Disposition`,
+  `Content-Encoding`, `Content-Language`, `Expires`, `x-amz-meta-*`, `tagging` (XML). `acl` hanya `private`, atau
+  `public-read` di bucket publik. Checksum di form → `NotImplemented`.
+- Jawaban: 204 (bawaan), `success_action_status` 200 atau 201 (XML `PostResponse`), atau `success_action_redirect`
+  → 303 dengan `bucket`, `key`, `etag` di query.
+
+Test: `tests/integration/s3-post-object.test.ts` (SDK presigned post, kondisi, metadata, tag, jawaban, penolakan,
+kedaluwarsa dengan jam palsu, scope key, tagihan, bucket orang lain).
+
 ## ADR-077 — R2: Drive pribadi dibaca dari index R2; app menarik index dulu
 
 Tanggal: 2026-10-29. Status: diterima (pemilik: "Kerjakan roadmap yang sangat dibutuhkan oleh plan lain"). R2 adalah
