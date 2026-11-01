@@ -65,9 +65,15 @@ import {
   getVersionRow,
   latestMarker,
   listObjectVersions,
+  lockFromHeaders,
+  objectLockOf,
+  parseLockMode,
+  parseRetainUntil,
   setBucketVersioning,
+  setObjectLockConfig,
   versionIdOf,
   versioningOf,
+  type ObjectLockConfig,
 } from '../services/s3-versions';
 import { indexDb } from '../services/s3-index';
 import { s3UrlOwner } from '../services/s3-urls';
@@ -112,8 +118,12 @@ import {
   deleteBucket,
   deleteObjects,
   deleteVersion,
+  getLegalHold,
   getObjectRow,
+  getRetention,
   namedVersion,
+  putLegalHold,
+  putRetention,
   getObjectTags,
   setObjectTags,
   listObjects,
@@ -162,10 +172,8 @@ const UNSUPPORTED_SUB = [
   'encryption',
   'intelligent-tiering',
   'inventory',
-  'legal-hold',
   'metrics',
   'notification',
-  'object-lock',
   'ownershipControls',
   'policy',
   'policyStatus',
@@ -173,7 +181,6 @@ const UNSUPPORTED_SUB = [
   'replication',
   'requestPayment',
   'restore',
-  'retention',
   'select',
   'torrent',
   'website',
@@ -787,7 +794,8 @@ async function bucketOp(r: Req): Promise<Response> {
     !q.has('cors') &&
     !q.has('logging') &&
     !q.has('lifecycle') &&
-    !q.has('versioning')
+    !q.has('versioning') &&
+    !q.has('object-lock')
   ) {
     if (sub)
       throw new S3Error('NotImplemented', `The ${sub} configuration is not supported by Zeiko S3.`);
@@ -800,6 +808,11 @@ async function bucketOp(r: Req): Promise<Response> {
       name,
       aclPublic(r.raw.headers.get('x-amz-acl')) ?? false,
     );
+    // ADR-092: a bucket made with Object Lock keeps versions from the start, for good.
+    if (r.raw.headers.get('x-amz-bucket-object-lock-enabled')?.toLowerCase() === 'true') {
+      await setBucketVersioning(r.ctx, auth.userId, name, 'Enabled');
+      await setObjectLockConfig(r.ctx, auth.userId, name, { mode: null });
+    }
     return new Response(null, { status: 200, headers: { Location: `/${name}` } });
   }
   permit(r, 'any', name);
@@ -811,6 +824,7 @@ async function bucketOp(r: Req): Promise<Response> {
   if (q.has('logging')) return loggingOp(r, bucket);
   if (q.has('lifecycle')) return lifecycleOp(r, bucket);
   if (q.has('versioning')) return versioningOp(r, bucket);
+  if (q.has('object-lock')) return objectLockOp(r, bucket);
   if (q.has('versions') && r.method === 'GET') return listVersions(r, bucket);
   switch (r.method) {
     case 'HEAD':
@@ -895,6 +909,127 @@ async function versioningOp(r: Req, bucket: BucketRow): Promise<Response> {
     );
   await setBucketVersioning(r.ctx, auth.userId, bucket.name, status);
   return new Response(null, { status: 200 });
+}
+
+/** Get/PutObjectLockConfiguration (ADR-092). Once on, Object Lock stays on. */
+async function objectLockOp(r: Req, bucket: BucketRow): Promise<Response> {
+  const auth = needAuth(r);
+  if (r.method === 'GET') {
+    r.op = 'GetObjectLockConfiguration';
+    const c = objectLockOf(bucket);
+    if (!c)
+      throw new S3Error(
+        'ObjectLockConfigurationNotFoundError',
+        'Object Lock configuration does not exist for this bucket',
+        { BucketName: bucket.name },
+      );
+    return xmlResponse(
+      xmlDoc('ObjectLockConfiguration', {
+        ObjectLockEnabled: 'Enabled',
+        ...(c.mode
+          ? {
+              Rule: {
+                DefaultRetention: {
+                  Mode: c.mode,
+                  ...(c.years ? { Years: c.years } : { Days: c.days ?? 0 }),
+                },
+              },
+            }
+          : {}),
+      }),
+    );
+  }
+  if (r.method !== 'PUT')
+    throw new S3Error(
+      'MethodNotAllowed',
+      'The specified method is not allowed against this resource.',
+    );
+  r.op = 'PutObjectLockConfiguration';
+  permit(r, 'manage', bucket.name);
+  const xml = await readSmallBody(r);
+  const malformed = () =>
+    new S3Error(
+      'MalformedXML',
+      'The XML you provided was not well-formed or did not validate against our published schema.',
+    );
+  if (!xmlElements(xml, 'ObjectLockConfiguration').length) throw malformed();
+  if (xmlText(xml, 'ObjectLockEnabled') !== 'Enabled') throw malformed();
+  const config: ObjectLockConfig = { mode: null };
+  const retention = xmlElements(xml, 'DefaultRetention')[0];
+  if (retention !== undefined) {
+    config.mode = parseLockMode(xmlText(retention, 'Mode'));
+    const days = xmlText(retention, 'Days');
+    const years = xmlText(retention, 'Years');
+    if ((days === null) === (years === null)) throw malformed();
+    const n = Number(days ?? years);
+    if (!Number.isInteger(n) || n < 1 || n > (years ? 100 : 36_500))
+      throw new S3Error(
+        'InvalidArgument',
+        'Default retention period must be a positive integer value.',
+      );
+    if (days !== null) config.days = n;
+    else config.years = n;
+  }
+  await setObjectLockConfig(r.ctx, auth.userId, bucket.name, config);
+  return new Response(null, { status: 200 });
+}
+
+/** Get/PutObjectRetention and Get/PutObjectLegalHold (ADR-092), on a version or the current one. */
+async function objectLockStateOp(
+  r: Req,
+  account: S3Account,
+  bucket: BucketRow,
+  key: string,
+): Promise<Response> {
+  validateKey(key);
+  const versionId = r.query.get('versionId');
+  const vh: Record<string, string> = versionId ? { 'x-amz-version-id': versionId } : {};
+  const retention = r.query.has('retention');
+  if (r.method === 'GET') {
+    if (retention) {
+      r.op = 'GetObjectRetention';
+      const ret = await getRetention(r.ctx, account, bucket.name, key, versionId);
+      return xmlResponse(
+        xmlDoc('Retention', { Mode: ret.mode, RetainUntilDate: iso(ret.until) }),
+        200,
+        vh,
+      );
+    }
+    r.op = 'GetObjectLegalHold';
+    const on = await getLegalHold(r.ctx, account, bucket.name, key, versionId);
+    return xmlResponse(xmlDoc('LegalHold', { Status: on ? 'ON' : 'OFF' }), 200, vh);
+  }
+  if (r.method !== 'PUT')
+    throw new S3Error(
+      'MethodNotAllowed',
+      'The specified method is not allowed against this resource.',
+    );
+  if (!objectLockOf(bucket))
+    throw new S3Error('InvalidRequest', 'Bucket is missing Object Lock Configuration');
+  noConditions(r);
+  const xml = await readSmallBody(r);
+  if (retention) {
+    r.op = 'PutObjectRetention';
+    const mode = xmlText(xml, 'Mode');
+    const until = xmlText(xml, 'RetainUntilDate');
+    if ((mode === null) !== (until === null))
+      throw new S3Error(
+        'MalformedXML',
+        'Retention needs both Mode and RetainUntilDate, or neither.',
+      );
+    const next =
+      mode === null
+        ? null
+        : { mode: parseLockMode(mode), until: parseRetainUntil(until!, r.ctx.now()) };
+    await putRetention(r.ctx, account, bucket.name, key, versionId, next, governanceBypass(r));
+    return new Response(null, { status: 200, headers: vh });
+  }
+  r.op = 'PutObjectLegalHold';
+  const status = xmlText(xml, 'Status');
+  if (status !== 'ON' && status !== 'OFF')
+    throw new S3Error('MalformedXML', 'Legal Hold Status must be ON or OFF.');
+  await putLegalHold(r.ctx, account, bucket.name, key, versionId, status === 'ON');
+  return new Response(null, { status: 200, headers: vh });
 }
 
 /** ListObjectVersions (ADR-092): every version and delete marker, a page at a time. */
@@ -1337,6 +1472,14 @@ async function readObject(
   }
   const headers = objectHeaders(row, r);
   if (versioned || row.version_id) headers.set('x-amz-version-id', versionIdOf(row));
+  // Object Lock state, for the owner's keys (ADR-092).
+  if (r.auth) {
+    if (row.lock_mode && row.lock_until) {
+      headers.set('x-amz-object-lock-mode', row.lock_mode);
+      headers.set('x-amz-object-lock-retain-until-date', iso(row.lock_until));
+    }
+    if (row.legal_hold) headers.set('x-amz-object-lock-legal-hold', 'ON');
+  }
   const tagCount = parseTags(row.tags_json).length;
   if (!head && r.auth && tagCount) headers.set('x-amz-tagging-count', String(tagCount));
   const notModified =
@@ -1498,6 +1641,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       from,
       to: { bucket: bucket.name, key },
       versioning: mode,
+      lock: lockFromHeaders(h, bucket, r.ctx.now()),
       replace: directive === 'REPLACE',
       contentType: h.get('content-type'),
       meta: metaFromHeaders(h),
@@ -1536,6 +1680,7 @@ async function writeObject(r: Req, bucket: BucketRow): Promise<Response> {
       tags: tagsFromHeader(h.get('x-amz-tagging')),
       checksum: body.checksum ?? null,
       versioning: mode,
+      lock: lockFromHeaders(h, bucket, r.ctx.now()),
       ...(body.verify ? { verify: body.verify } : {}),
     });
     return new Response(null, {
@@ -1570,7 +1715,9 @@ async function objectOp(r: Req): Promise<Response> {
       q.has('acl') ||
       q.has('uploadId') ||
       q.has('tagging') ||
-      q.has('attributes')
+      q.has('attributes') ||
+      q.has('retention') ||
+      q.has('legal-hold')
     )
       throw new S3Error('AccessDenied', 'Access Denied');
     if (!bucket.public || bucket.blocked_at !== null)
@@ -1595,6 +1742,8 @@ async function objectOp(r: Req): Promise<Response> {
   const reading = (r.method === 'GET' || r.method === 'HEAD') && !q.has('uploadId');
   permit(r, reading ? 'read' : 'write', bucket.name, key);
   if (q.has('tagging')) return taggingOp(r, auth.account, bucket, key);
+  if (q.has('retention') || q.has('legal-hold'))
+    return objectLockStateOp(r, auth.account, bucket, key);
   if (q.has('attributes') && r.method === 'GET') return attributesOp(r, auth.account, bucket, key);
   switch (r.method) {
     case 'GET':
@@ -1700,6 +1849,7 @@ async function objectOp(r: Req): Promise<Response> {
           metaFromHeaders(r.raw.headers),
           tagsFromHeader(r.raw.headers.get('x-amz-tagging')),
           checksum,
+          lockFromHeaders(r.raw.headers, bucket, r.ctx.now()),
         );
         return xmlResponse(
           xmlDoc('InitiateMultipartUploadResult', {

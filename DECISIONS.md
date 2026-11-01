@@ -2708,3 +2708,21 @@ semua objek dihapus, termasuk yang dikunci."
 objek (bagian kedua ADR ini), lalu memakai `x-amz-checksum`/Content-MD5 (sudah ada). Belum ada: `NewerNoncurrentVersions`,
 SOSAPI (`.system-d26a9498-…/system.xml`/`capacity.xml` yang dibaca Veeam untuk kapasitas), dan replikasi per versi
 lintas akun.
+
+**Object Lock (commit kedua):**
+- `s3_buckets.object_lock_json` = `{mode, days?|years?}` (retensi bawaan, boleh kosong). CreateBucket dengan
+  `x-amz-bucket-object-lock-enabled: true` menyalakan versioning dan Object Lock sekaligus; PutObjectLockConfiguration
+  bisa menyalakannya di bucket yang versioning-nya `Enabled`. Sekali menyala tidak bisa dimatikan, dan versioning
+  bucket berkunci tidak bisa dijeda (`InvalidBucketState`).
+- Per versi: `lock_mode`, `lock_until`, `legal_hold` (di `s3_objects` dan `s3_versions`). Saat menulis: header
+  `x-amz-object-lock-mode` + `-retain-until-date` (harus berdua), `-legal-hold`; tanpa header = retensi bawaan bucket.
+  Multipart menyimpan permintaannya di `s3_uploads.lock_json`. Salinan tidak pernah mewarisi kunci sumbernya.
+  Meminta kunci di bucket tanpa Object Lock ditolak (`InvalidRequest`), tidak diam-diam diabaikan.
+- Put/GetObjectRetention dan Put/GetObjectLegalHold (dengan `versionId`). COMPLIANCE hanya bisa diperpanjang;
+  GOVERNANCE boleh diperkuat siapa saja, diperpendek/dihapus hanya dengan `x-amz-bypass-governance-retention: true`
+  dari **key akses penuh** (tanpa batas bucket/prefix, baca-tulis; S1). Key terbatas yang memintanya ditolak.
+- Hapus tanpa `versionId` tetap jalan (membuat delete marker). Hapus versi tertentu ditolak (`AccessDenied`) selama
+  legal hold menyala atau retensi belum lewat; syarat kunci dicek lagi di dalam DELETE-nya sendiri. Lifecycle tidak
+  menghapus versi berkunci. Scan yang menemukan malware tetap menghapus versinya.
+- **Hapus akun (tahap hapus dunning) menghapus semua versi termasuk yang dikunci** (jawaban pemilik).
+- `/s3` menampilkan "Object Lock aktif" + retensi bawaan di bucket, dan status kunci tiap versi di Riwayat versi.

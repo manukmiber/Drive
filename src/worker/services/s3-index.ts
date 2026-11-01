@@ -129,6 +129,8 @@ const MIGRATIONS: string[][] = [
      ) WITHOUT ROWID`,
     `CREATE INDEX IF NOT EXISTS s3_versions_user_idx ON s3_versions (user_id, bucket)`,
     `CREATE INDEX IF NOT EXISTS s3_versions_noncurrent_idx ON s3_versions (bucket, noncurrent_at)`,
+    // Object Lock asked for at CreateMultipartUpload, given to the object on completion.
+    `ALTER TABLE s3_uploads ADD COLUMN lock_json TEXT`,
   ],
 ];
 export const INDEX_SCHEMA_VERSION = MIGRATIONS.length;

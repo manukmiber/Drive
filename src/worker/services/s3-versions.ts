@@ -5,6 +5,7 @@
 // it has none, the delete marker in `s3_versions` with `noncurrent_at IS NULL`.
 // Older versions keep their bytes, so they count toward the account's storage and bill (the
 // owner's answer, ADR-092).
+import { DAY_MS } from '../../shared/constants';
 import type { Ctx } from '../context';
 import { ulid } from '../lib/ids';
 import { S3Error } from '../lib/s3-errors';
@@ -88,6 +89,117 @@ export async function setBucketVersioning(
     );
   await ctx.env.DB.prepare(`UPDATE s3_buckets SET versioning = ?3 WHERE name = ?1 AND user_id = ?2`)
     .bind(bucket, userId, status)
+    .run();
+}
+
+// ───────────────────────────── Object Lock ─────────────────────────────
+
+export type LockMode = 'GOVERNANCE' | 'COMPLIANCE';
+
+/** A bucket's Object Lock (ADR-092): on, and the retention new objects get by default, if any. */
+export interface ObjectLockConfig {
+  mode: LockMode | null;
+  days?: number;
+  years?: number;
+}
+
+/** The lock a new version gets. */
+export interface WriteLock {
+  mode: LockMode | null;
+  until: number | null;
+  legalHold: boolean;
+}
+
+export function objectLockOf(b: Pick<BucketRow, 'object_lock_json'>): ObjectLockConfig | null {
+  if (!b.object_lock_json) return null;
+  try {
+    return JSON.parse(b.object_lock_json) as ObjectLockConfig;
+  } catch {
+    return null;
+  }
+}
+
+/** `until` for a retention of `days` or `years` from `now` (years on the calendar, UTC). */
+export function retentionUntil(now: number, c: Pick<ObjectLockConfig, 'days' | 'years'>): number {
+  if (c.years) {
+    const d = new Date(now);
+    d.setUTCFullYear(d.getUTCFullYear() + c.years);
+    return d.getTime();
+  }
+  return now + (c.days ?? 0) * DAY_MS;
+}
+
+/** What a new version gets when the request names no lock: the bucket's default, if any. */
+export function defaultLock(b: Pick<BucketRow, 'object_lock_json'>, now: number): WriteLock | null {
+  const c = objectLockOf(b);
+  if (!c?.mode) return null;
+  return { mode: c.mode, until: retentionUntil(now, c), legalHold: false };
+}
+
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/;
+
+/** A RetainUntilDate as Amazon takes it (ISO 8601), in the future. */
+export function parseRetainUntil(v: string, now: number): number {
+  const t = ISO.test(v.trim()) ? Date.parse(v.trim()) : NaN;
+  if (Number.isNaN(t))
+    throw new S3Error('InvalidArgument', 'The retain until date is not a valid date.');
+  if (t <= now)
+    throw new S3Error('InvalidArgument', 'The retain until date must be in the future!');
+  return t;
+}
+
+export function parseLockMode(v: string | null): LockMode {
+  if (v === 'GOVERNANCE' || v === 'COMPLIANCE') return v;
+  throw new S3Error('InvalidArgument', 'Unknown Object Lock mode; use GOVERNANCE or COMPLIANCE.');
+}
+
+/**
+ * x-amz-object-lock-mode / -retain-until-date / -legal-hold on a write, or the bucket's default.
+ * Asking for a lock in a bucket without Object Lock is refused, not ignored.
+ */
+export function lockFromHeaders(
+  h: Headers,
+  b: Pick<BucketRow, 'object_lock_json'>,
+  now: number,
+): WriteLock | null {
+  const mode = h.get('x-amz-object-lock-mode');
+  const until = h.get('x-amz-object-lock-retain-until-date');
+  const hold = h.get('x-amz-object-lock-legal-hold');
+  if (mode === null && until === null && hold === null) return defaultLock(b, now);
+  if (!objectLockOf(b))
+    throw new S3Error('InvalidRequest', 'Bucket is missing Object Lock Configuration');
+  if ((mode === null) !== (until === null))
+    throw new S3Error(
+      'InvalidArgument',
+      'x-amz-object-lock-retain-until-date and x-amz-object-lock-mode must both be supplied',
+    );
+  if (hold !== null && hold !== 'ON' && hold !== 'OFF')
+    throw new S3Error('InvalidArgument', 'Legal Hold must be either of ON or OFF');
+  const base = mode === null ? defaultLock(b, now) : null;
+  return {
+    mode: mode === null ? (base?.mode ?? null) : parseLockMode(mode),
+    until: until === null ? (base?.until ?? null) : parseRetainUntil(until, now),
+    legalHold: hold === 'ON',
+  };
+}
+
+/** PutObjectLockConfiguration: turns Object Lock on (versioning must be on) and sets the default. */
+export async function setObjectLockConfig(
+  ctx: Ctx,
+  userId: string,
+  bucket: string,
+  config: ObjectLockConfig,
+): Promise<void> {
+  const b = await ownBucket(ctx, userId, bucket);
+  if (!objectLockOf(b) && versioningOf(b) !== 'Enabled')
+    throw new S3Error(
+      'InvalidBucketState',
+      'Versioning must be Enabled on the bucket to apply an Object Lock configuration.',
+    );
+  await ctx.env.DB.prepare(
+    `UPDATE s3_buckets SET object_lock_json = ?3, versioning = 'Enabled' WHERE name = ?1 AND user_id = ?2`,
+  )
+    .bind(bucket, userId, JSON.stringify(config))
     .run();
 }
 

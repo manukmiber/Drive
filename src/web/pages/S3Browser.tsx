@@ -11,6 +11,7 @@ import {
   FolderPlus,
   History,
   Link2,
+  Lock,
   Pause,
   Play,
   RefreshCw,
@@ -247,6 +248,7 @@ export function S3Browser({
   hasKey,
   versioning,
   onVersioning,
+  objectLock = null,
   onClose,
 }: {
   bucket: string;
@@ -255,6 +257,8 @@ export function S3Browser({
   /** ADR-092: the bucket's versioning, and a way to change it. */
   versioning: Versioning;
   onVersioning: (status: 'Enabled' | 'Suspended') => Promise<void>;
+  /** ADR-092: the bucket's Object Lock, if it has one (then versioning can't be paused). */
+  objectLock?: { mode: string | null; days?: number; years?: number } | null;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -574,7 +578,19 @@ export function S3Browser({
               ? t.s3.versioningPaused
               : t.s3.versioning}
         </span>
-        {versioning === 'Enabled' ? (
+        {objectLock ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs text-brand-800 dark:bg-brand-800/40 dark:text-brand-100">
+            <Lock className="h-3 w-3" aria-hidden="true" />
+            {t.s3.objectLockOn}
+            {objectLock.mode &&
+              ` · ${t.s3.objectLockDefault(
+                objectLock.mode,
+                objectLock.years
+                  ? t.s3.objectLockYears(objectLock.years)
+                  : t.s3.objectLockDays(objectLock.days ?? 0),
+              )}`}
+          </span>
+        ) : versioning === 'Enabled' ? (
           <Button
             variant="ghost"
             className="h-8 px-2 text-xs"

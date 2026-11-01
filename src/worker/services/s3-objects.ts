@@ -30,8 +30,8 @@ import { releaseS3Url } from './s3-urls';
 import { dropBucketStats, pruneBucketStats } from './s3-stats';
 import {
   archiveCurrent,
-  bucketVersioning,
   checkVersionId,
+  defaultLock,
   dropNullVersion,
   getVersionRow,
   lockBlocks,
@@ -40,8 +40,36 @@ import {
   OBJ_COLS,
   promoteNewest,
   retireMarker,
+  versioningOf,
+  type LockMode,
   type Versioning,
+  type WriteLock,
 } from './s3-versions';
+
+/**
+ * The bucket's versioning and the lock a new version gets (ADR-092): what the caller already
+ * knows, else read from the bucket (which must be the account's).
+ */
+async function writeSettings(
+  ctx: Ctx,
+  userId: string,
+  bucket: string,
+  versioning?: Versioning,
+  lock?: WriteLock | null,
+): Promise<{ mode: Versioning; lock: WriteLock | null }> {
+  if (versioning !== undefined && lock !== undefined) return { mode: versioning, lock };
+  const b = await ownBucket(ctx, userId, bucket);
+  return {
+    mode: versioning ?? versioningOf(b),
+    lock: lock !== undefined ? lock : defaultLock(b, ctx.now()),
+  };
+}
+
+const lockColumns = (lock: WriteLock | null) => ({
+  lock_mode: lock?.mode ?? null,
+  lock_until: lock?.mode ? lock.until : null,
+  legal_hold: lock?.legalHold ? 1 : 0,
+});
 
 export const MAX_KEY_BYTES = 1024;
 /** One PUT or CopyObject (Amazon's limit too; bigger objects are multipart). */
@@ -416,6 +444,8 @@ export interface PutInput {
   checksum?: BodyChecksum | null;
   /** The bucket's versioning (ADR-092), when the caller has the bucket already. */
   versioning?: Versioning;
+  /** Object Lock for the new version (ADR-092); undefined = the bucket's default. */
+  lock?: WriteLock | null;
 }
 
 export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): Promise<ObjectRow> {
@@ -427,7 +457,13 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
     );
   const db = await indexDb(ctx.env, account.indexBinding);
   const userId = account.userId;
-  const mode = input.versioning ?? (await bucketVersioning(ctx, userId, input.bucket));
+  const { mode, lock } = await writeSettings(
+    ctx,
+    userId,
+    input.bucket,
+    input.versioning,
+    input.lock,
+  );
   await checkWrite(ctx, account, input.bucket, input.key, input.condition);
   await reserveBytes(ctx, userId, input.size);
   const blobId = ulid(ctx.now());
@@ -472,6 +508,7 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
           })
         : null,
       version_id: nextVersionId(mode, ctx.now()),
+      ...lockColumns(lock),
     };
     const { won, dropped } = await replaceRow(db, row, [], input.condition, mode, ctx.now());
     // Another writer got there first: this one's bytes go (below), as on any failed upload.
@@ -541,7 +578,7 @@ export async function deleteObjects(
 ): Promise<DeleteOutcome[]> {
   const unique = [...new Set(keys)];
   if (!unique.length) return [];
-  const mode = versioning ?? (await bucketVersioning(ctx, account.userId, bucket));
+  const mode = versioning ?? versioningOf(await ownBucket(ctx, account.userId, bucket));
   const db = await indexDb(ctx.env, account.indexBinding);
   const userId = account.userId;
   const now = ctx.now();
@@ -681,6 +718,8 @@ export interface CopyInput {
   tags?: Tag[] | null;
   /** The destination bucket's versioning, when the caller has it (ADR-092). */
   versioning?: Versioning;
+  /** Object Lock for the copy; undefined = the destination bucket's default. */
+  lock?: WriteLock | null;
 }
 
 /**
@@ -755,7 +794,13 @@ export async function copyObject(
   const src = await copySourceRow(ctx, account, input.from);
   copyPreconditions(src, input.source);
   const db = await indexDb(ctx.env, account.indexBinding);
-  const mode = input.versioning ?? (await bucketVersioning(ctx, userId, input.to.bucket));
+  const { mode, lock } = await writeSettings(
+    ctx,
+    userId,
+    input.to.bucket,
+    input.versioning,
+    input.lock,
+  );
   // In place, only the metadata changes; with versioning the copy is a new version with its own bytes.
   const same =
     mode === '' &&
@@ -849,10 +894,8 @@ export async function copyObject(
       // The bytes are the source's: so is the scan result.
       modified_at: now,
       version_id: nextVersionId(mode, now),
-      // Retention and holds belong to the version that has them, never to a copy (Amazon's rule).
-      lock_mode: null,
-      lock_until: null,
-      legal_hold: 0,
+      // A copy never takes the source's lock (Amazon's rule): it gets its own, or the default.
+      ...lockColumns(lock),
     };
     const { won, dropped } = await replaceRow(db, row, [], input.condition, mode, now);
     if (!won) throw new S3Error('PreconditionFailed', PRECONDITION);
@@ -1051,6 +1094,8 @@ export interface UploadRow {
   tags_json?: string | null;
   /** x-amz-checksum-algorithm / -type at the start: {a, t} (ADR-076). */
   checksum_json?: string | null;
+  /** Object Lock asked for at the start (`WriteLock`, ADR-092). */
+  lock_json?: string | null;
 }
 
 export async function createUpload(
@@ -1062,6 +1107,8 @@ export async function createUpload(
   meta: ObjectMeta,
   tags: Tag[] | null = null,
   checksum: { a: ChecksumAlg; t: ChecksumType } | null = null,
+  /** ADR-092: Object Lock asked for now, given to the object on completion. */
+  lock: WriteLock | null = null,
 ): Promise<UploadRow> {
   validateKey(key);
   if (account.status !== 'active')
@@ -1095,11 +1142,12 @@ export async function createUpload(
     expires_at: now + cfg.s3_multipart_ttl_hours * 3_600_000,
     tags_json: tagsJson(tags),
     checksum_json: checksum ? JSON.stringify(checksum) : null,
+    lock_json: lock ? JSON.stringify(lock) : null,
   };
   await db
     .prepare(
-      `INSERT INTO s3_uploads (id, user_id, bucket, key, blob_id, r2_upload_id, content_type, meta_json, created_at, expires_at, tags_json, checksum_json)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`,
+      `INSERT INTO s3_uploads (id, user_id, bucket, key, blob_id, r2_upload_id, content_type, meta_json, created_at, expires_at, tags_json, checksum_json, lock_json)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)`,
     )
     .bind(
       row.id,
@@ -1114,6 +1162,7 @@ export async function createUpload(
       row.expires_at,
       row.tags_json,
       row.checksum_json,
+      row.lock_json,
     )
     .run();
   return row;
@@ -1367,7 +1416,8 @@ export async function completeUpload(
     );
   const total = chosen.reduce((n, p) => n + p.size, 0);
   const reserved = stored.reduce((n, p) => n + p.size, 0);
-  const mode = await bucketVersioning(ctx, account.userId, bucket);
+  const asked = up.lock_json ? (JSON.parse(up.lock_json) as WriteLock) : undefined;
+  const { mode, lock } = await writeSettings(ctx, account.userId, bucket, undefined, asked);
   // Failing here keeps the upload: the client may still abort it, or complete it without the condition.
   await checkWrite(ctx, account, bucket, key, condition);
   let obj: R2Object;
@@ -1396,6 +1446,7 @@ export async function completeUpload(
     sha256: null,
     modified_at: ctx.now(),
     version_id: nextVersionId(mode, ctx.now()),
+    ...lockColumns(lock),
   };
   const { won, dropped } = await replaceRow(
     db,
@@ -1869,6 +1920,86 @@ export async function setObjectTags(
     .run();
   if (!res.meta.changes)
     throw new S3Error('NoSuchKey', 'The specified key does not exist.', { Key: key });
+}
+
+// ───────────────────────────── Object Lock (ADR-092) ─────────────────────────────
+
+/** GetObjectRetention: the version's retention, if it has one. */
+export async function getRetention(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  bucket: string,
+  key: string,
+  versionId?: string | null,
+): Promise<{ mode: LockMode; until: number }> {
+  const { row } = await namedVersion(ctx, account, bucket, key, versionId);
+  if (!row.lock_mode || !row.lock_until)
+    throw new S3Error(
+      'NoSuchObjectLockConfiguration',
+      'The specified object does not have a ObjectLock configuration',
+    );
+  return { mode: row.lock_mode, until: row.lock_until };
+}
+
+/**
+ * PutObjectRetention. COMPLIANCE can only be lengthened; GOVERNANCE can be made stronger by anyone,
+ * and shortened or removed only with the bypass (a full-access key that asked for it).
+ */
+export async function putRetention(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  bucket: string,
+  key: string,
+  versionId: string | null | undefined,
+  next: { mode: LockMode; until: number } | null,
+  bypassGovernance: boolean,
+): Promise<void> {
+  const { row, table } = await namedVersion(ctx, account, bucket, key, versionId);
+  const now = ctx.now();
+  const active = row.lock_mode && row.lock_until && row.lock_until > now ? row : null;
+  const weaker =
+    active &&
+    (!next ||
+      next.until < active.lock_until! ||
+      (active.lock_mode === 'COMPLIANCE' && next.mode !== 'COMPLIANCE'));
+  if (weaker && (active.lock_mode === 'COMPLIANCE' || !bypassGovernance))
+    throw new S3Error('AccessDenied', 'Access Denied because object protected by object lock.');
+  const db = await indexDb(ctx.env, account.indexBinding);
+  await db
+    .prepare(
+      `UPDATE ${table} SET lock_mode = ?5, lock_until = ?6
+       WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`,
+    )
+    .bind(bucket, key, account.userId, row.blob_id, next?.mode ?? null, next?.until ?? null)
+    .run();
+}
+
+export async function getLegalHold(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  bucket: string,
+  key: string,
+  versionId?: string | null,
+): Promise<boolean> {
+  return Boolean((await namedVersion(ctx, account, bucket, key, versionId)).row.legal_hold);
+}
+
+export async function putLegalHold(
+  ctx: Ctx,
+  account: Pick<S3Account, 'userId' | 'indexBinding'>,
+  bucket: string,
+  key: string,
+  versionId: string | null | undefined,
+  on: boolean,
+): Promise<void> {
+  const { row, table } = await namedVersion(ctx, account, bucket, key, versionId);
+  const db = await indexDb(ctx.env, account.indexBinding);
+  await db
+    .prepare(
+      `UPDATE ${table} SET legal_hold = ?5 WHERE bucket = ?1 AND key = ?2 AND user_id = ?3 AND blob_id = ?4`,
+    )
+    .bind(bucket, key, account.userId, row.blob_id, on ? 1 : 0)
+    .run();
 }
 
 /**
