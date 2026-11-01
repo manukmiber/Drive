@@ -45,11 +45,11 @@ lewat fase R di `docs/ROADMAP.md`.
   dari D1 di memori kalau `manifest_dirty` bertanda), `GET /api/drive/index` + `GET /api/v1/drive/index` (ETag, 304),
   app menarik index dulu (`web/lib/drive-index.ts`). Keluarga, upload berjalan, dan Terbaru masih D1. Shim R2: tulis
   ulang atomik untuk pembaca.
-- [ ] Pemilik: migrasi `0020` di D1 remote + deploy, supaya index user production mulai ditulis dan dibaca.
+- [x] Pemilik: migrasi `0020` di D1 remote + deploy (2026-11-01), supaya index user production mulai ditulis dan dibaca.
 - [x] R4 index keluarga (ADR-078, 2026-10-29): `f/{familyId}/index.txt` (anggota di header, `o`/`e`/`tb` per entri),
   ditulis oleh flush anggota mana pun, migrasi data `0021`; ruang keluarga dibaca dari index (detail, isi folder, cari,
   Sampah per anggota, `GET /api/drive/index?space=family`). Bintang keluarga dan Terbaru masih D1.
-- [ ] Pemilik: migrasi `0021` di D1 remote (bersama `0020`) + deploy.
+- [x] Pemilik: migrasi `0021` di D1 remote (bersama `0020`) + deploy (2026-11-01).
 - [x] R5 link share di D1 khusus akses (ADR-079, 2026-10-29): `ACCESS_DB` (`zeiko-access`), `migrations-access/`,
   tanpa join lintas database; tanpa binding, D1 utama yang menjawab.
 - [x] Di production (pemilik, 2026-11-01, "Wrapping up itu setelah test langsung deploy semua"): migrasi `0020` dan
@@ -57,8 +57,11 @@ lewat fase R di `docs/ROADMAP.md`.
   `00000277-00000000-00005116-78d6da3395f54ec28533bd9081a19532`); `zeiko-access-production`
   (`8aef192e-e8d6-48e6-9ccd-655e86063dbb`) dibuat, migrasi access `0001`–`0004`, baris `shares` 28, `share_items` 28,
   `share_sends` 2 disalin (token/OAuth/idempotency 0 baris); `accessDb` di `deploy/production.json`.
-- [ ] Deploy Worker `zeiko-production` dengan binding `ACCESS_DB` (`npm run build && npx wrangler deploy --env production
-  --containers-rollout=none`), lalu cek jumlah `shares` di D1 utama masih 28 (kalau bertambah, salin barisnya).
+- [x] Deploy (pemilik menjalankan sendiri, 2026-11-01): Worker `zeiko-production` versi
+  `b2211626-45d9-410c-8ccb-9bc20515d319` dengan binding `ACCESS_DB` (S3 PostObject, D1 ADR-084, D2 ADR-085, D3 ADR-086;
+  container tidak di-roll). Satu link share dibuat di D1 utama sebelum deploy (29 vs 28) dan disalin ke
+  `zeiko-access-production`; link baru sesudah deploy masuk ke D1 akses. Dicek dari luar: app, health, `/minta/…` 200;
+  katalog `peopleShares` dan `fileRequests` true; host S3 menjawab XML S3.
 - [x] R6 sebagian (ADR-080, 2026-10-29): token API, OAuth (grant, code), Idempotency-Key di D1 khusus akses. Sesi
   Better Auth tetap di D1 utama bersama `users` sampai R7.
 - [x] D11 cari file kembar (ADR-081, 2026-10-29): `/kembar`, `GET /api/drive/duplicates` (+ v1), dari index pribadi
