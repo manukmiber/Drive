@@ -53,6 +53,7 @@ export const RATE_LIMIT_NAMES = [
   'RL_AD_BOOK',
   'RL_REPORT',
   'RL_API',
+  'RL_DAV',
 ] as const;
 export type RateLimitName = (typeof RATE_LIMIT_NAMES)[number];
 
@@ -66,6 +67,7 @@ export const DEFAULT_RATE_LIMITS: Record<RateLimitName, { limit: number; period:
   RL_AD_BOOK: { limit: 20, period: 60 },
   RL_REPORT: { limit: 5, period: 60 },
   RL_API: { limit: 300, period: 60 },
+  RL_DAV: { limit: 600, period: 60 },
 };
 
 const QUEUES = {

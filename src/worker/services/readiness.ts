@@ -36,7 +36,8 @@ export type FeatureId =
   | 'antivirus'
   | 'captcha'
   | 'app_links'
-  | 'people_shares';
+  | 'people_shares'
+  | 'webdav';
 
 export interface Feature {
   id: FeatureId;
@@ -314,6 +315,21 @@ export async function readiness(ctx: Ctx): Promise<Feature[]> {
         ),
       ],
     },
+    {
+      id: 'webdav',
+      title: 'WebDAV',
+      what: 'Drive as a network drive (FolderSync, rclone, Windows, macOS, iOS) at its own address, signed in with an access token.',
+      hidden: true,
+      after: [],
+      needs: [
+        {
+          name: 'DAV_ORIGIN',
+          kind: 'cloudflare',
+          ok: Boolean(env.DAV_ORIGIN),
+          how: 'Add "davOrigin": "https://dav.zeiko.biz.id" to deploy/<env>.json, regenerate wrangler.jsonc (node scripts/gen-wrangler.mjs > wrangler.jsonc) and deploy: the custom domain and its DNS record are made by the deploy.',
+        },
+      ],
+    },
   ];
 
   const ready = new Map<FeatureId, boolean>();
@@ -344,6 +360,8 @@ export async function capabilities(ctx: Ctx) {
     s3ThreeCopies: s3 && replicasAvailable(env),
     s3UrlZeiko: hostnames && Boolean(env.S3_SUBDOMAIN_SUFFIX),
     s3UrlCustom: hostnames && Boolean(env.S3_CNAME_TARGET),
+    /** D9 (ADR-089): the WebDAV address, or null where there is none. */
+    webdavUrl: env.DAV_ORIGIN ?? null,
   };
 }
 

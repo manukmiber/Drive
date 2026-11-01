@@ -1721,6 +1721,54 @@ export const en: Strings = {
     disconnected: 'App disconnected',
     tooMany: 'You have the most tokens allowed. Revoke one first.',
   },
+  webdav: {
+    title: 'WebDAV',
+    intro:
+      'Mount Drive as a network drive on your phone or computer: back up your phone gallery automatically, or open and save files straight from your file manager.',
+    address: 'Server address',
+    user: 'User name',
+    password: 'Password',
+    passwordHint:
+      'An access token with the “Connect over WebDAV” permission. Make one under Tokens & apps above, and copy it right away.',
+    limit: (size: string) =>
+      `One file over WebDAV can be at most ${size}. Upload bigger files with the Zeiko Drive app or the API.`,
+    folders:
+      'Inside are the folders “Drive Saya” (My Drive) and, if you are in a family, “Drive Keluarga” (Family Drive). Deleting over WebDAV moves things to the Trash.',
+    copy: 'Copy',
+    copied: 'Copied',
+    howTo: 'How to connect',
+    foldersync: 'FolderSync (Android)',
+    foldersyncSteps: [
+      'Open Accounts → add → WebDAV.',
+      'Server URL: the address above. Login: the user name. Password: the token. Turn HTTPS on.',
+      'Open Folderpairs → add. Local folder: DCIM/Camera. Remote folder: Drive Saya/Backup HP. Sync type: to remote folder.',
+      'Set a schedule (for example every hour on Wi-Fi).',
+    ],
+    rclone: 'rclone (Linux, macOS, Windows)',
+    rcloneSteps: [
+      'Make a remote with this command (put your token in place of TOKEN). Vendor owncloud keeps file times.',
+      'Then copy or sync, for example:',
+    ],
+    windows: 'Windows',
+    windowsSteps: [
+      'Open File Explorer → This PC → Map network drive.',
+      'Folder: the address above. Tick “Connect using different credentials”.',
+      'Type the user name, and the token as the password.',
+      'Windows limits WebDAV downloads to 50 MB per file unless the limit is raised in the registry (FileSizeLimitInBytes).',
+    ],
+    mac: 'macOS',
+    macSteps: [
+      'In Finder, choose Go → Connect to Server (⌘K).',
+      'Type the address above, then Connect.',
+      'Choose Registered User, and type the user name and the token as the password.',
+    ],
+    ios: 'iPhone and iPad (Files app)',
+    iosSteps: [
+      'Open Files → Browse → ⋯ → Connect to Server.',
+      'Type the address above, then Connect.',
+      'Choose Registered User, and type the user name and the token as the password.',
+    ],
+  },
   duplicates: {
     title: 'Duplicate files',
     find: 'Find duplicate files',

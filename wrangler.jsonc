@@ -52,6 +52,7 @@
     "APP_ORIGIN": "http://localhost:5173",
     "USERCONTENT_ORIGIN": "http://uc.localhost:8790",
     "S3_ORIGIN": "http://s3.localhost:8790",
+    "DAV_ORIGIN": "http://dav.localhost:8790",
     "EMAIL_FROM": "no-reply@zeiko.biz.id",
     "ADAPTER_EMAIL": "mock",
     "ADAPTER_PAYMENT": "mock",
@@ -211,6 +212,14 @@
       "namespace_id": "908",
       "simple": {
         "limit": 300,
+        "period": 60
+      }
+    },
+    {
+      "name": "RL_DAV",
+      "namespace_id": "909",
+      "simple": {
+        "limit": 600,
         "period": 60
       }
     }
@@ -420,6 +429,14 @@
           "namespace_id": "1008",
           "simple": {
             "limit": 300,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_DAV",
+          "namespace_id": "1009",
+          "simple": {
+            "limit": 600,
             "period": 60
           }
         }
@@ -636,6 +653,14 @@
           "namespace_id": "2008",
           "simple": {
             "limit": 300,
+            "period": 60
+          }
+        },
+        {
+          "name": "RL_DAV",
+          "namespace_id": "2009",
+          "simple": {
+            "limit": 600,
             "period": 60
           }
         }

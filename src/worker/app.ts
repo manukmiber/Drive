@@ -42,6 +42,7 @@ import { notifications } from './routes/notifications';
 import { family } from './routes/family';
 import { s3 } from './routes/s3';
 import { handleS3, resolveS3Host } from './routes/s3-api';
+import { handleDav, isDavHost } from './routes/webdav';
 import { createCtx } from './context';
 import type { AppBindings } from './types';
 import { appPath, basePath } from './lib/paths';
@@ -49,6 +50,22 @@ import { appPath, basePath } from './lib/paths';
 export function createApp() {
   const app = new Hono<AppBindings>();
 
+  // Drive over WebDAV (ADR-089) has a host of its own: never the app's cookies, Origin or CSRF. It is
+  // answered before S3, whose own addresses are looked up for any other host.
+  app.use('*', async (c, next) => {
+    if (!isDavHost(new URL(c.req.url), c.env)) return next();
+    let waitUntil: ((p: Promise<unknown>) => void) | undefined;
+    try {
+      const exec = c.executionCtx;
+      waitUntil = (p) => exec.waitUntil(p);
+    } catch {
+      // No execution context (tests): deferred work is drained instead.
+    }
+    const ctx = createCtx(c.env, waitUntil);
+    const res = await handleDav(c.req.raw, ctx);
+    if (!waitUntil) await ctx.drain();
+    return res;
+  });
   // Zeiko S3 has a host of its own, and own addresses (ADR-048), and speaks S3, not this app's API.
   app.use('*', async (c, next) => {
     const host = await resolveS3Host(new URL(c.req.url), c.env);

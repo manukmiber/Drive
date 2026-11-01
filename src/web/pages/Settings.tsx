@@ -14,6 +14,7 @@ import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
 import { sitePage } from '../lib/zeiko';
 import { AccessTokens } from '../components/AccessTokens';
+import { WebDavSetup } from '../components/WebDavSetup';
 import { Button } from '../components/Button';
 import { toast } from '../components/ui/Toast';
 import { TransferSettingsForm } from '../components/TransferSettings';
@@ -88,6 +89,7 @@ export function Settings() {
       <NotificationPrefs />
       <AdLocation />
       <AccessTokens />
+      <WebDavSetup />
 
       <AccountData />
     </div>

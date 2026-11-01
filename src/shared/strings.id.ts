@@ -1748,6 +1748,54 @@ export const t = {
     disconnected: 'Aplikasi diputuskan',
     tooMany: 'Jumlah tokenmu sudah maksimal. Cabut salah satu dulu.',
   },
+  webdav: {
+    title: 'WebDAV',
+    intro:
+      'Pasang Drive sebagai drive jaringan di HP atau komputer: backup galeri HP otomatis, atau buka dan simpan file langsung dari pengelola file.',
+    address: 'Alamat server',
+    user: 'Nama pengguna',
+    password: 'Kata sandi',
+    passwordHint:
+      'Token akses yang punya izin “Tersambung lewat WebDAV”. Buat di Token & aplikasi di atas, lalu salin sekali itu juga.',
+    limit: (size: string) =>
+      `Satu file lewat WebDAV paling besar ${size}. File yang lebih besar upload lewat app Zeiko Drive atau API.`,
+    folders:
+      'Di dalamnya ada folder “Drive Saya”, dan “Drive Keluarga” kalau kamu anggota keluarga. Hapus lewat WebDAV memindahkan ke Sampah.',
+    copy: 'Salin',
+    copied: 'Tersalin',
+    howTo: 'Cara pasang',
+    foldersync: 'FolderSync (Android)',
+    foldersyncSteps: [
+      'Buka Akun → tambah → WebDAV.',
+      'Isi URL server dengan alamat di atas, Login dengan nama pengguna, Password dengan token. Nyalakan HTTPS.',
+      'Buka Folderpairs → tambah. Folder lokal: DCIM/Camera. Folder jarak jauh: Drive Saya/Backup HP. Jenis sinkron: ke folder jarak jauh.',
+      'Atur jadwalnya (mis. tiap jam saat terhubung Wi-Fi).',
+    ],
+    rclone: 'rclone (Linux, macOS, Windows)',
+    rcloneSteps: [
+      'Buat remote dengan perintah ini (ganti TOKEN dengan tokenmu). Vendor owncloud supaya waktu file ikut tersimpan.',
+      'Lalu salin atau sinkronkan, misalnya:',
+    ],
+    windows: 'Windows',
+    windowsSteps: [
+      'Buka File Explorer → This PC → Map network drive.',
+      'Folder: alamat di atas. Centang “Connect using different credentials”.',
+      'Masukkan nama pengguna dan token sebagai kata sandi.',
+      'Windows membatasi unduhan lewat WebDAV sampai 50 MB per file kecuali batasnya diubah di registry (FileSizeLimitInBytes).',
+    ],
+    mac: 'macOS',
+    macSteps: [
+      'Di Finder, pilih Go → Connect to Server (⌘K).',
+      'Ketik alamat di atas, lalu Connect.',
+      'Pilih Registered User, isi nama pengguna dan token sebagai kata sandi.',
+    ],
+    ios: 'iPhone dan iPad (app File)',
+    iosSteps: [
+      'Buka app File → Jelajahi → ⋯ → Sambungkan ke Server.',
+      'Ketik alamat di atas, lalu Sambungkan.',
+      'Pilih Pengguna Terdaftar, isi nama pengguna dan token sebagai kata sandi.',
+    ],
+  },
   duplicates: {
     title: 'File kembar',
     find: 'Cari file kembar',

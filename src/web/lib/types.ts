@@ -43,6 +43,8 @@ export interface Catalog {
     peopleShares: boolean;
     /** D3 (ADR-086): file request links. */
     fileRequests: boolean;
+    /** D9 (ADR-089): where Drive answers WebDAV, or null. */
+    webdavUrl?: string | null;
   };
   config: {
     upload_part_concurrency: number;
@@ -57,6 +59,8 @@ export interface Catalog {
     editor_sheet_max_bytes: number;
     editor_zip_max_bytes: number;
     editor_zip_extract_max_bytes: number;
+    /** D9 (ADR-089): the biggest file one WebDAV PUT may carry. */
+    webdav_put_max_bytes?: number;
     features: Record<string, boolean>;
   } & Record<string, unknown>;
 }

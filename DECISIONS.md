@@ -2519,3 +2519,60 @@ Tanggal: 2026-11-01. Status: diterima (pemilik: kerjakan semua temuan yang bisa 
 
 **Belum:** DR-A06-002 (laporan CSAM otomatis), DR-A03-001 (CI), DR-A05-001 (ffmpeg), DR-A02-001 (pemindai mock),
 dan cadangan kuota per bagian untuk link minta file.
+
+## ADR-089 — D9: Drive lewat WebDAV di host `dav.` sendiri
+
+Tanggal: 2026-11-01. Status: diterima (pemilik: "kerjakan fitur dari roadmap … yang susah dan lama dahulukan").
+
+**Yang dibangun:** Drive bisa dipasang sebagai drive jaringan lewat WebDAV (RFC 4918) di host sendiri `DAV_ORIGIN`
+(dev `http://dav.localhost:8790`, production `https://dav.zeiko.biz.id`), untuk FolderSync/PhotoSync, rclone,
+Windows Explorer, Finder, dan Files di iOS. Kode: `routes/webdav.ts` (tipis), `services/webdav.ts`, `lib/dav-xml.ts`.
+
+**Keputusan:**
+- **Host sendiri, dicek sebelum S3.** `app.ts` menjawab host `DAV_ORIGIN` sebelum pencarian alamat S3 sendiri, jadi
+  host ini tidak pernah jatuh ke app, cookie, cek Origin, atau CSRF. Cookie tidak pernah dibaca di host ini.
+- **Masuk = HTTP Basic: email Akun Zeiko + token akses ber-scope `webdav`** (A1). Nama user harus sama dengan email
+  pemilik token (tanpa beda huruf besar/kecil), supaya token yang tertukar ketahuan. `Authorization: Bearer` juga
+  diterima (rclone `bearer_token`). Gagal → 401 + `WWW-Authenticate: Basic realm="Zeiko Drive"`; kegagalan dibatasi
+  per alamat (`RL_AUTH`, kunci `dav-fail:`). Rate limit per token di binding baru `RL_DAV` (600/menit: klien WebDAV
+  mengirim satu PROPFIND per folder dan satu PUT per file). Token dicabut, kedaluwarsa, atau akun dibekukan → 401/403
+  di request berikutnya.
+- **Ruang nama:** `/` berisi `Drive Saya` dan (kalau anggota keluarga) `Drive Keluarga`. Nama ini tetap, tidak ikut
+  bahasa UI, karena path yang sudah dipasang di klien tidak boleh berubah. Item yang dibagikan orang (D2) belum
+  tampil di WebDAV. Path dicari per nama di pohon dari index (R2, `driveTree`), dengan aturan nama yang sama
+  (`nameKey`: NFC, huruf kecil). Isi Sampah tidak tampil.
+- **Baca dari index, tulis lewat service yang sama dengan app.** PROPFIND/GET membaca `DriveTree` (index R2, yang
+  dibawa ke D1 di memori kalau masih tertinggal). MKCOL, PUT, DELETE, MOVE, COPY memakai `createFolder`, upload,
+  `trashNodes`, `moveNodes`/`renameNode`, `copyFile`, jadi izin (`services/access.ts`), kuota, scan, versi (D1),
+  Aktivitas (D4), dan tanda index (R3) sama persis dengan app. Tidak ada tabel atau kolom D1 baru.
+- **Metode:** OPTIONS (`DAV: 1, 2`), PROPFIND (Depth 0/1; `Depth: infinity` → 403 `propfind-finite-depth`; tanpa
+  header Depth dianggap 1, seperti SabreDAV), GET/HEAD dengan Range (`serveObject`), PUT, DELETE (ke Sampah, bukan
+  hapus permanen), MKCOL, MOVE, COPY (Overwrite T/F; tujuan yang ditimpa masuk Sampah), PROPPATCH, LOCK/UNLOCK.
+- **PUT ≤ `webdav_put_max_bytes` (95 MiB), lebih besar ditolak 413 dengan pesan jelas.** Body request di Cloudflare
+  maksimal 100 MB. Chunking Nextcloud (dipakai rclone ≥ 1.65 dengan vendor nextcloud) **belum** dibuat: rclone di mesin
+  ini 1.60 dan tidak bisa mengujinya, dan protokolnya butuh path `/remote.php/dav/…`. Panduan di Pengaturan menyebut
+  batasnya dan menyarankan app atau API v1 untuk file besar. Panjang body dari `Content-Length`, atau
+  `X-Expected-Entity-Length` (Finder mengirim chunked); tanpa keduanya → 411. Isi di-stream ke R2 tanpa ditahan di
+  memori.
+- **PUT ke file yang ada = ganti isi** (versi lama jadi versi, D1, ADR-084). Pengecualian: file lama 0 byte dibuang
+  permanen dulu (kalau boleh hapus), karena Windows selalu PUT 0 byte dulu lalu PUT isinya; tanpa itu setiap salinan
+  dari Windows meninggalkan versi atau item kosong di Sampah. Waktu ubah dari klien: `X-OC-Mtime` (detik, rclone
+  vendor owncloud/nextcloud) di PUT, atau PROPPATCH `getlastmodified` / `Win32LastModifiedTime` → `client_modified_at`.
+- **PROPPATCH:** properti lain (Win32 lainnya, `com.apple.*`) dijawab 200 tapi tidak disimpan. Windows dan Finder
+  menganggap salin gagal kalau PROPPATCH ditolak; menyimpan properti mati butuh tempat baru di index, dan tidak ada
+  yang membacanya.
+- **LOCK sederhana, tidak dipaksakan.** LOCK menjawab token `opaquelocktoken:` baru (timeout 1 jam), UNLOCK selalu 204,
+  dan tidak ada yang disimpan. Windows dan Finder butuh kelas 2 untuk menulis; mengunci sungguhan butuh state bersama
+  (D1 baru atau Durable Object), dan tulis bersamaan sudah aman karena setiap tulis lewat service (nama unik di D1,
+  ganti isi = versi). LOCK ke path yang belum ada membuat file kosong (RFC 4918 §9.10.4).
+- **Properti:** `displayname`, `resourcetype`, `getcontentlength`, `getcontenttype`, `getlastmodified` (waktu dari
+  klien kalau ada), `creationdate`, `getetag` (= id isi, sama dengan ETag GET), `supportedlock`, `lockdiscovery`, dan di
+  koleksi `quota-used-bytes` / `quota-available-bytes` (RFC 4331, dari pool).
+- **File yang belum lolos scan** tampil (supaya klien sinkron tidak mengunggah ulang), tapi GET-nya ditolak seperti di
+  app (`assertDownloadable`). GET ke koleksi menjawab daftar nama sebagai teks polos (tanpa HTML dari nama file).
+- **Disembunyikan sampai siap** (ADR-049): fitur `webdav` di `readiness.ts` butuh `DAV_ORIGIN`, yang hanya diisi kalau
+  `deploy/<env>.json` punya `davOrigin` (ikut route custom domain-nya). Katalog publik memberi `webdavUrl`; Pengaturan
+  menampilkan panduan pasang (FolderSync, rclone, Windows, macOS, iOS) hanya kalau ada.
+
+**Belum:** chunking Nextcloud untuk file > 95 MiB, item "Dibagikan dengan saya" di WebDAV, kunci yang dipaksakan,
+properti mati yang disimpan, `Depth: infinity`.

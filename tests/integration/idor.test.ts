@@ -7,6 +7,8 @@ import { imageBody, operator } from '../helpers/ops';
 import { createFolder, grantPlan, rootOf, uploadText } from '../helpers/files';
 import { fileNotice, noticesOf } from '../helpers/notices';
 
+const DAV = 'https://dav.zeiko.test';
+
 const WEBP = (() => {
   const b = new Uint8Array(2000);
   const v = new DataView(b.buffer);
@@ -20,7 +22,7 @@ const WEBP = (() => {
 
 describe('IDOR (SPEC §14.1)', () => {
   it("rejects every endpoint replayed against another user's IDs", async () => {
-    const rt = await makeRuntime();
+    const rt = await makeRuntime({ vars: { DAV_ORIGIN: DAV } });
     // Two ordinary people; the operator enters A's ad (ADR-043) and B tries to reach it.
     const a = await signIn(rt, 'korban@example.com');
     const b = await signIn(rt, 'penyerang@example.com');
@@ -185,6 +187,12 @@ describe('IDOR (SPEC §14.1)', () => {
     const request = ((await asked.json()) as { request: { id: string } }).request.id;
     // B's own folder, to try A's photo as its cover (ADR-058).
     const bFolder = await createFolder(b, bRoot, 'Punya B');
+    // D9 (ADR-089): B's WebDAV token, made before the snapshot.
+    const bDav = (
+      (await (
+        await b.req('POST', '/api/tokens', { name: 'dav', scopes: ['webdav'], expiresInDays: 1 })
+      ).json()) as { token: string }
+    ).token;
     const before = await snapshot();
     const body = (bytes: Uint8Array) => ({
       body: bytes,
@@ -313,6 +321,40 @@ describe('IDOR (SPEC §14.1)', () => {
       const res = await b.req(method, path, json, init);
       if (res.status < 400 || res.status >= 500) leaks.push(`${method} ${path} → ${res.status}`);
     }
+    // D9 (ADR-089): WebDAV paths are names in the signed-in person's own Drive, so A's path names
+    // nothing for B; and B's token never works under A's email.
+    const davAs =
+      (email: string) =>
+      (method: string, path: string, headers = {}) =>
+        rt.fetch(
+          new Request(`${DAV}${path}`, {
+            method,
+            headers: {
+              authorization: `Basic ${Buffer.from(`${email}:${bDav}`).toString('base64')}`,
+              ...headers,
+            },
+          }),
+        );
+    const asB = davAs('penyerang@example.com');
+    const asA = davAs('korban@example.com');
+    const aPath = '/Drive%20Saya/Pribadi/ktp.txt';
+    for (const [method, path, headers] of [
+      ['GET', aPath, {}],
+      ['PROPFIND', '/Drive%20Saya/Pribadi/', { depth: '1' }],
+      ['DELETE', aPath, {}],
+      ['MOVE', aPath, { destination: `${DAV}/Drive%20Saya/curian.txt` }],
+      ['COPY', aPath, { destination: `${DAV}/Drive%20Saya/curian.txt` }],
+      ['PROPPATCH', aPath, {}],
+      ['MKCOL', '/Drive%20Saya/Pribadi/baru', {}],
+    ] as const) {
+      for (const call of [asB, asA]) {
+        const res = await call(method, path, headers);
+        if (res.status < 400 || res.status >= 500)
+          leaks.push(`WebDAV ${method} ${path} → ${res.status}`);
+      }
+    }
+    const bListing = await (await asB('PROPFIND', '/Drive%20Saya/', { depth: '1' })).text();
+    for (const secret of ['ktp.txt', 'Pribadi']) expect(bListing).not.toContain(secret);
     // Marking someone else's notifications read is a silent no-op (204), but must not touch theirs.
     expect((await b.req('POST', '/api/notifications/read', { ids: ['n1'] })).status).toBe(204);
     await rt.settle();

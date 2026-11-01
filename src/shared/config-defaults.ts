@@ -176,6 +176,13 @@ export const configSchema = z.object({
   // ── Access tokens (ADR-061) ──
   /** Working personal tokens one user may have. */
   api_tokens_max_per_user: int().min(1).max(100).default(20),
+  // ── WebDAV (D9, ADR-089) ──
+  /** One PUT is one request: under Workers' 100 MB body cap. Bigger files go through the app or API v1. */
+  webdav_put_max_bytes: nonNeg()
+    .max(100 * 1000 * 1000)
+    .default(95 * MIB),
+  /** Items one COPY of a folder may make (each is a D1 write and an index change). */
+  webdav_copy_max_items: int().min(1).max(5000).default(500),
   // Zeiko's own apps signing in (OAuth 2.0 + PKCE, ADR-063).
   oauth_code_ttl_seconds: int().min(10).max(600).default(60),
   oauth_access_ttl_seconds: int().min(300).max(86_400).default(3_600),
@@ -447,4 +454,5 @@ export const PUBLIC_CONFIG_KEYS = [
   's3_web_part_bytes',
   's3_web_multipart_max_bytes',
   's3_link_max_seconds',
+  'webdav_put_max_bytes',
 ] as const satisfies readonly ConfigKey[];

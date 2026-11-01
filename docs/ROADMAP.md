@@ -84,7 +84,7 @@ Fitur di bawah dibangun di atas index R2 (fase R), bukan D1.
 | D6  | Pencarian lanjutan + cari isi file               | Diminta | L      | R2         | belum                                    |
 | D7  | OCR PDF dan foto dokumen                         | Diminta | M      | D6, R3     | belum                                    |
 | D8  | Galeri foto/video, bisa dicari                   | Diminta | L      | R3, (D6)   | belum                                    |
-| D9  | WebDAV (backup galeri HP, mount di PC)           | Wajib   | L      | R3, R6     | belum                                    |
+| D9  | WebDAV (backup galeri HP, mount di PC)           | Wajib   | L      | R3, R6     | selesai (ADR-089)                        |
 | D10 | Album di Galeri                                  | Niche   | M      | D8         | belum                                    |
 | D11 | Cari file kembar                                 | Niche   | S      | R2         | selesai (ADR-081)                        |
 | D12 | Tanggal hapus otomatis                           | Niche   | S      | R3         | selesai (ADR-082)                        |

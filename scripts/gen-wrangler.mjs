@@ -42,6 +42,8 @@ const RL = [
   ['RL_REPORT', 5],
   // Per access token on /api/v1 (ADR-061): 300 a minute.
   ['RL_API', 300],
+  // Per access token on the WebDAV host (ADR-089): a PROPFIND per folder and a PUT per file.
+  ['RL_DAV', 600],
 ];
 function bindings(env, nsBase, ids) {
   // Containers need Docker at deploy time; `containers: false` deploys without them and falls back
@@ -58,6 +60,8 @@ function bindings(env, nsBase, ids) {
       USERCONTENT_ORIGIN: ids.uc,
       // Zeiko S3's own host (ADR-044); its secret key seal is the S3_KEYS_ENC_KEY secret.
       S3_ORIGIN: ids.s3,
+      // Drive over WebDAV (ADR-089), only once deploy/{env}.json names its address.
+      ...(ids.dav ? { DAV_ORIGIN: ids.dav } : {}),
       // Own S3 addresses (ADR-048): s3.<name>.<suffix>, or a person's domain CNAMEd to the target
       // (the zone's Cloudflare for SaaS fallback origin). Live once CF_HOSTNAMES_TOKEN is set.
       ...(env === 'dev'
@@ -177,6 +181,7 @@ function envBlock(env, nsBase, defaults) {
   const app = d.appOrigin;
   const uc = d.usercontentOrigin;
   const s3 = d.s3Origin;
+  const dav = d.davOrigin;
   if (d.accessDb && !/^[0-9a-f-]{36}$/.test(d.accessDb.id ?? ''))
     throw new Error(`deploy/${env}.json: accessDb needs the database's id`);
   for (const x of d.s3Indexes ?? []) {
@@ -188,6 +193,7 @@ function envBlock(env, nsBase, defaults) {
       { pattern: new URL(app).hostname, custom_domain: true },
       { pattern: new URL(uc).hostname, custom_domain: true },
       { pattern: new URL(s3).hostname, custom_domain: true },
+      ...(dav ? [{ pattern: new URL(dav).hostname, custom_domain: true }] : []),
     ],
     // Workers Free rejects a custom CPU limit (it is fixed at 10 ms there, ADR-035).
     ...(d.plan === 'free'
@@ -198,6 +204,7 @@ function envBlock(env, nsBase, defaults) {
       app,
       uc,
       s3,
+      dav,
       s3Indexes: d.s3Indexes,
       accessDb: d.accessDb,
       s3Replicas: d.s3Replicas,
@@ -235,6 +242,7 @@ const config = {
     app: 'http://localhost:5173',
     uc: 'http://uc.localhost:8790',
     s3: 'http://s3.localhost:8790',
+    dav: 'http://dav.localhost:8790',
     d1: 'local-dev',
     kv: 'local-dev',
   }),

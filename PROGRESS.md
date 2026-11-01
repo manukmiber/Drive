@@ -81,6 +81,12 @@ lewat fase R di `docs/ROADMAP.md`.
   pemilik, subfolder per pengirim, pass 1 jam (Turnstile + password), notifikasi per jam `file_request_files`.
 - [x] D16 analisis Brankas end-to-end (ADR-087, diusulkan): dampak ke scan/takedown/pemulihan/share/keluarga/ekspor,
   pilihan A passkey PRF, B kata sandi + Argon2id, C gabungan. **Menunggu jawaban pemilik** (4 pertanyaan di ADR).
+- [x] D9 WebDAV (ADR-089, 2026-11-01): host sendiri `DAV_ORIGIN` (dev `dav.localhost:8790`), Basic email + token
+  ber-scope `webdav`, rate limit `RL_DAV`; PROPFIND/GET/PUT/MKCOL/DELETE/MOVE/COPY/PROPPATCH/LOCK lewat index + service
+  app; PUT ≤ 95 MiB (`webdav_put_max_bytes`); kartu panduan di Pengaturan. Diuji dengan rclone 1.60 ke dev server
+  (copy, sync, check, moveto/copyto di server, purge, about, waktu file vendor owncloud). **Production:** isi
+  `"davOrigin": "https://dav.zeiko.biz.id"` di `deploy/production.json`, generate `wrangler.jsonc`, deploy (izin pemilik).
+  Uji manual untuk pemilik: FolderSync di Android, Windows Explorer, Finder.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

@@ -121,6 +121,17 @@ Mengganti `SHARE_LINK_SECRET` membuat semua link share lama mati, kecuali nilai 
   3. `PUT /api/ops/s3/accounts/<userId>/index {"binding": "S3_DB_<NAMA>", "reason": "…"}` selagi akunnya kosong.
   Jangan hapus entri `s3Indexes` yang masih dipakai: deploy tanpa binding itu membuat akunnya `ServiceUnavailable`.
 
+## WebDAV `dav.zeiko.biz.id` (ADR-089)
+
+Fitur WebDAV tersembunyi sampai Worker punya `DAV_ORIGIN`. Deploy ini membuat custom domain baru (dan record DNS-nya):
+**tanya pemilik dulu**.
+
+1. Tambahkan `"davOrigin": "https://dav.zeiko.biz.id"` ke `deploy/production.json` (staging:
+   `"https://dav-staging.zeiko.biz.id"`).
+2. `node scripts/gen-wrangler.mjs > wrangler.jsonc`, lalu deploy. Route custom domain dan binding rate limit `RL_DAV`
+   ikut dibuat.
+3. Cek: `curl -i -X OPTIONS https://dav.zeiko.biz.id/` menjawab `DAV: 1, 2`; katalog publik memberi `webdavUrl`.
+
 ## D1 khusus akses `zeiko-access` (ADR-064, ADR-079)
 
 Link share (R5), token API, OAuth, dan Idempotency-Key (R6) tinggal di D1 sendiri (sesi menyusul di R7), terpisah dari pohon file dan dari

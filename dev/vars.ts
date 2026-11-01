@@ -8,6 +8,8 @@ export const DEV_DEFAULTS: Record<string, string> = {
   USERCONTENT_ORIGIN: 'http://uc.localhost:8790',
   // Zeiko S3 (ADR-044): its own host on the API port (curl resolves *.localhost by itself).
   S3_ORIGIN: 'http://s3.localhost:8790',
+  // Drive over WebDAV (ADR-089): its own host on the API port too.
+  DAV_ORIGIN: 'http://dav.localhost:8790',
   EMAIL_FROM: 'no-reply@zeiko.biz.id',
   ADAPTER_EMAIL: 'mock',
   ADAPTER_PAYMENT: 'mock',

@@ -385,6 +385,25 @@ export async function renameNode(
   return getNodeDto(ctx, userId, node.id);
 }
 
+/**
+ * When the person's own device says a file was last changed (WebDAV PROPPATCH, ADR-089): shown as
+ * its modified time, and what sync clients compare against. Needs the right to edit it.
+ */
+export async function setClientModified(
+  ctx: Ctx,
+  userId: string,
+  id: string,
+  at: number,
+): Promise<void> {
+  const { node } = await requireNode(ctx, userId, id, 'edit');
+  if (node.parent_id === null) throw new AppError('FORBIDDEN', 'cannot change a root folder');
+  if (node.client_modified_at === at) return;
+  await ctx.env.DB.prepare('UPDATE nodes SET client_modified_at = ?2 WHERE id = ?1')
+    .bind(node.id, at)
+    .run();
+  await markManifestDirty(ctx, node.owner_id);
+}
+
 export interface DecorPatch {
   color?: string | null;
   icon?: string | null;

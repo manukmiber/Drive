@@ -200,6 +200,7 @@ export class DriveTree {
   private readonly byNumber = new Map<number, IndexEntry>();
   private readonly kids = new Map<number, IndexEntry[]>();
   private readonly nodes = new Map<number, DriveNode>();
+  private readonly names = new Map<number, Map<string, IndexEntry>>();
 
   constructor(
     head: IndexHead,
@@ -350,6 +351,30 @@ export class DriveTree {
       .map((node) => ({ node, key: sortTuple(node, sort) }))
       .sort((a, b) => compareTuples(a.key, b.key, d))
       .map((x) => x.node);
+  }
+
+  /**
+   * The child of a folder with this name (not in the Trash), matched the way sibling names are kept
+   * unique (`nameKey`); null when there is none. WebDAV walks paths with it (ADR-089).
+   */
+  childByName(folderId: string, name: string): DriveNode | null {
+    const n = this.numberOf(folderId);
+    if (n === null) return null;
+    let names = this.names.get(n);
+    if (!names) {
+      names = new Map();
+      for (const e of this.kids.get(n) ?? [])
+        if (e.trashedAt === null) names.set(nameKey(e.name), e);
+      this.names.set(n, names);
+    }
+    const e = names.get(nameKey(name));
+    return e ? this.toNode(e) : null;
+  }
+
+  /** A file's content object (its R2 key, or the entry number of the upload that made it). */
+  contentOf(id: string): number | string | null {
+    const e = this.byId.get(id);
+    return e && e.kind === 'file' && e.blob !== 0 ? e.blob : null;
   }
 
   /** A page of children after `cursor`, with the cursor for the next page (the API's paging). */

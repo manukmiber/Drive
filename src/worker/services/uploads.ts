@@ -473,15 +473,19 @@ export async function expireUploads(ctx: Ctx, limit = 100): Promise<number> {
   return results.length;
 }
 
-/** Single-request upload for files ≤ 16 MiB (still reserves quota first). */
+/**
+ * Single-request upload for files ≤ 16 MiB (still reserves quota first). WebDAV's PUT (ADR-089) uses
+ * it too, up to its own cap: the body is streamed to R2, never held in memory.
+ */
 export async function simpleUpload(
   ctx: Ctx,
   userId: string,
   input: InitInput,
   contentLength: number | null,
   body: ReadableStream | null,
+  opts: { maxBytes?: number } = {},
 ): Promise<NodeDto> {
-  if (input.size > SIMPLE_UPLOAD_MAX_BYTES)
+  if (input.size > (opts.maxBytes ?? SIMPLE_UPLOAD_MAX_BYTES))
     throw new AppError('PAYLOAD_TOO_LARGE', 'use multipart upload');
   if (contentLength !== input.size) {
     throw new AppError('VALIDATION', 'Content-Length must equal size', {

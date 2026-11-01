@@ -13,7 +13,9 @@ export type RateLimitBinding =
   | 'RL_AD_BOOK'
   | 'RL_REPORT'
   /** Per access token on /api/v1 (ADR-061). */
-  | 'RL_API';
+  | 'RL_API'
+  /** Per access token on the WebDAV host (ADR-089). */
+  | 'RL_DAV';
 
 export function clientIp(req: Request): string {
   return (

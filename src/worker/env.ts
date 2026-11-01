@@ -48,6 +48,8 @@ export interface Env {
   CF_ACCOUNT_ID?: string;
   /** Zeiko S3's own address, e.g. https://s3.zeiko.biz.id (ADR-044). Unset = no S3 API. */
   S3_ORIGIN?: string;
+  /** Drive over WebDAV (D9, ADR-089), e.g. https://dav.zeiko.biz.id. Unset = no WebDAV. */
+  DAV_ORIGIN?: string;
   /** How long a Drive index flush waits for more changes before writing (ADR-074); default 1000 ms. */
   INDEX_FLUSH_DELAY_MS?: string;
   /** Own S3 addresses (ADR-048): s3.<name>.<S3_SUBDOMAIN_SUFFIX>, e.g. suffix zeiko.biz.id. */
@@ -113,6 +115,7 @@ export interface Env {
   RL_AD_BOOK: RateLimit;
   RL_REPORT: RateLimit;
   RL_API: RateLimit;
+  RL_DAV: RateLimit;
   IMAGES: ImagesBinding;
   MEDIA: MediaBinding;
   /** Email Sending (Workers Paid). Absent with ADAPTER_EMAIL=relay|mock. */
