@@ -363,6 +363,19 @@ describe('IDOR (SPEC §14.1)', () => {
           leaks.push(`WebDAV ${method} ${path} → ${res.status}`);
       }
     }
+    // D10 (ADR-093): A's album is not found by B, whatever B does with its id.
+    const albumRes = await a.req('POST', '/api/albums', { name: 'Rahasia' });
+    const albumId = ((await albumRes.json()) as { album: { id: string } }).album.id;
+    for (const [m, body] of [
+      ['GET', undefined],
+      ['PATCH', { name: 'diambil' }],
+      ['PATCH', { add: [] }],
+      ['DELETE', undefined],
+    ] as const)
+      expect((await b.req(m, `/api/albums/${albumId}`, body)).status).toBeGreaterThanOrEqual(400);
+    expect((await (await a.req('GET', `/api/albums/${albumId}`)).json()) as unknown).toMatchObject({
+      album: { name: 'Rahasia' },
+    });
     // D8 (ADR-091): the Gallery reads only the person's own trees, whatever folder name is asked.
     const bGallery = (await (
       await b.req('GET', `/api/gallery?q=${encodeURIComponent('di:"Pribadi"')}`)

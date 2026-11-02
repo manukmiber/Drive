@@ -22,7 +22,7 @@ import { entryLine, type IndexEntry, type IndexVersion } from '../../shared/driv
 import { textKey } from './content-index';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
-import { changeIndex, indexKey, type IndexDoc } from './drive-index';
+import { albumKey, changeIndex, indexKey, type IndexDoc } from './drive-index';
 
 /** A claim older than this belongs to a flush that died; the next one takes it over. */
 const STALE_CLAIM_MS = 5 * 60_000;
@@ -157,12 +157,22 @@ export async function flushDirtyIndexes(
 /** Account deletion: the index goes with the files. */
 export async function deleteUserIndex(ctx: Ctx, userId: string): Promise<void> {
   // The search text of the space goes too (D6, ADR-090).
-  await ctx.env.BUCKET.delete([indexKey({ user: userId }), textKey({ user: userId })]);
+  // …and its albums (D10, ADR-093).
+  await ctx.env.BUCKET.delete([
+    indexKey({ user: userId }),
+    textKey({ user: userId }),
+    albumKey({ user: userId }),
+  ]);
 }
 
 /** A family that ended: its tree went back to the owner's own Drive, and its index goes. */
 export async function deleteFamilyIndex(ctx: Ctx, familyId: string): Promise<void> {
-  await ctx.env.BUCKET.delete([indexKey({ family: familyId }), textKey({ family: familyId })]);
+  // Family albums end with the family (the files are the owner's own again; ADR-093).
+  await ctx.env.BUCKET.delete([
+    indexKey({ family: familyId }),
+    textKey({ family: familyId }),
+    albumKey({ family: familyId }),
+  ]);
 }
 
 export interface TreeRow {

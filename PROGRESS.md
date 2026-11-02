@@ -102,6 +102,9 @@ lewat fase R di `docs/ROADMAP.md`.
   tetap di `s3_objects`; Put/GetBucketVersioning, ListObjectVersions, `versionId` di GET/HEAD/DELETE/Copy/tagging,
   delete marker, pemulihan, versi lama dihitung ke kuota; lifecycle NoncurrentVersionExpiration +
   ExpiredObjectDeleteMarker; halaman `/s3`: saklar versi, riwayat versi, file terhapus. Migrasi D1 0022.
+- [x] D10 Album (ADR-093, 2026-11-01): `u|f/…/albums.json` di R2 (bukan D1), referensi file tanpa kuota, izin
+  mengikuti file per pembaca, file terhapus permanen dibuang saat album ditulis, `/api/albums`, tab Album di `/galeri`,
+  "Tambah ke album" di menu file, bagikan lewat link bundle; ikut ekspor dan hapus akun.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

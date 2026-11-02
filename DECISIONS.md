@@ -2726,3 +2726,29 @@ lintas akun.
   menghapus versi berkunci. Scan yang menemukan malware tetap menghapus versinya.
 - **Hapus akun (tahap hapus dunning) menghapus semua versi termasuk yang dikunci** (jawaban pemilik).
 - `/s3` menampilkan "Object Lock aktif" + retensi bawaan di bucket, dan status kunci tiap versi di Riwayat versi.
+
+## ADR-093 — D10: Album di Galeri, di R2 di samping index
+
+Tanggal: 2026-11-01. Status: diterima (roadmap D10; pemilik: kerjakan S5, D10, A6 dulu).
+
+- **Bukan tabel D1** walau roadmap D10 menulis "tabel baru lewat migrasi": aturan ADR-064 (Drive tanpa D1, tidak ada
+  tabel/kolom D1 baru untuk Drive) lebih baru dan menang. Album disimpan sebagai satu objek kecil per ruang di samping
+  index-nya: `u/{userId}/albums.json` (album pribadi) dan `f/{familyId}/albums.json` (album keluarga), ditulis dengan
+  syarat etag R2 dan coba ulang (1 tulis/detik per key).
+- Album = daftar **referensi** id file (bukan salinan, tidak menambah kuota), nama, sampul, urutan (`added` = urutan
+  ditambahkan/diatur ulang, `newest`/`oldest` = tanggal diambil D8), pembuat, waktu. Batas di config:
+  `album_max_per_space` (500), `album_max_items` (10.000).
+- **Izin mengikuti file**: setiap pembaca hanya melihat file yang ada di pohonnya sendiri (pribadi + keluarga), tidak
+  di Sampah, tidak ditolak scan. Album keluarga bisa berisi foto pribadi seorang anggota; anggota lain tidak melihatnya.
+  Hanya foto/video yang boleh dilihat penambahnya yang bisa ditambahkan (sisanya diabaikan diam-diam).
+- File di Sampah hilang dari tampilan dan muncul lagi saat dipulihkan; file yang dihapus permanen dibuang dari album
+  saat album ditulis berikutnya. Album keluarga mencatat `addedBy` per file, supaya penulis tidak membuang referensi
+  ke file pribadi anggota lain yang tidak bisa ia lihat.
+- Mengatur: album pribadi oleh pemiliknya; album keluarga diganti nama/urutan/dihapus oleh pembuatnya atau pemilik
+  keluarga, ditambah/dikurangi isinya oleh semua anggota (hanya file yang bisa mereka lihat).
+- Berbagi album = link share bundle yang sudah ada (ADR-054, maks 100 file per link) dari isi yang terlihat.
+- Ikut ekspor data (`albums`) dan hapus akun (dihapus bersama index). Album keluarga berakhir bersama keluarganya
+  (filenya kembali jadi milik pemilik, ADR-078).
+- API `/api/albums` (GET daftar, POST buat, GET satu dengan offset/limit, PATCH nama/sampul/urutan/tambah/kurangi/
+  susun ulang, DELETE). UI: tab Foto/Album di `/galeri`, `/galeri/album`, `/galeri/album/:id`, dan "Tambah ke album"
+  di menu file (Galeri dan explorer).

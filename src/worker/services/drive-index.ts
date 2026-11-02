@@ -27,6 +27,10 @@ export function indexKey(owner: IndexOwner): string {
   return 'user' in owner ? `u/${owner.user}/index.txt` : `f/${owner.family}/index.txt`;
 }
 
+/** D10 (ADR-093): the space's albums, next to its index. */
+export const albumKey = (owner: IndexOwner) =>
+  'user' in owner ? `u/${owner.user}/albums.json` : `f/${owner.family}/albums.json`;
+
 /** Up to this many changed entries are spliced in place; more, and the body is walked once. */
 const SPLICE_MAX = 8;
 

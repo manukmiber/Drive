@@ -2,7 +2,7 @@
 // day. A virtual grid (only the rows on screen exist), more pages as it scrolls, many selected at
 // once with the explorer's own actions, and the preview swiping through in gallery order.
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useVirtualizer, useWindowVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import {
   Check,
@@ -33,14 +33,14 @@ import { useMe } from '../lib/session';
 import { makeAndUploadThumb } from '../upload/thumbs';
 
 const WIB = 'Asia/Jakarta';
-const GAP = 4;
-const PAD = 8;
+export const GAP = 4;
+export const PAD = 8;
 
 export function galleryDate(n: NodeDto): number {
   return n.takenAt ?? n.clientModifiedAt ?? n.createdAt;
 }
 
-type Row =
+export type Row =
   | { kind: 'month'; key: string; label: string }
   | { kind: 'day'; key: string; label: string }
   | { kind: 'tiles'; key: string; items: NodeDto[] };
@@ -142,7 +142,7 @@ function requestThumb(node: NodeDto, wanted: () => boolean): Promise<boolean> {
   });
 }
 
-function Tile({
+export function Tile({
   node,
   size,
   selected,
@@ -344,26 +344,32 @@ function subscribeWide(cb: () => void) {
 }
 const useWide = () => useSyncExternalStore(subscribeWide, () => window.matchMedia(WIDE).matches);
 
-export function Gallery({ q, space }: { q: string; space?: 'personal' | 'family' | undefined }) {
-  const navigate = useNavigate();
-  const me = useMe();
-  const [text, setText] = useState(q);
-  // A new query from the address (a link, Back) replaces what is typed.
-  const [shown, setShown] = useState(q);
-  if (shown !== q) {
-    setShown(q);
-    setText(q);
-  }
-  useEffect(() => void (document.title = `${t.gallery.title} · Zeiko`), []);
-  const pages = useInfiniteQuery({
-    queryKey: ['gallery', q, space],
-    queryFn: ({ pageParam }) => galleryPage(q, space, pageParam),
-    initialPageParam: null as string | null,
-    getNextPageParam: (last) => last.nextCursor,
-  });
-  const items = useMemo(() => pages.data?.pages.flatMap((p) => p.items) ?? [], [pages.data]);
-  const actions = useNodeActions(items);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+/** "Photos | Albums" at the top of the Gallery (D10). */
+export function GalleryTabs({ current }: { current: 'photos' | 'albums' }) {
+  const tab = (active: boolean) =>
+    cn(
+      'rounded-full px-3 py-1 text-sm',
+      active
+        ? 'bg-brand-50 font-medium text-brand-800 dark:bg-brand-800/40 dark:text-brand-100'
+        : 'text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]',
+    );
+  return (
+    <nav className="ml-auto flex gap-1" aria-label={t.gallery.title}>
+      <Link to="/galeri" search={{ q: '' }} className={tab(current === 'photos')}>
+        {t.albums.photos}
+      </Link>
+      <Link to="/galeri/album" className={tab(current === 'albums')}>
+        {t.albums.title}
+      </Link>
+    </nav>
+  );
+}
+
+/**
+ * Where the grid sits and how wide it is (measured, then on every resize of it or the bar above):
+ * how many tiles fit across, and their size.
+ */
+export function useGridLayout() {
   const [list, setList] = useState<HTMLDivElement | null>(null);
   const head = useRef<HTMLDivElement>(null);
   const wide = useWide();
@@ -396,6 +402,65 @@ export function Gallery({ q, space }: { q: string; space?: 'personal' | 'family'
   const minTile = width < 640 ? 76 : 128;
   const cols = Math.max(3, Math.min(12, Math.floor((width - PAD * 2 + GAP) / (minTile + GAP))));
   const tile = Math.floor((width - PAD * 2 - GAP * (cols - 1)) / cols);
+  return { setList, head, wide, box, cols, tile };
+}
+
+/** The virtual grid on whatever scrolls the page (see WindowGrid and MainGrid). */
+export function VirtualGrid({
+  rows,
+  tile,
+  box,
+  wide,
+  onNearEnd,
+  renderRow,
+}: {
+  rows: Row[];
+  tile: number;
+  box: { page: number; inMain: number; main: HTMLElement | null };
+  wide: boolean;
+  onNearEnd: () => void;
+  renderRow: (row: Row) => ReactNode;
+}) {
+  const grid: GridProps = {
+    rows,
+    tile,
+    margin: wide ? box.inMain : box.page,
+    main: box.main,
+    onNearEnd,
+    renderRow,
+  };
+  return wide ? <MainGrid {...grid} /> : <WindowGrid {...grid} />;
+}
+
+/** Tiles only, `cols` across (an album keeps its own order, without dates). */
+export function flatRows(items: NodeDto[], cols: number): Row[] {
+  const rows: Row[] = [];
+  for (let i = 0; i < items.length; i += cols)
+    rows.push({ kind: 'tiles', key: `t${items[i]!.id}`, items: items.slice(i, i + cols) });
+  return rows;
+}
+
+export function Gallery({ q, space }: { q: string; space?: 'personal' | 'family' | undefined }) {
+  const navigate = useNavigate();
+  const me = useMe();
+  const [text, setText] = useState(q);
+  // A new query from the address (a link, Back) replaces what is typed.
+  const [shown, setShown] = useState(q);
+  if (shown !== q) {
+    setShown(q);
+    setText(q);
+  }
+  useEffect(() => void (document.title = `${t.gallery.title} · Zeiko`), []);
+  const pages = useInfiniteQuery({
+    queryKey: ['gallery', q, space],
+    queryFn: ({ pageParam }) => galleryPage(q, space, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor,
+  });
+  const items = useMemo(() => pages.data?.pages.flatMap((p) => p.items) ?? [], [pages.data]);
+  const actions = useNodeActions(items);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const { setList, head, wide, box, cols, tile } = useGridLayout();
   const rows = useMemo(() => galleryRows(items, cols), [items, cols]);
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = pages;
   const onNearEnd = useCallback(() => {
@@ -467,6 +532,7 @@ export function Gallery({ q, space }: { q: string; space?: 'personal' | 'family'
         <div className="flex items-center gap-2">
           <Images className="h-5 w-5 text-brand-600" aria-hidden="true" />
           <h1 className="text-lg font-semibold">{t.gallery.title}</h1>
+          <GalleryTabs current="photos" />
         </div>
         <form onSubmit={search} className="mt-2 flex items-center gap-2" role="search">
           <label className="relative min-w-0 flex-1">
@@ -513,37 +579,35 @@ export function Gallery({ q, space }: { q: string; space?: 'personal' | 'family'
             {q ? t.files.noResults : t.gallery.empty}
           </p>
         ) : (
-          (() => {
-            const grid: GridProps = {
-              rows,
-              tile,
-              margin: wide ? box.inMain : box.page,
-              main: box.main,
-              onNearEnd,
-              renderRow: (row) =>
-                row.kind === 'month' ? (
-                  <h2 className="pt-4 pb-1 text-base font-semibold capitalize">{row.label}</h2>
-                ) : row.kind === 'day' ? (
-                  <h3 className="pt-1.5 text-xs text-[var(--fg-muted)]">{row.label}</h3>
-                ) : (
-                  <div className="flex" style={{ gap: GAP }}>
-                    {row.items.map((n) => (
-                      <Tile
-                        key={n.id}
-                        node={n}
-                        size={tile}
-                        selected={selected.has(n.id)}
-                        selecting={sel.length > 0}
-                        mine={n.ownerId === myId}
-                        onOpen={() => actions.open(n)}
-                        onToggle={() => toggle(n.id)}
-                      />
-                    ))}
-                  </div>
-                ),
-            };
-            return wide ? <MainGrid {...grid} /> : <WindowGrid {...grid} />;
-          })()
+          <VirtualGrid
+            rows={rows}
+            tile={tile}
+            box={box}
+            wide={wide}
+            onNearEnd={onNearEnd}
+            renderRow={(row) =>
+              row.kind === 'month' ? (
+                <h2 className="pt-4 pb-1 text-base font-semibold capitalize">{row.label}</h2>
+              ) : row.kind === 'day' ? (
+                <h3 className="pt-1.5 text-xs text-[var(--fg-muted)]">{row.label}</h3>
+              ) : (
+                <div className="flex" style={{ gap: GAP }}>
+                  {row.items.map((n) => (
+                    <Tile
+                      key={n.id}
+                      node={n}
+                      size={tile}
+                      selected={selected.has(n.id)}
+                      selecting={sel.length > 0}
+                      mine={n.ownerId === myId}
+                      onOpen={() => actions.open(n)}
+                      onToggle={() => toggle(n.id)}
+                    />
+                  ))}
+                </div>
+              )
+            }
+          />
         )}
       </div>
       {actions.ui}

@@ -3,19 +3,21 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import {
+  BookImage,
   Clapperboard,
   Copy,
   Download,
   Eye,
   FileArchive,
   FileCode2,
+  FileImage,
   FilePen,
   FileSpreadsheet,
   FileType2,
-  FileImage,
   FolderInput,
   FolderOpen,
   ImageIcon,
+  Inbox,
   Info,
   LayoutGrid,
   Minimize2,
@@ -26,7 +28,6 @@ import {
   Star,
   StarOff,
   Trash2,
-  Inbox,
 } from 'lucide-react';
 import { useCallback, useState, type ReactNode } from 'react';
 import { t } from '../../lib/i18n';
@@ -69,6 +70,7 @@ import { Details } from './Details';
 import { MoveDialog } from './MoveDialog';
 import { Preview } from './Preview';
 import { ShareDialog } from './ShareDialog';
+import { AlbumPicker } from '../AlbumPicker';
 import { FileRequestDialog } from './FileRequestDialog';
 
 export function errorText(e: unknown): string {
@@ -96,6 +98,7 @@ export function useNodeActions(items: NodeDto[]) {
   const [preview, setPreview] = useState<{ list: NodeDto[]; index: number } | null>(null);
   const [details, setDetails] = useState<string | null>(null);
   const [sharing, setSharing] = useState<NodeDto[] | null>(null);
+  const [albumFor, setAlbumFor] = useState<NodeDto[] | null>(null);
   const [compressing, setCompressing] = useState<NodeDto[] | null>(null);
   const [decorating, setDecorating] = useState<NodeDto[] | null>(null);
   const [requesting, setRequesting] = useState<NodeDto | null>(null);
@@ -238,6 +241,13 @@ export function useNodeActions(items: NodeDto[]) {
       });
     if (nodes.length && nodes.every((n) => n.status === 'ready'))
       list.push({ label: t.common.share, icon: Share2, onSelect: () => setSharing(nodes) });
+    // D10 (ADR-093): photos and videos into an album.
+    if (
+      files.length &&
+      files.length === nodes.length &&
+      files.every((f) => f.status === 'ready' && isMedia(f.mime, f.name))
+    )
+      list.push({ label: t.albums.addTo, icon: BookImage, onSelect: () => setAlbumFor(files) });
     if (single)
       list.push({ label: t.common.rename, icon: Pencil, onSelect: () => setRenaming(single) });
     if (files.length === nodes.length && files.every((f) => f.status === 'ready'))
@@ -410,6 +420,7 @@ export function useNodeActions(items: NodeDto[]) {
       {editing && <EditorHost request={editing} onClose={() => setEditing(null)} />}
       {details && <Details id={details} onClose={() => setDetails(null)} />}
       {sharing && <ShareDialog nodes={sharing} onClose={() => setSharing(null)} />}
+      {albumFor && <AlbumPicker nodes={albumFor} onClose={() => setAlbumFor(null)} />}
       {requesting && <FileRequestDialog folder={requesting} onClose={() => setRequesting(null)} />}
       {compressing && <CompressDialog nodes={compressing} onClose={() => setCompressing(null)} />}
       {decorating && (

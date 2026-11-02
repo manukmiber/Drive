@@ -188,6 +188,9 @@ export const configSchema = z.object({
   content_text_source_max_bytes: nonNeg()
     .max(1024 * MIB)
     .default(50 * MIB),
+  // ── Albums (D10, ADR-093) ──
+  album_max_per_space: int().min(1).max(10_000).default(500),
+  album_max_items: int().min(10).max(100_000).default(10_000),
   // ── Gallery (D8, ADR-091) ──
   /** Older photos and videos read for their date and size each hour (Queues ops on Workers Free). */
   media_backfill_per_hour: int().min(0).max(5000).default(200),

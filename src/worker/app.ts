@@ -23,6 +23,7 @@ import { preview } from './routes/preview';
 import { publicAuth } from './routes/public-auth';
 import { reports } from './routes/reports';
 import { fileRequests, publicRequests } from './routes/file-requests';
+import { albums } from './routes/albums';
 import { archiveDownload } from './routes/archive-download';
 import { integrations } from './routes/integrations';
 import { sharePublic } from './routes/share-public';
@@ -121,6 +122,7 @@ export function createApp() {
   api.route('/uploads', uploads);
   api.route('/shares', shares);
   api.route('/file-requests', fileRequests);
+  api.route('/albums', albums);
   api.route('/archives', archives);
   api.route('/compress', compress);
   api.route('/ads', adsApi);
