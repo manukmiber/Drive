@@ -5,6 +5,7 @@ import { Check, Copy, Plus, Send, Trash2, Webhook } from 'lucide-react';
 import { useState } from 'react';
 import { formatDateTime } from '../../shared/format';
 import { api, ApiError } from '../lib/api';
+import { useCatalog } from '../lib/catalog';
 import { cn } from '../lib/cn';
 import { t } from '../lib/i18n';
 import { Button } from './Button';
@@ -140,7 +141,13 @@ function SecretBox({ secret, onClose }: { secret: string; onClose: () => void })
   );
 }
 
+/** Shown only where webhooks work (the access database is bound, ADR-049). */
 export function WebhookSettings() {
+  const on = useCatalog().data?.capabilities?.webhooks === true;
+  return on ? <WebhookCard /> : null;
+}
+
+function WebhookCard() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: webhooksKey, queryFn: fetchWebhooks });
   const [adding, setAdding] = useState(false);

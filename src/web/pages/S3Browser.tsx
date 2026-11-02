@@ -268,7 +268,9 @@ export function S3Browser({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const config = useCatalog().data?.config;
+  const catalog = useCatalog().data;
+  const config = catalog?.config;
+  const webhooksOn = catalog?.capabilities?.webhooks === true;
   const maxUpload = Number(config?.s3_web_upload_max_bytes ?? 95 * 1024 * 1024);
   const partBytes = Number(config?.s3_web_part_bytes ?? 32 * 1024 * 1024);
   const maxMultipart = Number(config?.s3_web_multipart_max_bytes ?? 50 * 1024 ** 3);
@@ -627,12 +629,14 @@ export function S3Browser({
         )}
         <span className="basis-full text-xs text-[var(--fg-muted)]">{t.s3.versioningHint}</span>
       </div>
-      <S3Notifications
-        bucket={bucket}
-        rules={notifications}
-        canWrite={canWrite}
-        onSaved={() => onRefreshBucket?.()}
-      />
+      {webhooksOn && (
+        <S3Notifications
+          bucket={bucket}
+          rules={notifications}
+          canWrite={canWrite}
+          onSaved={() => onRefreshBucket?.()}
+        />
+      )}
 
       {sending.length > 0 && (
         <ul className="mt-3 space-y-1 text-xs">

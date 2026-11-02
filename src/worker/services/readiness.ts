@@ -37,7 +37,8 @@ export type FeatureId =
   | 'captcha'
   | 'app_links'
   | 'people_shares'
-  | 'webdav';
+  | 'webdav'
+  | 'webhooks';
 
 export interface Feature {
   id: FeatureId;
@@ -330,6 +331,20 @@ export async function readiness(ctx: Ctx): Promise<Feature[]> {
         },
       ],
     },
+    {
+      id: 'webhooks',
+      title: 'Webhooks',
+      what: 'Signed HTTPS callbacks for Drive events and Zeiko S3 bucket notifications (ADR-094).',
+      hidden: true,
+      after: [],
+      needs: [
+        deploy(
+          'ACCESS_DB',
+          Boolean(env.ACCESS_DB),
+          'Endpoints live in the access database: create zeiko-access-<env>, apply migrations-access/ (0005 adds the webhook tables), put its id in deploy/<env>.json "accessDb" and deploy (DEPLOY.md).',
+        ),
+      ],
+    },
   ];
 
   const ready = new Map<FeatureId, boolean>();
@@ -362,6 +377,8 @@ export async function capabilities(ctx: Ctx) {
     s3UrlCustom: hostnames && Boolean(env.S3_CNAME_TARGET),
     /** D9 (ADR-089): the WebDAV address, or null where there is none. */
     webdavUrl: env.DAV_ORIGIN ?? null,
+    /** A6 (ADR-094): webhook endpoints live in the access database. */
+    webhooks: Boolean(env.ACCESS_DB),
   };
 }
 

@@ -45,6 +45,8 @@ export interface Catalog {
     fileRequests: boolean;
     /** D9 (ADR-089): where Drive answers WebDAV, or null. */
     webdavUrl?: string | null;
+    /** A6 (ADR-094): webhooks for Drive and Zeiko S3. */
+    webhooks?: boolean;
   };
   config: {
     upload_part_concurrency: number;

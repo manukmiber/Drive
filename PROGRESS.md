@@ -110,6 +110,10 @@ lewat fase R di `docs/ROADMAP.md`.
   `PutBucketNotificationConfiguration` (migrasi 0023); antrean `notify` dengan HMAC-SHA256 + timestamp, coba ulang
   30 s…1 j, mati otomatis setelah 5 kiriman gagal berturut + notifikasi; cek SSRF (https, port 443, DNS lewat DoH,
   tolak IP privat/loopback/link-local/host internal, dicek ulang tiap kirim); log 7 hari di Pengaturan dan `/s3`.
+- [ ] Pemilik: deploy production S5 + D10 + A6 (2026-11-02, pemilik minta "abis itu deploy"; dari sesi ini ditolak
+  pengaman izin). Urutan di DEPLOY.md "migrasi dulu, baru deploy": D1 utama `0022`, `0023`, D1 akses `0005`, lalu
+  build + deploy. Bookmark Time Travel sebelum migrasi: utama `000002ac-00000000-00005117-f3b96a741d90ade557ba102b72580b2e`,
+  akses `00000011-00000000-00005117-20f0347bfd6bdfa9774eff032c0e1d3c`.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

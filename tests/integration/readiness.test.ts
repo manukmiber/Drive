@@ -41,6 +41,8 @@ describe('feature readiness', () => {
       fileRequests: true,
       // D9 (ADR-089): dev's own WebDAV address.
       webdavUrl: 'http://dav.localhost:8790',
+      // A6 (ADR-094): webhook endpoints, in the access database.
+      webhooks: true,
     });
     // The website draws its Zeiko S3 section from the same catalog: prices, nothing more.
     const res = await rt.fetch(new Request(`${APP}/api/public/catalog`));

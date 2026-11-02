@@ -151,3 +151,18 @@ tetap jalan. Langkah ini membuat sesuatu di Cloudflare dan memindahkan data prod
    Cek jumlah barisnya sama di kedua database.
 4. Deploy (`npm run deploy:production`). Sejak itu link dibaca dan ditulis di `zeiko-access`; tabel lama di D1 utama
    dibiarkan sampai R8 menghapusnya.
+
+## Urutan: migrasi dulu, baru deploy (S5 ADR-092, A6 ADR-094)
+
+Worker baru membaca kolom baru di `s3_buckets` (`versioning`, `object_lock_json`, `notification_json`). Kalau Worker
+di-deploy sebelum migrasinya, semua request S3 yang membaca bucket gagal. Jadi selalu:
+
+```bash
+npx wrangler d1 time-travel info zeiko-production --env production          # catat bookmark
+npx wrangler d1 migrations apply DB --env production --remote               # 0022, 0023
+npx wrangler d1 migrations apply ACCESS_DB --env production --remote        # akses 0005 (webhook)
+npm run build && npx wrangler deploy --env production
+```
+
+Cek sesudahnya: `GET /api/health` 200, katalog publik `capabilities.webhooks` true, dan
+`aws s3api get-bucket-versioning --bucket <bucket> --endpoint-url https://s3.zeiko.biz.id` menjawab.
