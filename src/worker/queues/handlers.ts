@@ -2,6 +2,7 @@
 import { deleteOrphanBlob, processScan } from '../services/scan';
 import { registerBatchEnd, registerQueueHandler } from '.';
 import { readMediaOf, writeMedia } from '../services/media';
+import { deliverWebhook } from '../services/webhooks';
 import { log } from '../lib/log';
 import { OPERATOR_EMAIL } from '../../shared/constants';
 import { deliverShareEmail } from '../services/share-send';
@@ -33,6 +34,7 @@ registerQueueHandler('cleanup', async (ctx, body) => {
 
 registerQueueHandler('notify', async (ctx, body) => {
   if (body.type === 'notice') return deliverNotice(ctx, body);
+  if (body.type === 'webhook') return deliverWebhook(ctx, body);
   if (body.type === 'notification') return deliverLegacyNotification(ctx, body.notificationId);
   if (body.type === 'suppress') return ctx.adapters.notices.suppress(body.emailHash, 'unsubscribe');
   if (body.type === 'share_email') return deliverShareEmail(ctx, body.sendId, body.to);

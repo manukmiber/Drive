@@ -102,7 +102,7 @@ Fitur di bawah dibangun di atas index R2 (fase R), bukan D1.
 | A3  | Login aplikasi (OAuth 2.0 + PKCE) untuk APK/desktop | Diminta           | M      | A1, A2     | selesai (ADR-063); simpanan pindah di R6  |
 | A4  | SDK TypeScript (Drive + S3)                         | Diminta           | M      | A2 (A3)    | belum                                     |
 | A5  | SDK untuk APK (Kotlin/Flutter)                      | Diminta, nanti    | M      | A2, A3     | belum                                     |
-| A6  | Webhook Drive + S3                                  | Niche             | M      | R6, D4     | belum                                     |
+| A6  | Webhook Drive + S3                                  | Niche             | M      | R6, D4     | selesai (ADR-094)                         |
 
 ### Urutan yang disarankan
 

@@ -16,6 +16,7 @@ import { sitePage } from '../lib/zeiko';
 import { AccessTokens } from '../components/AccessTokens';
 import { ContentSearchSettings } from '../components/ContentSearch';
 import { WebDavSetup } from '../components/WebDavSetup';
+import { WebhookSettings } from '../components/WebhookSettings';
 import { Button } from '../components/Button';
 import { toast } from '../components/ui/Toast';
 import { TransferSettingsForm } from '../components/TransferSettings';
@@ -92,6 +93,7 @@ export function Settings() {
       <ContentSearchSettings />
       <AccessTokens />
       <WebDavSetup />
+      <WebhookSettings />
 
       <AccountData />
     </div>

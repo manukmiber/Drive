@@ -253,6 +253,14 @@ interface S3Bucket {
   /** ADR-092 */
   versioning: '' | 'Enabled' | 'Suspended';
   objectLock: { mode: string | null; days?: number; years?: number } | null;
+  /** ADR-094 */
+  notifications: Array<{
+    id: string;
+    webhookId: string;
+    events: string[];
+    prefix?: string;
+    suffix?: string;
+  }>;
 }
 
 /** ADR-072, as the API keeps it. */
@@ -1532,6 +1540,8 @@ function S3Page() {
           hasKey={d.keys.length > 0}
           versioning={d.buckets.find((b) => b.name === browsing)?.versioning ?? ''}
           objectLock={d.buckets.find((b) => b.name === browsing)?.objectLock ?? null}
+          notifications={d.buckets.find((b) => b.name === browsing)?.notifications ?? []}
+          onRefreshBucket={() => void refresh()}
           onVersioning={async (status) => {
             try {
               await api(`/api/s3/buckets/${encodeURIComponent(browsing)}`, {

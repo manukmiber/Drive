@@ -741,6 +741,8 @@ export const s3Buckets = sqliteTable('s3_buckets', {
   // ADR-092: versioning state and Object Lock.
   versioning: text('versioning'),
   objectLockJson: text('object_lock_json'),
+  // ADR-094: event notification rules.
+  notificationJson: text('notification_json'),
 });
 
 export const s3Subscriptions = sqliteTable('s3_subscriptions', {

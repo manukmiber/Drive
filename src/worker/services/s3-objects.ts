@@ -28,6 +28,7 @@ import { afterVirusTotal } from './scan';
 import { deleteReplicas, replicateObject } from './s3-replicas';
 import { releaseS3Url } from './s3-urls';
 import { dropBucketStats, pruneBucketStats } from './s3-stats';
+import { noteS3Event, type S3EventObject } from './webhooks';
 import {
   archiveCurrent,
   checkVersionId,
@@ -64,6 +65,53 @@ async function writeSettings(
     lock: lock !== undefined ? lock : defaultLock(b, ctx.now()),
   };
 }
+
+// ───────────────────────────── events (A6, ADR-094) ─────────────────────────────
+
+const bucketRules = new WeakMap<Ctx, Map<string, Promise<string | null>>>();
+
+/** What a route already read about the bucket, so its events need no second look. */
+export function knowBucket(
+  ctx: Ctx,
+  b: { name: string; notification_json?: string | null | undefined },
+): void {
+  let m = bucketRules.get(ctx);
+  if (!m) bucketRules.set(ctx, (m = new Map()));
+  m.set(b.name, Promise.resolve(b.notification_json ?? null));
+}
+
+/** Notes S3 events for the bucket's notification rules (nothing at all when it has none). */
+async function s3Events(
+  ctx: Ctx,
+  userId: string,
+  bucket: string,
+  name: string,
+  objects: S3EventObject[],
+): Promise<void> {
+  if (!objects.length) return;
+  let m = bucketRules.get(ctx);
+  if (!m) bucketRules.set(ctx, (m = new Map()));
+  let p = m.get(bucket);
+  if (!p) {
+    p = ctx.env.DB.prepare(
+      `SELECT notification_json FROM s3_buckets WHERE name = ?1 AND user_id = ?2`,
+    )
+      .bind(bucket, userId)
+      .first<{ notification_json: string | null }>()
+      .then((r) => r?.notification_json ?? null);
+    m.set(bucket, p);
+  }
+  const json = await p;
+  if (json)
+    noteS3Event(ctx, { name: bucket, user_id: userId, notification_json: json }, name, objects);
+}
+
+const created = (row: ObjectRow): S3EventObject => ({
+  key: row.key,
+  size: row.size,
+  etag: row.etag,
+  versionId: row.version_id ?? null,
+});
 
 const lockColumns = (lock: WriteLock | null) => ({
   lock_mode: lock?.mode ?? null,
@@ -446,6 +494,8 @@ export interface PutInput {
   versioning?: Versioning;
   /** Object Lock for the new version (ADR-092); undefined = the bucket's default. */
   lock?: WriteLock | null;
+  /** The event it raises (ADR-094): PutObject, or a browser form's PostObject. */
+  event?: 'Put' | 'Post';
 }
 
 export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): Promise<ObjectRow> {
@@ -516,6 +566,9 @@ export async function putObject(ctx: Ctx, account: S3Account, input: PutInput): 
     await commitBytes(ctx, userId, input.size, row.size - droppedBytes(dropped));
     await dropAll(ctx, userId, dropped);
     await scanRequest(ctx, row);
+    await s3Events(ctx, userId, input.bucket, `s3:ObjectCreated:${input.event ?? 'Put'}`, [
+      created(row),
+    ]);
     return row;
   } catch (e) {
     await releaseBytes(ctx, userId, input.size);
@@ -575,6 +628,8 @@ export async function deleteObjects(
   bucket: string,
   keys: string[],
   versioning?: Versioning,
+  /** ADR-094: what the events say (a lifecycle rule, or a request). */
+  cause: 'request' | 'lifecycle' = 'request',
 ): Promise<DeleteOutcome[]> {
   const unique = [...new Set(keys)];
   if (!unique.length) return [];
@@ -584,12 +639,20 @@ export async function deleteObjects(
   const now = ctx.now();
   const list = JSON.stringify(unique);
   const IN = `bucket = ?1 AND user_id = ?2 AND key IN (SELECT value FROM json_each(?3))`;
+  const kind = cause === 'lifecycle' ? 's3:LifecycleExpiration' : 's3:ObjectRemoved';
   if (mode === '') {
     const res = await db
-      .prepare(`DELETE FROM s3_objects WHERE ${IN} RETURNING blob_id, size`)
+      .prepare(`DELETE FROM s3_objects WHERE ${IN} RETURNING blob_id, size, key`)
       .bind(bucket, userId, list)
       .all();
     await freeDropped(ctx, userId, goneRows(res));
+    await s3Events(
+      ctx,
+      userId,
+      bucket,
+      `${kind}:Delete`,
+      (res.results as Array<{ key: string }>).map((r) => ({ key: r.key })),
+    );
     return unique.map((key) => ({ key }));
   }
   const suspended = mode === 'Suspended';
@@ -632,6 +695,13 @@ export async function deleteObjects(
     ...goneRows(res[stmts.length - 2], (r) => suspended && r.version_id === null),
   ];
   await freeDropped(ctx, userId, dropped);
+  await s3Events(
+    ctx,
+    userId,
+    bucket,
+    `${kind}:DeleteMarkerCreated`,
+    markers.map(([key, id]) => ({ key, versionId: id })),
+  );
   return markers.map(([key, id]) => ({ key, deleteMarker: true, markerVersionId: id }));
 }
 
@@ -649,7 +719,7 @@ export async function deleteNoncurrent(
       `DELETE FROM s3_versions WHERE bucket = ?1 AND user_id = ?2 AND noncurrent_at IS NOT NULL
          AND NOT (legal_hold = 1 OR COALESCE(lock_until, 0) > ?4)
          AND (key, version_id) IN (SELECT json_extract(value, '$[0]'), json_extract(value, '$[1]') FROM json_each(?3))
-       RETURNING blob_id, size, delete_marker`,
+       RETURNING blob_id, size, delete_marker, key, version_id`,
     )
     .bind(
       bucket,
@@ -659,6 +729,16 @@ export async function deleteNoncurrent(
     )
     .all();
   await freeDropped(ctx, account.userId, goneRows(res));
+  await s3Events(
+    ctx,
+    account.userId,
+    bucket,
+    's3:LifecycleExpiration:Delete',
+    (res.results as Array<{ key: string; version_id: string }>).map((r) => ({
+      key: r.key,
+      versionId: r.version_id,
+    })),
+  );
 }
 
 /**
@@ -699,6 +779,8 @@ export async function deleteVersion(
     ...promoteNewest(db, bucket, key, userId),
   ]);
   await freeDropped(ctx, userId, [...goneRows(res[0]), ...goneRows(res[1])]);
+  if (res[0]?.results.length || res[1]?.results.length)
+    await s3Events(ctx, userId, bucket, 's3:ObjectRemoved:Delete', [{ key, versionId }]);
   return { key, versionId, ...(v.delete_marker ? { deleteMarker: true } : {}) };
 }
 
@@ -849,13 +931,15 @@ export async function copyObject(
       .run();
     if (ifMatch !== null && !changed.meta.changes)
       throw new S3Error('PreconditionFailed', PRECONDITION);
-    return {
+    const updated = {
       ...src,
       content_type: contentType,
       meta_json: meta,
       modified_at: now,
       tags_json: tags,
     };
+    await s3Events(ctx, userId, input.to.bucket, 's3:ObjectCreated:Copy', [created(updated)]);
+    return updated;
   }
   if (src.size > MAX_SINGLE_PUT_BYTES)
     throw new S3Error(
@@ -902,6 +986,7 @@ export async function copyObject(
     await commitBytes(ctx, userId, src.size, src.size - droppedBytes(dropped));
     await dropAll(ctx, userId, dropped);
     await scanRequest(ctx, row);
+    await s3Events(ctx, userId, input.to.bucket, 's3:ObjectCreated:Copy', [created(row)]);
     return row;
   } catch (e) {
     await releaseBytes(ctx, userId, src.size);
@@ -1472,6 +1557,9 @@ export async function completeUpload(
   await commitBytes(ctx, account.userId, reserved, total - droppedBytes(dropped));
   await dropAll(ctx, account.userId, dropped);
   await scanRequest(ctx, row);
+  await s3Events(ctx, account.userId, bucket, 's3:ObjectCreated:CompleteMultipartUpload', [
+    created(row),
+  ]);
   return row;
 }
 

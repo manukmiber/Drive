@@ -20,6 +20,7 @@ import { requireNode, type NodeRecord } from './access';
 import { isRateLimited, type IndexOwner } from './drive-index';
 import { flushDelay } from './drive-index-sync';
 import { treeNode } from './drive-read';
+import { noteDriveEvent, type DriveEvent, type DriveItem } from './webhooks';
 
 export { ACTIVITY_ACTIONS, type ActivityAction, type ActivityItem } from '../../shared/activity';
 
@@ -51,8 +52,18 @@ export interface ActivityEvent {
   fromParent?: string | null | undefined;
 }
 
+/** A6 (ADR-094): the activity that is also a webhook event. Uploads go out once the scan passed. */
+const WEBHOOK_OF: Partial<Record<ActivityAction, DriveEvent>> = {
+  replace: 'drive.file.replaced',
+  trash: 'drive.item.trashed',
+  delete: 'drive.item.deleted',
+  share: 'drive.share.created',
+};
+
 /** Notes an event for the node's space; written when the request is done. */
 export function recordActivity(ctx: Ctx, actorId: string, ev: ActivityEvent): void {
+  const hook = WEBHOOK_OF[ev.action];
+  if (hook) noteDriveEvent(ctx, actorId, hook, ev.node as DriveItem);
   const now = ctx.now();
   const owner = logOf(ev.node);
   const month = monthOf(now);

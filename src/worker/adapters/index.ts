@@ -22,6 +22,7 @@ import { GraphqlR2Metrics, NoR2Metrics, type R2Metrics } from './r2-metrics';
 import { HttpVirusTotal, MockVirusTotal, type VirusTotal } from './virustotal';
 import { CloudflareHostnames, MockHostnames, type Hostnames } from './hostnames';
 import { MockNotices, RelayNotices, type NoticeStore } from './notices';
+import { HttpWebhookTransport, MockWebhookTransport, type WebhookTransport } from './webhooks';
 
 export interface Adapters {
   email: EmailSender;
@@ -38,6 +39,8 @@ export interface Adapters {
   hostnames: Hostnames | null;
   /** The bell, email switches and unsubscribes: kept by the relay (ADR-064). */
   notices: NoticeStore;
+  /** A6 (ADR-094): webhook deliveries (real unless set to mock, never mock in production). */
+  webhooks: WebhookTransport;
 }
 
 /** Zeiko Accounts is set up: the door's address and the app token. */
@@ -109,6 +112,10 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
       : env.ADAPTER_HOSTNAMES === 'mock' && env.APP_ENV !== 'production'
         ? new MockHostnames()
         : null;
+  const webhooks: WebhookTransport =
+    env.ADAPTER_WEBHOOKS === 'mock' && env.APP_ENV !== 'production'
+      ? new MockWebhookTransport()
+      : new HttpWebhookTransport();
   return {
     email,
     payment,
@@ -121,5 +128,6 @@ export function createAdapters(env: Env, clock: Clock): Adapters {
     virustotal,
     hostnames,
     notices,
+    webhooks,
   };
 }

@@ -61,6 +61,13 @@ import {
 } from '../services/s3-stats';
 import { getFromAnyCopy } from '../services/s3-replicas';
 import {
+  parseRules,
+  setBucketNotifications,
+  webhookArn,
+  webhookIdOf,
+  type NotificationRule,
+} from '../services/webhooks';
+import {
   checkVersionId,
   getVersionRow,
   latestMarker,
@@ -118,6 +125,7 @@ import {
   deleteBucket,
   deleteObjects,
   deleteVersion,
+  knowBucket,
   getLegalHold,
   getObjectRow,
   getRetention,
@@ -173,7 +181,6 @@ const UNSUPPORTED_SUB = [
   'intelligent-tiering',
   'inventory',
   'metrics',
-  'notification',
   'ownershipControls',
   'policy',
   'policyStatus',
@@ -795,7 +802,8 @@ async function bucketOp(r: Req): Promise<Response> {
     !q.has('logging') &&
     !q.has('lifecycle') &&
     !q.has('versioning') &&
-    !q.has('object-lock')
+    !q.has('object-lock') &&
+    !q.has('notification')
   ) {
     if (sub)
       throw new S3Error('NotImplemented', `The ${sub} configuration is not supported by Zeiko S3.`);
@@ -818,6 +826,7 @@ async function bucketOp(r: Req): Promise<Response> {
   permit(r, 'any', name);
   const bucket = await ownBucket(r.ctx, auth.userId, name);
   r.stats = bucket;
+  knowBucket(r.ctx, bucket);
   if (sub)
     throw new S3Error('NotImplemented', `The ${sub} sub-resource is not supported by Zeiko S3.`);
   if (q.has('cors')) return corsOp(r, bucket);
@@ -825,6 +834,7 @@ async function bucketOp(r: Req): Promise<Response> {
   if (q.has('lifecycle')) return lifecycleOp(r, bucket);
   if (q.has('versioning')) return versioningOp(r, bucket);
   if (q.has('object-lock')) return objectLockOp(r, bucket);
+  if (q.has('notification')) return notificationOp(r, bucket);
   if (q.has('versions') && r.method === 'GET') return listVersions(r, bucket);
   switch (r.method) {
     case 'HEAD':
@@ -908,6 +918,82 @@ async function versioningOp(r: Req, bucket: BucketRow): Promise<Response> {
       'The Versioning element must be specified with Status Enabled or Suspended.',
     );
   await setBucketVersioning(r.ctx, auth.userId, bucket.name, status);
+  return new Response(null, { status: 200 });
+}
+
+/**
+ * Get/PutBucketNotificationConfiguration (ADR-094): S3's own format, where the destination (Topic,
+ * Queue or CloudFunction) names one of the owner's webhooks: arn:zeiko:webhook:::<id>.
+ */
+async function notificationOp(r: Req, bucket: BucketRow): Promise<Response> {
+  const auth = needAuth(r);
+  if (r.method === 'GET') {
+    r.op = 'GetBucketNotificationConfiguration';
+    const rules = parseRules(bucket.notification_json);
+    return xmlResponse(
+      xmlDoc('NotificationConfiguration', {
+        TopicConfiguration: rules.map((x) => ({
+          Id: x.id,
+          Topic: webhookArn(x.webhookId),
+          Event: x.events,
+          ...(x.prefix || x.suffix
+            ? {
+                Filter: {
+                  S3Key: {
+                    FilterRule: [
+                      ...(x.prefix ? [{ Name: 'prefix', Value: x.prefix }] : []),
+                      ...(x.suffix ? [{ Name: 'suffix', Value: x.suffix }] : []),
+                    ],
+                  },
+                },
+              }
+            : {}),
+        })),
+      }),
+    );
+  }
+  if (r.method !== 'PUT')
+    throw new S3Error(
+      'MethodNotAllowed',
+      'The specified method is not allowed against this resource.',
+    );
+  r.op = 'PutBucketNotificationConfiguration';
+  permit(r, 'manage', bucket.name);
+  const xml = await readSmallBody(r);
+  const root = xmlElements(xml, 'NotificationConfiguration')[0];
+  if (root === undefined && !/<NotificationConfiguration\b[^>]*\/>/.test(xml))
+    throw new S3Error(
+      'MalformedXML',
+      'The XML you provided was not well-formed or did not validate against our published schema.',
+    );
+  const body = root ?? '';
+  if (xmlElements(body, 'EventBridgeConfiguration').length)
+    throw new S3Error('NotImplemented', 'EventBridge is not supported by Zeiko S3; use a webhook.');
+  const rules: NotificationRule[] = [];
+  for (const [tag, dest] of [
+    ['TopicConfiguration', 'Topic'],
+    ['QueueConfiguration', 'Queue'],
+    ['CloudFunctionConfiguration', 'CloudFunction'],
+  ] as const)
+    for (const c of xmlElements(body, tag)) {
+      const filter: { prefix?: string; suffix?: string } = {};
+      for (const fr of xmlElements(c, 'FilterRule')) {
+        const name = (xmlText(fr, 'Name') ?? '').toLowerCase();
+        if ((name !== 'prefix' && name !== 'suffix') || filter[name] !== undefined)
+          throw new S3Error(
+            'InvalidArgument',
+            'Invalid filter rule name; use prefix and suffix once each.',
+          );
+        filter[name] = xmlText(fr, 'Value') ?? '';
+      }
+      rules.push({
+        id: xmlText(c, 'Id') ?? `rule-${rules.length + 1}`,
+        webhookId: webhookIdOf(xmlText(c, dest) ?? ''),
+        events: xmlElements(c, 'Event').map((e) => e.trim()),
+        ...filter,
+      });
+    }
+  await setBucketNotifications(r.ctx, auth.userId, bucket.name, rules);
   return new Response(null, { status: 200 });
 }
 
@@ -1709,6 +1795,8 @@ async function objectOp(r: Req): Promise<Response> {
 
   if (!r.auth) {
     r.stats = bucket;
+    knowBucket(r.ctx, bucket);
+    knowBucket(r.ctx, bucket);
     // Anonymous: read-only, public buckets, nothing else (ToS §4).
     if (
       (r.method !== 'GET' && r.method !== 'HEAD') ||
@@ -1737,6 +1825,7 @@ async function objectOp(r: Req): Promise<Response> {
   const auth = r.auth;
   if (bucket.user_id !== auth.userId) throw new S3Error('AccessDenied', 'Access Denied');
   r.stats = bucket;
+  knowBucket(r.ctx, bucket);
   const key = r.key!;
   // Reading is GET/HEAD of the object (or its ACL); everything else, ListParts included, is writing.
   const reading = (r.method === 'GET' || r.method === 'HEAD') && !q.has('uploadId');
@@ -2093,6 +2182,7 @@ async function postObject(r: Req): Promise<Response> {
   };
   if (bucket.user_id !== key.userId) throw new S3Error('AccessDenied', 'Access Denied');
   r.stats = bucket;
+  knowBucket(r.ctx, bucket);
   checkPostPolicy(policy, f, bucket.name, form.file.size, r.ctx.now());
   const objectKey = keyField.replaceAll('${filename}', form.file.filename);
   r.key = objectKey;
@@ -2129,6 +2219,7 @@ async function postObject(r: Req): Promise<Response> {
     contentType: f.get('content-type') ?? form.file.contentType,
     meta: metaFromHeaders(h),
     tags: tagging !== undefined ? tagsFromXml(tagging) : null,
+    event: 'Post',
   });
   const etag = quoted(row.etag);
   const location = `${r.ctx.env.S3_ORIGIN!}/${encodeURIComponent(bucket.name)}/${objectKey.split('/').map(encodeURIComponent).join('/')}`;

@@ -61,6 +61,8 @@ export interface Env {
   WORKER_NAME?: string;
   /** Own S3 addresses without Cloudflare: `mock` (dev, tests). */
   ADAPTER_HOSTNAMES?: 'mock';
+  /** A6 (ADR-094): 'mock' keeps webhooks in memory (dev, tests). */
+  ADAPTER_WEBHOOKS?: string;
 
   // ── secrets (wrangler secret / .dev.vars) ──
   BETTER_AUTH_SECRET: string;

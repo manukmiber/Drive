@@ -23,6 +23,7 @@ import {
 import { useRef, useState } from 'react';
 import { formatBytes, formatDateTime } from '../../shared/format';
 import { Button } from '../components/Button';
+import { S3Notifications, type NotificationRuleDto } from '../components/S3Notifications';
 import { Dialog, PromptDialog } from '../components/ui/Dialog';
 import { toast } from '../components/ui/Toast';
 import { downloads } from '../download/useDownloads';
@@ -249,6 +250,8 @@ export function S3Browser({
   versioning,
   onVersioning,
   objectLock = null,
+  notifications = [],
+  onRefreshBucket,
   onClose,
 }: {
   bucket: string;
@@ -259,6 +262,9 @@ export function S3Browser({
   onVersioning: (status: 'Enabled' | 'Suspended') => Promise<void>;
   /** ADR-092: the bucket's Object Lock, if it has one (then versioning can't be paused). */
   objectLock?: { mode: string | null; days?: number; years?: number } | null;
+  /** ADR-094: the bucket's event notifications. */
+  notifications?: NotificationRuleDto[];
+  onRefreshBucket?: () => void;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -621,6 +627,12 @@ export function S3Browser({
         )}
         <span className="basis-full text-xs text-[var(--fg-muted)]">{t.s3.versioningHint}</span>
       </div>
+      <S3Notifications
+        bucket={bucket}
+        rules={notifications}
+        canWrite={canWrite}
+        onSaved={() => onRefreshBucket?.()}
+      />
 
       {sending.length > 0 && (
         <ul className="mt-3 space-y-1 text-xs">

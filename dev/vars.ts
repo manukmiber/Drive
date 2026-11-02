@@ -21,6 +21,7 @@ export const DEV_DEFAULTS: Record<string, string> = {
   ADAPTER_VIRUSTOTAL: 'mock',
   // Own S3 addresses (ADR-048): s3.<name>.localhost:8790 answers locally (curl resolves *.localhost).
   ADAPTER_HOSTNAMES: 'mock',
+  ADAPTER_WEBHOOKS: 'mock',
   S3_SUBDOMAIN_SUFFIX: 'localhost',
   S3_CNAME_TARGET: 'custom-s3.zeiko.biz.id',
   // Insecure, dev-only secrets. Real ones come from `wrangler secret put`.

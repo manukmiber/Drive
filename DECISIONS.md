@@ -2752,3 +2752,36 @@ Tanggal: 2026-11-01. Status: diterima (roadmap D10; pemilik: kerjakan S5, D10, A
 - API `/api/albums` (GET daftar, POST buat, GET satu dengan offset/limit, PATCH nama/sampul/urutan/tambah/kurangi/
   susun ulang, DELETE). UI: tab Foto/Album di `/galeri`, `/galeri/album`, `/galeri/album/:id`, dan "Tambah ke album"
   di menu file (Galeri dan explorer).
+
+## ADR-094 — A6: Webhook untuk Drive dan Zeiko S3
+
+Tanggal: 2026-11-02. Status: diterima (roadmap A6; pemilik: kerjakan S5, D10, A6, lalu deploy).
+
+- **Tempat:** endpoint (`webhooks`) dan log pengiriman 7 hari (`webhook_deliveries`) di **D1 akses** (migrasi
+  `migrations-access/0005`), di samping token API yang sejenis (ADR-064: bukan D1 utama). Rahasia tanda tangan
+  (`whsec_…`) disegel AES-GCM dengan `CONTACTS_ENC_KEY` (secret wajib yang sudah ada), ditampilkan sekali saat dibuat
+  atau diganti. Batas per akun di config `webhook_max_per_account` (10).
+- **Event Drive** (dipilih per endpoint): `drive.file.uploaded` (file baru yang **lolos scan**, dari `scan.ts`; isi
+  baru untuk file lama tidak dihitung "uploaded"), `drive.file.replaced`, `drive.item.trashed`, `drive.item.deleted`,
+  `drive.share.created` (dari `recordActivity`, D4). Ruang pribadi → endpoint pemiliknya; ruang keluarga → endpoint
+  semua anggota (semuanya boleh melihat file keluarga).
+- **Event S3** diatur per bucket dengan format S3 asli: Put/GetBucketNotificationConfiguration (Topic/Queue/
+  CloudFunctionConfiguration; tujuan = `arn:zeiko:webhook:::<id>` milik pemilik bucket, selain itu `InvalidArgument`;
+  filter prefix/suffix; EventBridge → NotImplemented), disimpan di `s3_buckets.notification_json` (migrasi 0023).
+  Event: ObjectCreated:Put/Post/Copy/CompleteMultipartUpload, ObjectRemoved:Delete/DeleteMarkerCreated,
+  LifecycleExpiration:Delete/DeleteMarkerCreated. Isi kiriman = `{"Records": […]}` berbentuk event S3 (eventVersion
+  2.1, `eventSource: "zeiko:s3"`), supaya parser event S3 yang ada bisa dipakai.
+- **Pengiriman:** event satu request dikumpulkan, satu pesan antrean `notify` per endpoint (maks 100 event per pesan).
+  POST JSON dengan header `Zeiko-Webhook-Id`, `Zeiko-Delivery`, `Zeiko-Event`, `Zeiko-Timestamp`, dan
+  `Zeiko-Signature: v1=<hex HMAC-SHA256(rahasia, "<timestamp>.<body>")>`; penerima menolak timestamp > 5 menit (anti
+  replay). Redirect tidak diikuti; 2xx = berhasil. Gagal → dicoba lagi setelah 30 s, 2 m, 10 m, 30 m, 1 j (maks
+  `webhook_max_attempts` = 6 kali). Setelah `webhook_disable_after` (5) kiriman berturut-turut menyerah, endpoint
+  dimatikan dan pemiliknya diberi notifikasi `webhook_disabled`. Isi hanya metadata (id, nama, ukuran, waktu), tidak
+  pernah isi file atau URL unduh.
+- **SSRF:** hanya `https`, port 443, tanpa user/password, bukan nama internal (`localhost`, `.local`, `.internal`, …)
+  atau host Zeiko sendiri; nama di-resolve lewat DNS-over-HTTPS (Cloudflare) dan semua alamatnya harus publik (tolak
+  privat, loopback, link-local, CGNAT, dokumentasi, multicast, IPv4 di dalam IPv6). Dicek saat disimpan **dan sebelum
+  setiap kiriman** (DNS rebinding).
+- **UI:** Pengaturan → Webhook (tambah, pilih event, rahasia, kirim tes, matikan/nyalakan, ganti rahasia, log 7 hari);
+  `/s3` → Notifikasi bucket (webhook, objek dibuat/dihapus, prefix/suffix, log S3). Cron malam membuang log > 7 hari.
+  Hapus akun menghapus endpoint dan lognya.

@@ -1,5 +1,6 @@
 // /api/s3: the signed-in person's own Zeiko S3 page (ADR-044): endpoint, storage, plan, own address,
 // access keys and buckets. Plans and addresses are bought through /api/billing/checkout (ADR-047/048).
+import { setBucketNotifications } from '../services/webhooks';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { validate } from '../lib/validate';
@@ -114,6 +115,35 @@ export const s3 = new Hono<AppBindings>()
       if (b.public !== undefined) await s3Call(() => setBucketPublic(ctx, userId, name, b.public!));
       if (b.versioning) await s3Call(() => setVersioningFromApp(ctx, acc, name, b.versioning!));
       return c.body(null, 204);
+    },
+  )
+  // ADR-094: a bucket's event notifications to the owner's webhooks (the /s3 page's form).
+  .put(
+    '/buckets/:name/notifications',
+    validate(
+      'json',
+      z.object({
+        rules: z
+          .array(
+            z.object({
+              id: z.string().min(1).max(255),
+              webhookId: z.string().regex(/^[0-9A-HJKMNP-TV-Z]{26}$/),
+              events: z.array(z.string().max(64)).min(1).max(12),
+              prefix: z.string().max(1024).optional(),
+              suffix: z.string().max(1024).optional(),
+            }),
+          )
+          .max(100),
+      }),
+    ),
+    async (c) => {
+      const ctx = c.get('ctx');
+      const userId = c.get('user')!.id;
+      await activeAccount(ctx, userId);
+      const rules = await s3Call(() =>
+        setBucketNotifications(ctx, userId, c.req.param('name'), c.req.valid('json').rules),
+      );
+      return c.json({ rules });
     },
   )
   // ADR-092: an object's versions, objects that were deleted, bringing one back, removing one.

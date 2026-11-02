@@ -188,6 +188,12 @@ export const configSchema = z.object({
   content_text_source_max_bytes: nonNeg()
     .max(1024 * MIB)
     .default(50 * MIB),
+  // ── Webhooks (A6, ADR-094) ──
+  webhook_max_per_account: int().min(1).max(100).default(10),
+  /** Tries per delivery (30 s, 2 min, 10 min, 30 min, 1 h between them). */
+  webhook_max_attempts: int().min(1).max(12).default(6),
+  /** Deliveries that gave up in a row before an endpoint is turned off. */
+  webhook_disable_after: int().min(1).max(100).default(5),
   // ── Albums (D10, ADR-093) ──
   album_max_per_space: int().min(1).max(10_000).default(500),
   album_max_items: int().min(10).max(100_000).default(10_000),

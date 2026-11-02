@@ -29,7 +29,11 @@ export type ScanMessage =
     };
 export type ArchiveMessage = { type: 'archive'; jobId: string };
 export type CompressMessage = { type: 'compress'; jobId: string };
+import type { WebhookMessage } from '../services/webhooks';
+
 export type NotifyMessage =
+  // A6 (ADR-094): one webhook delivery attempt.
+  | WebhookMessage
   // A notice for the relay to keep (ADR-064), then mailed unless switched off. It carries its own
   // content: there is no D1 row to re-read.
   | {

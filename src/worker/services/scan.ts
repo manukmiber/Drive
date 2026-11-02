@@ -5,6 +5,7 @@
 // blocklisted, uploader notified.
 import type { ScanResult } from '../adapters/scanner';
 import { isMediaType, queueMedia } from './media';
+import { noteDriveEvent, type DriveItem } from './webhooks';
 import { markBlobOwnersDirty } from './drive-index-sync';
 import type { Ctx } from '../context';
 import { log } from '../lib/log';
@@ -22,6 +23,7 @@ interface BlobRow {
   refcount: number;
   scan_status: string;
   scan_attempts: number;
+  created_at: number;
 }
 
 export class RetryableScanError extends Error {}
@@ -154,6 +156,17 @@ export async function processScan(
           .first(),
       );
     if (media) await queueMedia(ctx, blobId);
+    // A6 (ADR-094): a new file that passed its scan. (New content for an existing file was
+    // announced as drive.file.replaced when it came in.)
+    const { results: passed } = await DB.prepare(
+      `SELECT id, name, kind, parent_id, space, owner_id, family_id, size, mime, created_by, created_at
+       FROM nodes WHERE blob_id = ?1 AND kind = 'file' AND status = 'ready'`,
+    )
+      .bind(blobId)
+      .all<DriveItem & { created_by: string; created_at: number }>();
+    for (const n of passed)
+      if (n.created_at >= blob.created_at - 5_000)
+        noteDriveEvent(ctx, n.created_by, 'drive.file.uploaded', n);
   } else {
     const { results: affected } = await DB.prepare(
       `SELECT id, name, created_by FROM nodes WHERE blob_id = ?1 AND status IN ('scanning', 'ready')`,

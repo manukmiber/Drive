@@ -573,7 +573,7 @@ async function bucketTurn(
     const inPrefix = results.filter((o) => o.key.startsWith(rule.prefix));
     const due = inPrefix.filter((o) => ruleCovers(rule, o, now)).map((o) => o.key);
     // In a versioned bucket this leaves a delete marker and keeps the version (ADR-092).
-    if (due.length) await deleteObjects(ctx, account, b.name, due);
+    if (due.length) await deleteObjects(ctx, account, b.name, due, undefined, 'lifecycle');
     const done = results.length < scanRows || inPrefix.length < results.length;
     const next: Cursor = done
       ? { rule: cursor.rule, after: '', nc: true }

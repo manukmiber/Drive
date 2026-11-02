@@ -30,7 +30,8 @@ export type NotificationType =
   | 's3_url_released'
   | 'file_expiring'
   | 'node_shared'
-  | 'file_request_files';
+  | 'file_request_files'
+  | 'webhook_disabled';
 
 /** Queue a notice. It reaches the bell once the relay has it (the queue retries until then). */
 export async function notify(
@@ -164,6 +165,12 @@ export function renderNotice(
         cta: { label: m.ctaOpenDrive, url: `${app}/` },
       };
     }
+    case 'webhook_disabled':
+      return {
+        title: m.webhookOffTitle,
+        paragraphs: [m.webhookOffBody(String(p.url))],
+        cta: { label: m.ctaSettings, url: `${app}/pengaturan` },
+      };
     case 'file_request_files':
       return {
         title: m.requestFilesTitle(String(p.title), Number(p.count)),

@@ -105,6 +105,11 @@ lewat fase R di `docs/ROADMAP.md`.
 - [x] D10 Album (ADR-093, 2026-11-01): `u|f/…/albums.json` di R2 (bukan D1), referensi file tanpa kuota, izin
   mengikuti file per pembaca, file terhapus permanen dibuang saat album ditulis, `/api/albums`, tab Album di `/galeri`,
   "Tambah ke album" di menu file, bagikan lewat link bundle; ikut ekspor dan hapus akun.
+- [x] A6 Webhook Drive + S3 (ADR-094, 2026-11-02): endpoint di D1 akses (`webhooks`, `webhook_deliveries`, migrasi
+  akses 0005), rahasia disegel CONTACTS_ENC_KEY; event Drive dari `recordActivity` + scan lolos, event S3 dari
+  `PutBucketNotificationConfiguration` (migrasi 0023); antrean `notify` dengan HMAC-SHA256 + timestamp, coba ulang
+  30 s…1 j, mati otomatis setelah 5 kiriman gagal berturut + notifikasi; cek SSRF (https, port 443, DNS lewat DoH,
+  tolak IP privat/loopback/link-local/host internal, dicek ulang tiap kirim); log 7 hari di Pengaturan dan `/s3`.
 - [ ] R6 sesi (bersama R7) · R7 akun/paket/pembayaran/data operator di relay · R8 pindah data production, hapus
   tabel Drive dari D1.
 

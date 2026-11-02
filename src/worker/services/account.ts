@@ -1,5 +1,6 @@
 // Account rights under UU PDP (SPEC §14.5): export personal data, delete account after a waiting
 // period. Invoices and the wallet ledger are kept (accounting obligations) but de-identified.
+import { deleteUserWebhooks } from './webhooks';
 import { exportAlbums } from './albums';
 import { DAY_MS } from '../../shared/constants';
 import { deleteActivity, exportActivity } from './activity';
@@ -254,6 +255,7 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
     await deleteActivity(ctx, { user: id });
     await deleteGrantsOfUser(ctx, id);
     await deleteRequestsOfUser(ctx, id);
+    await deleteUserWebhooks(ctx, id);
     log.info('account_deleted', { userId: id });
   }
   return results.length;

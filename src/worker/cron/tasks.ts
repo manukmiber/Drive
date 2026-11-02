@@ -11,6 +11,7 @@ import {
 import { purgeExpiredTrash } from '../services/nodes';
 import { flushDirtyIndexes } from '../services/drive-index-sync';
 import { backfillMedia } from '../services/media';
+import { pruneDeliveries } from '../services/webhooks';
 import { runExpiries } from '../services/expiry';
 import { pruneActivity } from '../services/activity';
 import { purgeOldVersions } from '../services/versions';
@@ -84,6 +85,12 @@ registerCronTask(CRON.hourly, {
 registerCronTask(CRON.hourly, {
   name: 's3_deliver_logs',
   run: async (ctx) => void (await deliverS3Logs(ctx)),
+});
+
+// A6 (ADR-094): webhook deliveries are kept 7 days.
+registerCronTask(CRON.nightly, {
+  name: 'webhook_deliveries_prune',
+  run: async (ctx) => void (await pruneDeliveries(ctx)),
 });
 
 registerCronTask(CRON.nightly, {
