@@ -13,7 +13,7 @@ button,.btn{display:inline-block;margin-top:12px;width:100%;height:44px;border:0
 .files{list-style:none;margin:16px 0 0;padding:0;max-height:60vh;overflow:auto}.files li{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:10px 0;border-top:1px solid #e5e7eb;font-size:14px}
 .decor{display:inline-flex;vertical-align:-3px;margin-right:6px;color:var(--dl,#4338ca)}
 .files a{color:#4338ca;text-decoration:none;font-weight:500;word-break:break-word;flex:1 1 60%}.files a:hover{text-decoration:underline}.files .size{color:#6b7280;font-size:12px;margin-left:auto;white-space:nowrap}.files .muted{flex-basis:100%;order:3}
-@media(prefers-color-scheme:dark){body{background:#0f1117;color:#e5e7eb}.card{background:#161925;border-color:#262a36}p{color:#9ca3af}input{background:#0f1117;color:#e5e7eb;border-color:#262a36}.files li{border-color:#262a36}.files a{color:#a5b4fc}.decor{color:var(--dd,#a5b4fc)}}`;
+body{background:#0f1117;color:#e5e7eb;color-scheme:dark}.card{background:#161925;border-color:#262a36}.brand{color:#a5b4fc}.ad{border-color:#262a36}.ad a{color:#e5e7eb}p{color:#9ca3af}input{background:#0f1117;color:#e5e7eb;border-color:#262a36}.files li{border-color:#262a36}.files a{color:#a5b4fc}.decor{color:var(--dd,#a5b4fc)}`;
 
 export function page(
   title: string,

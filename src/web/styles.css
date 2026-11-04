@@ -1,15 +1,14 @@
 @import 'tailwindcss';
 
-/* Dark mode follows the system unless the page pins a theme with .light or .dark on <html>.
-   The colour tokens below do the same, so `dark:` classes and tokens always agree. */
+/* Dark is the default whatever the system says (the owner's, 2026-11-03: "everything is night
+   mode by default"); a page is light only when it pins .light on <html>. The colour tokens below
+   do the same, so `dark:` classes and tokens always agree. */
 @custom-variant dark {
   &:where(.dark, .dark *) {
     @slot;
   }
-  @media (prefers-color-scheme: dark) {
-    &:where(:root:not(.light), :root:not(.light) *) {
-      @slot;
-    }
+  &:where(:root:not(.light), :root:not(.light) *) {
+    @slot;
   }
 }
 
@@ -67,24 +66,22 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) {
-    --bg: #05070d;
-    --bg-subtle: #111726;
-    --fg: #edf0f8;
-    --fg-muted: #8c97ad;
-    --border: #1b2335;
-    --border-strong: #2b3650;
-    --card: #0c111c;
-    --card-grad: linear-gradient(180deg, #0f1522, #0b101a);
-    --glass: rgba(9, 12, 21, 0.7);
-    --hl: inset 0 1px 0 rgba(255, 255, 255, 0.045);
-    --glow: rgba(139, 149, 255, 0.14);
-    --accent: #a9afff;
-    --accent-soft: #151938;
-    --shadow-lg: 0 34px 70px -26px rgba(0, 0, 0, 0.85);
-    color-scheme: dark;
-  }
+:root:not(.light) {
+  --bg: #05070d;
+  --bg-subtle: #111726;
+  --fg: #edf0f8;
+  --fg-muted: #8c97ad;
+  --border: #1b2335;
+  --border-strong: #2b3650;
+  --card: #0c111c;
+  --card-grad: linear-gradient(180deg, #0f1522, #0b101a);
+  --glass: rgba(9, 12, 21, 0.7);
+  --hl: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  --glow: rgba(139, 149, 255, 0.14);
+  --accent: #a9afff;
+  --accent-soft: #151938;
+  --shadow-lg: 0 34px 70px -26px rgba(0, 0, 0, 0.85);
+  color-scheme: dark;
 }
 
 :root.dark {
@@ -142,13 +139,11 @@ body {
 
 /* Indigo text was drawn for a white page; on the dark one it sinks. Lift it to the lighter
    shades there, for every link and label that uses it. */
-@media (prefers-color-scheme: dark) {
-  :root:not(.light) :is(.text-brand-700, .text-brand-800) {
-    color: var(--color-brand-300);
-  }
-  :root:not(.light) .border-brand-600 {
-    border-color: color-mix(in srgb, var(--color-brand-400) 60%, transparent);
-  }
+:root:not(.light) :is(.text-brand-700, .text-brand-800) {
+  color: var(--color-brand-300);
+}
+:root:not(.light) .border-brand-600 {
+  border-color: color-mix(in srgb, var(--color-brand-400) 60%, transparent);
 }
 :root.dark :is(.text-brand-700, .text-brand-800) {
   color: var(--color-brand-300);
