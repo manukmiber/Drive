@@ -30,7 +30,7 @@ dari SPEC **tidak pernah dibuat** (hanya penanda `manifest_dirty` yang ditulis).
 folder R2 + satu index (nama file, struktur folder); keluarga satu folder + satu index (plus kepemilikan); tulis bersyarat
 etag; format super ringan karena ditarik paling awal; Drive tidak memakai D1 (akun/paket/pembayaran di relay); S3 tetap.
 Semua yang di bawah ini yang menyimpan data Drive di D1 (pohon file, share, sesi, token A1–A3, dekorasi D5, dll.) pindah
-lewat fase R di `/root/docs/roadmap.md` (di luar repo).
+lewat fase R di `/root/proyek/drive-roadmap.md` (di luar repo).
 - [x] Keputusan dan peta pindah ditulis: ADR-064, SPEC §2–§4, `CLAUDE.md`, ROADMAP (fase R), `PLAN.md`, `peta-file.md`.
 - [x] R0: pemilik menjawab (2026-10-26): share/token/sesi ke D1 khusus akses; data operator ke relay; salinan kuota
   dari relay; `index.txt` JSON ringkas; fitur Drive baru dibekukan sampai R3; no. 3 notifikasi ke relay;

@@ -16,7 +16,7 @@ Binding: D1 (DB) · R2 (BUCKET) · KV (CONFIG_KV) · Queues · Analytics Engine 
 
 > **Arah baru (ADR-064, pemilik 2026-10-26):** Drive tidak memakai D1. Pohon file = satu index per user/keluarga di R2
 > (`u/{userId}/index.txt`, `f/{familyId}/index.txt`); akun, paket, pembayaran di relay; binding D1 tinggal untuk Zeiko S3.
-> Diagram di atas menggambarkan kode sekarang; pindahnya lewat fase R di `/root/docs/roadmap.md` (di luar repo).
+> Diagram di atas menggambarkan kode sekarang; pindahnya lewat fase R di `/root/proyek/drive-roadmap.md` (di luar repo).
 
 Lapisan kode Worker:
 - `routes/` — HTTP (validasi Zod, auth, mapping error) → memanggil `services/`.

@@ -1,9 +1,9 @@
 # Peta file — Zeiko Drive, relay, dan website (per 2026-10-22)
 
 > **ADR-064 (pemilik, 2026-10-26):** Drive pindah dari D1 ke satu index per user/keluarga di R2; akun, paket, dan
-> pembayaran ke relay; D1 tinggal untuk Zeiko S3. Peta di bawah = kode sekarang; pindahnya lewat fase R di `/root/docs/roadmap.md` (di luar repo).
+> pembayaran ke relay; D1 tinggal untuk Zeiko S3. Peta di bawah = kode sekarang; pindahnya lewat fase R di `/root/proyek/drive-roadmap.md` (di luar repo).
 
-Pendamping catatan serah terima di `/root/docs/handoff.md` (di luar repo). Tanda **★** berarti baru atau berubah besar karena ADR-036: login lewat Akun Zeiko,
+Pendamping catatan serah terima di `/root/proyek/drive-roadmap.md`, bagian Handoff (di luar repo). Tanda **★** berarti baru atau berubah besar karena ADR-036: login lewat Akun Zeiko,
 pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan komponen web juga pindah import string ke
 `src/web/lib/i18n.ts`. Itu tidak ditandai satu per satu.
 
@@ -65,7 +65,7 @@ pembayaran lewat relay, app di `/dashboard`, dan EN/ID. Semua halaman dan kompon
 ### Akar repo
 | File | Isi |
 |---|---|
-| (di luar repo) | Aturan proyek: `/root/CLAUDE.md` bagian Drive. Serah terima: `/root/docs/handoff.md` (baca pertama). Roadmap dengan satu prompt per ID: `/root/docs/roadmap.md` (`Kerjakan S1 dari /root/docs/roadmap.md`). |
+| (di luar repo) | Aturan proyek: `/root/proyek/drive-claude.md`. Roadmap dengan satu prompt per ID (`Kerjakan S1 dari /root/proyek/drive-roadmap.md`) dan serah terima (bagian Handoff, baca pertama): `/root/proyek/drive-roadmap.md`. |
 | `peta-file.md` ★ | Dokumen ini. |
 | `docs/SPEC.md` | Sumber kebenaran fitur (Bahasa Indonesia, per bagian §). |
 | `PLAN.md` | Rencana per fase. |
