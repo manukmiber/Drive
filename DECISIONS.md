@@ -3057,6 +3057,10 @@ sudah menulis bahwa tampilan memakai desain Zeiko.
 - **Paket**: daftar paket jadi baris (ukuran, nama, harga di pita amber, satu tombol), bukan lima kartu. Paket yang
   sedang dipakai diberi latar, tanpa glow.
 - **Ukuran sentuh**: tombol 44 px, baris file minimal 56 px, menu 44 px per baris.
+- **Ikon**: Lucide tetap dipakai untuk navigasi dan aksi, karena orang mengenali bentuknya dan ikon itu selalu
+  berdampingan dengan label atau `aria-label`. Identitas datang dari logo, ubin, dan pita harga, bukan dari ikon.
+- **Takaran**: tenang (ENERGY 1, RHYTHM 1, MOTION 1). Drive dipakai setiap hari untuk mencari dan membuka file, jadi
+  ritme daftar dibuat seragam dan tidak ada animasi baru selain transisi warna.
 
 **Belum:** `components/spaces/{Chat,Composer,MessageExtras}.tsx` sedang diubah sesi lain (belum di-commit), jadi
 label huruf kapital di daftar topik chat belum diganti. Editor (foto, video, PDF, kolase) hanya ikut token; tata
