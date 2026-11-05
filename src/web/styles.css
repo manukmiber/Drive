@@ -137,6 +137,11 @@ body {
   outline-offset: 2px;
 }
 
+/* A field whose box already shows focus (its border lights up), like the Spaces message box. */
+.z-inner-field:focus-visible {
+  outline: none;
+}
+
 /* Indigo text was drawn for a white page; on the dark one it sinks. Lift it to the lighter
    shades there, for every link and label that uses it. */
 :root:not(.light) :is(.text-brand-700, .text-brand-800) {

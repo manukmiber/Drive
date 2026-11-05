@@ -1,6 +1,7 @@
 // The SPACE_ROOM binding in Node (ADR-001, ADR-096): each Space's room is the same SpaceRoomCore the
-// Durable Object wraps, on node:sqlite, with sockets the tests (and later the dev server) drive. A
-// connection is answered 200 with the socket's id instead of 101: Node's Response cannot carry one.
+// Durable Object wraps, on node:sqlite, with sockets the tests and the dev server drive. A
+// connection is answered 200 with the socket's id instead of 101: Node's Response cannot carry one;
+// the dev server then upgrades the browser's request itself and wires the two (dev/ws-bridge.ts).
 import { randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import type { ServerFrame } from '../../src/shared/space-room';
@@ -22,8 +23,11 @@ import { noteSeen } from '../../src/worker/services/space-room';
 type FrameOf<T extends ServerFrame['t']> = Extract<ServerFrame, { t: T }>;
 
 export class DevRoomSocket implements RoomSocket {
+  /** What the room sent, kept for tests; once a browser listens, frames go to it instead. */
   readonly frames: ServerFrame[] = [];
   closed: { code: number | undefined; reason: string | undefined } | null = null;
+  private sink: ((data: string) => void) | null = null;
+  private onClose: ((code?: number, reason?: string) => void) | null = null;
 
   constructor(
     private room: DevRoom,
@@ -31,13 +35,23 @@ export class DevRoomSocket implements RoomSocket {
   ) {}
 
   send(data: string): void {
-    if (!this.closed) this.frames.push(JSON.parse(data) as ServerFrame);
+    if (this.closed) return;
+    if (this.sink) this.sink(data);
+    else this.frames.push(JSON.parse(data) as ServerFrame);
   }
 
   close(code?: number, reason?: string): void {
     if (this.closed) return;
     this.closed = { code, reason };
     this.room.drop(this);
+    this.onClose?.(code, reason);
+  }
+
+  /** A real WebSocket takes over (dev server): what was sent so far first, then every frame. */
+  attach(sink: (data: string) => void, onClose: (code?: number, reason?: string) => void): void {
+    for (const f of this.frames.splice(0)) sink(JSON.stringify(f));
+    this.sink = sink;
+    this.onClose = onClose;
   }
 
   /** What the app would send. */
@@ -91,6 +105,8 @@ export class DevRoom {
   }
 
   drop(s: DevRoomSocket): void {
+    // A browser may hang up after the dev server (or a test) closed the room's database.
+    if (this.shut) return;
     this.core.closed(this.conn(s));
     this.sockets = this.sockets.filter((x) => x !== s);
   }
@@ -134,7 +150,11 @@ export class DevRoom {
     return (this.db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
   }
 
+  private shut = false;
+
   close(): void {
+    if (this.shut) return;
+    this.shut = true;
     this.db.close();
   }
 }

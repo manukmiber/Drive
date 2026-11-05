@@ -2902,3 +2902,39 @@ Tanggal: 2026-11-05. Status: diterima (pemilik: "Fokus sama zeiko spaces dulu").
   kecuali dimatikan di Pengaturan), untuk tim maupun Space.
 
 **Belum:** undangan lewat link, anggota luar (W1d), tampilan.
+
+## ADR-098 — W1b/W4: Spaces di app (tim, Space, orang, chat) dan jembatan WebSocket di server dev
+
+Tanggal: 2026-11-05. Status: diterima (pemilik: "Kerjakan zeiko spaces yang task gede² dulu ya"). Ini tampilan untuk
+server ADR-095–097: tanpa ini, tim dan ruang live tidak terpakai.
+
+**Keputusan:**
+- **Tempat di app (T2):** bagian **Spaces** sendiri di sidebar, di bawah menu Drive (judul kecil + Space per nama, maks.
+  6, sisanya di `/spaces`), dan ikon di header HP. Hanya tampil kalau `capabilities.spaces` menyala; `/spaces` tetap bisa
+  dibuka dari email undangan dan notifikasi. Route: `/spaces` (tim dan Space orang itu, Space tamu terpisah),
+  `/spaces/tim/:teamId` (kursi, Space, anggota, undangan, serahkan/hapus/keluar), `/spaces/:spaceId?tab=people&topic=…`
+  (Chat dan Orang; `topic` = tujuan notifikasi mention). Tab Files belum ada (W1e, menunggu kuota tim) dan tidak
+  ditampilkan mati (ADR-049).
+- **Aturan tetap di server.** App hanya menawarkan yang dibolehkan peran orang itu (pemilik mengangkat admin dan
+  menyerahkan tim; admin mengeluarkan anggota; di Space, admin mengganti anggota/tamu, pemilik dan admin tim tidak bisa
+  diubah di sana). Penolakan diterjemahkan dari `reason` server (`spaceError`), bukan ditebak.
+- **Klien ruang live** (`web/lib/space-room.ts`): satu WebSocket per Space yang dibuka, dibuat di halaman Space (jadi
+  tab Orang juga tahu siapa online). Keadaan = satu reducer murni `roomReduce` (dites di Node). `hello` mengosongkan
+  daftar pesan yang sudah dimuat, karena koneksi baru bisa melewatkan pesan: tampilan memintanya lagi. Pesan yang
+  dikirim tampil dulu sebagai "mengirim" (nonce) sampai ruang membalas; yang ditolak bisa dikirim lagi atau dibuang.
+  Ping 25 detik (`{"t":"ping"}`, dijawab runtime tanpa membangunkan DO). Putus → sambung lagi 1, 2, 5, 10, 30 detik;
+  tiga kali gagal sebelum terbuka → "belum bisa tersambung" (misalnya batas Free habis). 4403/4410/4401 berhenti.
+  Tanda baca dikirim hanya kalau ada yang belum dibaca dan tab terlihat; mengetik paling sering sekali per 3 detik.
+- **Mention:** kotak pesan menampilkan `@Nama` yang dipilih dari daftar orang Space (tamu tidak mendapat daftar), dan
+  yang dikirim `<@userId>` (`web/lib/mentions.ts`). Teks pesan tidak pernah dirender sebagai HTML: hanya teks, nama
+  mention, dan link `http(s)` dengan `rel="noopener noreferrer nofollow ugc"`.
+- **Konfirmasi** memakai dialog app (`components/spaces/Confirm.tsx`), bukan `window.confirm`.
+- **`space_message_max_chars`** masuk config publik supaya kotak pesan tahu batasnya.
+- **Server dev:** `npm run dev` sekarang menyalakan binding `SPACE_ROOM` (shim Node) dan `dev/ws-bridge.ts`: Worker
+  tetap memeriksa handshake (Origin, sesi, peran, status tim) dan menjawab 200 + id socket; jembatan meng-upgrade
+  permintaan browser dengan `ws` (devDependency) dan menghubungkannya ke socket ruang itu. Ping dijawab di jembatan.
+  Vite meneruskan `/api/spaces/:id/live` dengan `ws: true`. `spaces_open` menyala sekali di data dev. Ruang dev ada di
+  memori: chat dev hilang saat server dev dimulai ulang.
+
+**Belum:** lampiran dan thread per file (butuh tab Files), kunci dokumen di editor, cari pesan, lapor pesan, pesan lama
+ke R2, reaksi/sematkan, DM, push, anggota luar (W1d), undangan lewat link.

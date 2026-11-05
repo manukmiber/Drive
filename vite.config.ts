@@ -110,6 +110,8 @@ export default defineConfig({
     strictPort: true,
     host: true,
     proxy: {
+      // A Space's live room is a WebSocket (ADR-096); dev/ws-bridge.ts answers it.
+      '^/api/spaces/[0-9A-Z]{26}/live$': { target: API, ws: true },
       '/api': API,
       '/d/': API,
       '/z/': API,

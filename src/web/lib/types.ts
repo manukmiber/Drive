@@ -47,6 +47,10 @@ export interface Catalog {
     webdavUrl?: string | null;
     /** A6 (ADR-094): webhooks for Drive and Zeiko S3. */
     webhooks?: boolean;
+    /** W1 (ADR-095): teams and Spaces can be made. */
+    spaces?: boolean;
+    /** W3/W4 (ADR-096): Spaces have their live room and chat. */
+    spacesChat?: boolean;
   };
   config: {
     upload_part_concurrency: number;
@@ -63,6 +67,8 @@ export interface Catalog {
     editor_zip_extract_max_bytes: number;
     /** D9 (ADR-089): the biggest file one WebDAV PUT may carry. */
     webdav_put_max_bytes?: number;
+    /** W4 (ADR-096): the longest Space message. */
+    space_message_max_chars?: number;
     features: Record<string, boolean>;
   } & Record<string, unknown>;
 }

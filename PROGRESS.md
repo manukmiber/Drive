@@ -2,6 +2,14 @@
 
 Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` untuk detail tiap fase.
 
+## Zeiko Spaces — W1b/W4: tampilan di app (ADR-098, 2026-11-05)
+- [x] Bagian Spaces di sidebar dan header HP; `/spaces`, `/spaces/tim/:id`, `/spaces/:id` (Chat, Orang), dua bahasa.
+- [x] Buat tim dan Space, tambah orang/undangan, ganti peran, keluarkan, serahkan tim, cabut undangan, keluar, hapus.
+- [x] Chat: topik (buat, ganti nama, buka/tutup untuk tamu, hapus), pesan, thread, mention `@`, ubah/hapus, belum dibaca,
+  online, mengetik, sambung ulang, pesan gagal kirim. Reducer dan mention dites (`tests/unit`).
+- [x] Server dev: binding `SPACE_ROOM` + jembatan WebSocket (`dev/ws-bridge.ts`), dites lewat socket sungguhan.
+- [ ] Lampiran, thread per file, kunci di editor (butuh tab Files, W1e); cari, lapor, pesan lama ke R2.
+
 ## Zeiko Spaces — W1c: undangan dan notifikasi (ADR-097, 2026-11-05)
 - [x] Undangan untuk alamat tanpa akun Drive (`space_invites`, `migrations-access/0008`): menahan kursi/tempat tamu, email, kedaluwarsa.
 - [x] Diklaim saat membuka Spaces; dicabut admin; ikut terhapus bersama tim/Space; IDOR.
@@ -13,7 +21,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] `GET /api/spaces/:id/live` sebelum middleware: Origin, sesi, peran, status tim.
 - [x] Topik (tamu/tim), pesan, thread, ubah/hapus, riwayat, tanda baca, mengetik, laju, mention → `space_mention`.
 - [x] Kunci dokumen (W5 sisi server). Ruang mengikuti keanggotaan; hapus Space/akun lewat antrean; `space_seen`; ekspor.
-- [ ] Tampilan chat di app; pesan lama ke R2; Space beku; file di chat.
+- [ ] ~~Tampilan chat di app~~ (ADR-098); pesan lama ke R2; Space beku; file di chat.
 - [ ] Pemilik: migrasi `migrations-access/0007` di D1 akses remote; deploy dengan `wrangler.jsonc` baru (migrasi DO `v2`).
 
 ## Zeiko Spaces — W1a: tim dan Space (ADR-095, 2026-11-05)

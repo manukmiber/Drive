@@ -11,9 +11,11 @@ import {
   Images,
   Inbox,
   Languages,
+  LayoutGrid,
   LogOut,
   Megaphone,
   MessageCircle,
+  MessagesSquare,
   Minimize2,
   Search,
   Settings,
@@ -40,6 +42,7 @@ import { Bell } from './Bell';
 import { AdCard } from './AdCard';
 import { ArchivePanel } from './ArchivePanel';
 import { useCatalog } from '../lib/catalog';
+import { useMySpaces } from '../lib/spaces';
 
 interface NavItem {
   to: string;
@@ -92,6 +95,48 @@ async function switchLang() {
 const navLink =
   'z-nav flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]';
 
+/** Spaces shown by name in the sidebar; the rest are one click away on /spaces. */
+const SIDEBAR_SPACES = 6;
+
+/**
+ * Zeiko Spaces (T2, ADR-098): a section of its own under the person's files, with the Spaces by
+ * name. Shown once Spaces are open (`capabilities.spaces`); links in emails reach /spaces anyway.
+ */
+function SpacesNav({ open }: { open: boolean }) {
+  const q = useMySpaces(open);
+  const spaces = q.data?.spaces ?? [];
+  if (!open) return null;
+  return (
+    <nav className="flex flex-col gap-0.5" aria-label={t.nav.spaces}>
+      <Link
+        to="/spaces"
+        activeOptions={{ exact: true }}
+        className="z-nav flex items-center gap-2 rounded-xl px-3.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fg-muted)] hover:text-[var(--fg)]"
+      >
+        <LayoutGrid className="h-3.5 w-3.5" />
+        {t.nav.spaces}
+      </Link>
+      {spaces.slice(0, SIDEBAR_SPACES).map((s) => (
+        <Link
+          key={s.id}
+          to="/spaces/$spaceId"
+          params={{ spaceId: s.id }}
+          className={navLink}
+          title={`${s.team.name} · ${s.name}`}
+        >
+          <MessagesSquare className="h-4 w-4 shrink-0" />
+          <span className="truncate">{s.name}</span>
+        </Link>
+      ))}
+      {spaces.length > SIDEBAR_SPACES && (
+        <Link to="/spaces" className={`${navLink} text-xs`}>
+          {t.spaces.allSpaces}
+        </Link>
+      )}
+    </nav>
+  );
+}
+
 /**
  * Off to sign-in, once. `<Navigate>` navigates again every time it renders, and this shell
  * re-renders while the sign-in page is still loading (the location it reads has moved to
@@ -136,6 +181,9 @@ export function AppShell() {
   if (!me.data) return <ToSignIn next={location.pathname} />;
 
   const data = me.data;
+  const spacesOpen = Boolean(catalog.data?.capabilities?.spaces);
+  // A Space's chat fills the page down to its bottom edge.
+  const fullHeight = /^\/spaces\/[0-9A-Z]{26}$/.test(location.pathname);
   const nav = NAV.filter(
     (n) =>
       (n.to !== '/keluarga' || data.space.familyId) &&
@@ -165,6 +213,7 @@ export function AppShell() {
             </Link>
           ))}
         </nav>
+        <SpacesNav open={spacesOpen} />
         <div className="z-card rounded-2xl p-4">
           <StorageMeter storage={data.storage} />
           <Link
@@ -258,6 +307,15 @@ export function AppShell() {
             />
           </form>
           <div className="ml-auto flex items-center gap-2">
+            {spacesOpen && (
+              <Link
+                to="/spaces"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)] md:hidden"
+                aria-label={t.nav.spaces}
+              >
+                <LayoutGrid className="h-5 w-5" />
+              </Link>
+            )}
             <Bell />
             <Link
               to="/pengaturan"
@@ -269,12 +327,15 @@ export function AppShell() {
           </div>
         </header>
         <BillingBanner />
-        <main className="min-h-0 flex-1 overflow-auto pb-16 md:pb-24">
+        <main
+          className={`min-h-0 flex-1 overflow-auto pb-16 ${fullHeight ? 'md:pb-0' : 'md:pb-24'}`}
+        >
           <Outlet />
         </main>
       </div>
 
-      <NewMenu variant="fab" />
+      {/* On a Space's chat the message box sits where the button would. */}
+      {!fullHeight && <NewMenu variant="fab" />}
       <UploadPanel />
       <ArchivePanel />
       <Toaster />

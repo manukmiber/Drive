@@ -458,6 +458,7 @@ export const PUBLIC_CONFIG_KEYS = [
   'share_expiry_choices_hours',
   'share_message_max_chars',
   'share_email_max_recipients',
+  'space_message_max_chars',
   'zstd_levels',
   'zip_deflate_stream_max_bytes',
   'standalone_compress_max_bytes',

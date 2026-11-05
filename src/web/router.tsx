@@ -52,6 +52,9 @@ const Downloads = page(() => import('./pages/Downloads'), 'Downloads');
 const AiDecision = page(() => import('./pages/AiDecision'), 'AiDecision');
 const S3Page = page(() => import('./pages/S3'), 'S3');
 const Tools = page(() => import('./pages/Tools'), 'Tools');
+const SpacesHome = page(() => import('./pages/Spaces'), 'SpacesHome');
+const TeamPage = page(() => import('./pages/Spaces'), 'TeamPage');
+const SpacePage = page(() => import('./pages/Spaces'), 'SpacePage');
 
 const rootRoute = createRootRoute({ component: Outlet, notFoundComponent: NotFound });
 const appRoute = createRoute({ getParentRoute: () => rootRoute, id: 'app', component: AppShell });
@@ -122,6 +125,47 @@ const searchRoute = createRoute({
   },
 });
 
+// W1b/W4 (ADR-098): a Space opens on its chat; `topic` is where a mention's notice points.
+const spaceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/spaces/$spaceId',
+  validateSearch: (s: Record<string, unknown>): { tab?: 'people'; topic?: string } => ({
+    ...(s.tab === 'people' ? { tab: 'people' as const } : {}),
+    ...(typeof s.topic === 'string' && /^[0-9A-Z]{26}$/.test(s.topic) ? { topic: s.topic } : {}),
+  }),
+  component: function SpaceRoutePage() {
+    const { spaceId } = spaceRoute.useParams();
+    const { tab, topic } = spaceRoute.useSearch();
+    const navigate = spaceRoute.useNavigate();
+    return (
+      <SpacePage
+        key={spaceId}
+        spaceId={spaceId}
+        tab={tab ?? 'chat'}
+        topic={topic}
+        onNavigate={(next: { tab?: 'chat' | 'people'; topic?: string }) =>
+          void navigate({
+            search: {
+              ...(next.tab === 'people' ? { tab: 'people' as const } : {}),
+              ...(next.topic ? { topic: next.topic } : {}),
+            },
+            replace: true,
+          })
+        }
+      />
+    );
+  },
+});
+
+const teamRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/spaces/tim/$teamId',
+  component: function TeamRoutePage() {
+    const { teamId } = teamRoute.useParams();
+    return <TeamPage key={teamId} teamId={teamId} />;
+  },
+});
+
 function DriveFolder() {
   const { folderId } = useParams({ from: '/app/drive/$folderId' });
   return <Drive key={folderId} folderId={folderId} />;
@@ -172,6 +216,9 @@ const routeTree = rootRoute.addChildren([
       component: DriveFolder,
     }),
     createRoute({ getParentRoute: () => appRoute, path: '/keluarga', component: FamilyPage }),
+    createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesHome }),
+    spaceRoute,
+    teamRoute,
     createRoute({ getParentRoute: () => appRoute, path: '/dibagikan', component: Shared }),
     createRoute({ getParentRoute: () => appRoute, path: '/untuk-saya', component: SharedWithMe }),
     createRoute({ getParentRoute: () => appRoute, path: '/terbaru', component: Recent }),
