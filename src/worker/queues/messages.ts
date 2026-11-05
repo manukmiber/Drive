@@ -57,6 +57,9 @@ export type CleanupMessage =
   | { type: 'purge_pool'; poolId: string; dryRun: boolean }
   // Account deletion: the rest of a Zeiko S3 account, a batch per message (ADR-044).
   | { type: 's3_purge'; userId: string }
+  // W3/W4 (ADR-096): a Space's live room emptied (the Space went), or a deleted account's messages
+  // taken out of it (T15).
+  | { type: 'space_room'; spaceId: string; call: 'purge' | 'forget'; userId?: string }
   // A plan moved to 3 copies or back to 1: copies made or dropped, a batch per message (ADR-047).
   | { type: 's3_replicate'; userId: string }
   | { type: 's3_unreplicate'; userId: string }

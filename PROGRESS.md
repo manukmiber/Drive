@@ -2,6 +2,14 @@
 
 Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` untuk detail tiap fase.
 
+## Zeiko Spaces — W3/W4: ruang live dan chat, server (ADR-096, 2026-11-05)
+- [x] Durable Object `SpaceRoom` per Space (SQLite, hibernatable), inti `SpaceRoomCore` dites di Node, shim dev/test.
+- [x] `GET /api/spaces/:id/live` sebelum middleware: Origin, sesi, peran, status tim.
+- [x] Topik (tamu/tim), pesan, thread, ubah/hapus, riwayat, tanda baca, mengetik, laju, mention → `space_mention`.
+- [x] Kunci dokumen (W5 sisi server). Ruang mengikuti keanggotaan; hapus Space/akun lewat antrean; `space_seen`; ekspor.
+- [ ] Tampilan chat di app; pesan lama ke R2; Space beku; file di chat.
+- [ ] Pemilik: migrasi `migrations-access/0007` di D1 akses remote; deploy dengan `wrangler.jsonc` baru (migrasi DO `v2`).
+
 ## Zeiko Spaces — W1a: tim dan Space (ADR-095, 2026-11-05)
 - [x] `teams`, `team_members`, `spaces`, `space_members` di D1 akses (`migrations-access/0006`).
 - [x] API `/api/teams`, `/api/spaces`: buat/ganti nama/hapus, anggota dan admin, serahkan tim, Space, anggota dan tamu.

@@ -11,6 +11,7 @@ import type { Ctx } from '../context';
 import { idSlices } from '../lib/access-db';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
+import { forgetInRooms, forgetSeen, purgeRooms, tellRoomQuietly } from './space-room';
 
 export type TeamRole = 'owner' | 'admin' | 'member';
 export type SpaceRole = 'admin' | 'member' | 'guest';
@@ -172,6 +173,30 @@ async function requireSpaceAdmin(ctx: Ctx, userId: string, spaceId: string) {
   const s = await requireSpace(ctx, userId, spaceId);
   if (s.role !== 'admin') throw new AppError('FORBIDDEN', 'only the team owner and admins can');
   return s;
+}
+
+async function teamSpaceIds(ctx: Ctx, teamId: string): Promise<string[]> {
+  const { results } = await db(ctx)
+    .prepare('SELECT id FROM spaces WHERE team_id = ?1')
+    .bind(teamId)
+    .all<{ id: string }>();
+  return results.map((r) => r.id);
+}
+
+/**
+ * The person's live connections in these Spaces follow their role now, or close when they are out
+ * (ADR-096). After the response; the Worker checks the role again on every new connection anyway.
+ */
+function syncRooms(ctx: Ctx, userId: string, spaceIds: readonly string[]): void {
+  if (!ctx.env.SPACE_ROOM || !spaceIds.length) return;
+  ctx.defer(
+    (async () => {
+      for (const id of spaceIds) {
+        const r = await spaceRole(ctx, userId, id);
+        await tellRoomQuietly(ctx.env, id, 'member', { user: userId, role: r?.role ?? null });
+      }
+    })(),
+  );
 }
 
 /** A Drive account by email: people are added by the address they sign in with. */
@@ -424,6 +449,15 @@ export async function deleteTeam(ctx: Ctx, userId: string, teamId: string): Prom
 
 async function dropTeams(ctx: Ctx, teamIds: string[]): Promise<void> {
   const A = db(ctx);
+  const spaceIds: string[] = [];
+  for (const slice of idSlices(teamIds)) {
+    const { results } = await A.prepare(
+      'SELECT id FROM spaces WHERE team_id IN (SELECT value FROM json_each(?1))',
+    )
+      .bind(slice)
+      .all<{ id: string }>();
+    spaceIds.push(...results.map((r) => r.id));
+  }
   for (const slice of idSlices(teamIds))
     await A.batch([
       A.prepare(
@@ -438,6 +472,9 @@ async function dropTeams(ctx: Ctx, teamIds: string[]): Promise<void> {
       ),
       A.prepare('DELETE FROM teams WHERE id IN (SELECT value FROM json_each(?1))').bind(slice),
     ]);
+  // Their live rooms go too: chat, topics, read marks (ADR-096).
+  await purgeRooms(ctx, spaceIds);
+  await forgetSeen(ctx.env, spaceIds);
 }
 
 /**
@@ -474,6 +511,7 @@ export async function addTeamMember(
          AND space_id IN (SELECT id FROM spaces WHERE team_id = ?1)`,
     ).bind(teamId, person.id),
   ]);
+  syncRooms(ctx, person.id, await teamSpaceIds(ctx, teamId));
   return getTeam(ctx, userId, teamId);
 }
 
@@ -495,6 +533,7 @@ export async function setTeamRole(
     .prepare('UPDATE team_members SET role = ?3 WHERE team_id = ?1 AND user_id = ?2')
     .bind(teamId, memberId, role)
     .run();
+  syncRooms(ctx, memberId, await teamSpaceIds(ctx, teamId));
   return getTeam(ctx, userId, teamId);
 }
 
@@ -528,6 +567,7 @@ export async function removeTeamMember(
          AND space_id IN (SELECT id FROM spaces WHERE team_id = ?1)`,
     ).bind(teamId, memberId),
   ]);
+  syncRooms(ctx, memberId, await teamSpaceIds(ctx, teamId));
 }
 
 /** The owner hands the team to someone on it, and stays on as an admin. */
@@ -567,6 +607,7 @@ export async function transferTeam(ctx: Ctx, userId: string, teamId: string, mem
          AND space_id IN (SELECT id FROM spaces WHERE team_id = ?1)`,
     ).bind(teamId, memberId),
   ]);
+  syncRooms(ctx, memberId, await teamSpaceIds(ctx, teamId));
   return getTeam(ctx, userId, teamId);
 }
 
@@ -622,6 +663,8 @@ export async function deleteSpace(ctx: Ctx, userId: string, spaceId: string): Pr
     A.prepare('DELETE FROM space_members WHERE space_id = ?1').bind(spaceId),
     A.prepare('DELETE FROM spaces WHERE id = ?1').bind(spaceId),
   ]);
+  await purgeRooms(ctx, [spaceId]);
+  await forgetSeen(ctx.env, [spaceId]);
 }
 
 /**
@@ -710,6 +753,7 @@ async function putSpaceMember(
     )
       .bind(spaceId, personId, role, actorId, ctx.now())
       .run();
+  syncRooms(ctx, personId, [spaceId]);
 }
 
 /** Admins take someone out of a Space; anyone may leave one they were added to. */
@@ -727,6 +771,7 @@ export async function removeSpaceMember(
     .bind(spaceId, memberId)
     .run();
   if (!res.meta.changes) throw new AppError('NOT_FOUND', 'not found');
+  syncRooms(ctx, memberId, [spaceId]);
 }
 
 /* ----------------------------------------------------- account lifecycle -- */
@@ -746,9 +791,12 @@ export async function deleteTeamsOfUser(ctx: Ctx, userId: string): Promise<void>
       ctx,
       results.map((t) => t.id),
     );
+  // T15: their messages leave every room they were ever in, Spaces they left before included.
+  await forgetInRooms(ctx, userId);
   await A.batch([
     A.prepare('DELETE FROM team_members WHERE user_id = ?1').bind(userId),
     A.prepare('DELETE FROM space_members WHERE user_id = ?1').bind(userId),
+    A.prepare('DELETE FROM space_seen WHERE user_id = ?1').bind(userId),
   ]);
 }
 

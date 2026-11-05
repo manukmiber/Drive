@@ -40,6 +40,10 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
   peran di `services/spaces.ts`. Pemilik dan admin tim adalah admin di semua Space timnya tanpa baris; orang di luar tim
   adalah tamu tanpa kursi. Angka paket (kursi, Space, tamu, status) disalin ke tim; nanti relay yang mengisinya. Tim baru
   hanya bisa dibuat kalau config `spaces_open` menyala.
+- **Ruang live Space (W3/W4, ADR-096)**: satu Durable Object `SpaceRoom` per Space; logikanya `SpaceRoomCore`
+  (`src/worker/rooms/`), dites di Node lewat `makeRuntime({ rooms: true })`. Route `/api/spaces/:id/live` dijawab sebelum
+  semua middleware (101 harus utuh). Perubahan anggota/peran memberi tahu ruang (`syncRooms`); hapus Space/akun lewat
+  antrean `cleanup` (`space_room`).
 
 ## Mesin ini
 - HP Android (PRoot, aarch64). **workerd tidak bisa jalan** → jangan pakai `wrangler dev`,

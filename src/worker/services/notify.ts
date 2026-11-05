@@ -31,7 +31,8 @@ export type NotificationType =
   | 'file_expiring'
   | 'node_shared'
   | 'file_request_files'
-  | 'webhook_disabled';
+  | 'webhook_disabled'
+  | 'space_mention';
 
 /** Queue a notice. It reaches the bell once the relay has it (the queue retries until then). */
 export async function notify(
@@ -170,6 +171,15 @@ export function renderNotice(
         title: m.webhookOffTitle,
         paragraphs: [m.webhookOffBody(String(p.url))],
         cta: { label: m.ctaSettings, url: `${app}/pengaturan` },
+      };
+    case 'space_mention':
+      return {
+        title: m.mentionTitle(String(p.by), String(p.spaceName)),
+        paragraphs: [m.mentionBody(String(p.topicName), String(p.excerpt))],
+        cta: {
+          label: m.ctaMention,
+          url: `${app}/spaces/${String(p.space)}?topic=${String(p.topic)}`,
+        },
       };
     case 'file_request_files':
       return {
@@ -359,6 +369,7 @@ export const PREF_TYPES = [
   'file_expiring',
   'node_shared',
   'file_request_files',
+  'space_mention',
 ] as const;
 
 export async function getPrefs(ctx: Ctx, userId: string) {

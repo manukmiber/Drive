@@ -2823,3 +2823,58 @@ server saja. Tampilan, undangan lewat link/email, anggota luar, dan tab Files me
 **Belum:** tampilan di app, undangan link/email dan notifikasinya, anggota luar (butuh relay: punya paket berbayar Zeiko
 yang aktif), cakupan tamu per folder/topik, index R2 `s/{spaceId}/` dan tab Files (menunggu keputusan kuota tim), chat
 dan ruang realtime.
+
+## ADR-096 — W3/W4: ruang live per Space (Durable Object) dan chat, sisi server
+
+Tanggal: 2026-11-05. Status: diterima (pemilik: "Lanjutkan, dan kerjakan hal lain juga ya, yang berat dan butuh waktu
+lama dulu"; jawaban Zeiko Spaces: Workers Free dulu, riwayat chat tanpa batas umur, pesan akun yang dihapus ikut
+dihapus). Server saja: tampilan chat di app menyusul.
+
+**Keputusan:**
+- **Satu Durable Object per Space** (`SpaceRoom`, `idFromName(spaceId)`, penyimpanan SQLite, satu-satunya jenis di
+  Workers Free), binding `SPACE_ROOM`, migrasi wrangler `v2` (append-only). Selalu di-bind, tidak ikut saklar
+  `containers`. Socket **hibernatable**: ruang yang sepi tidak dihitung durasi, ping `{"t":"ping"}` dijawab runtime
+  (`setWebSocketAutoResponse`), dan keadaan koneksi (siapa, peran, jendela laju) ada di attachment socket, bukan memori.
+- **Logika = kelas biasa** `SpaceRoomCore` (`rooms/space-room-core.ts`) di atas antarmuka SQL kecil dan daftar socket.
+  DO (`rooms/space-room.ts`) hanya membungkus, jadi semuanya dites di Node (ADR-001). `dev/shims/space-room.ts`
+  menjalankan inti yang sama sebagai binding `SPACE_ROOM` di runtime dev/test (`makeRuntime({ rooms: true })`;
+  koneksi dijawab 200 + id socket, karena `Response` Node tidak bisa 101).
+- **Sambungan** `GET /api/spaces/:id/live` (Upgrade: websocket) dijawab **sebelum semua middleware**
+  (`routes/space-live.ts`), karena middleware membangun ulang respons untuk menambah header dan 101 harus sampai utuh.
+  Pengecekan yang biasanya dilakukan API dikerjakan di sana: `Origin` = app (pengganti token CSRF, yang tidak bisa
+  dibawa WebSocket), sesi, status akun, peran di Space (`spaceRole`), dan status tim (`frozen` ditolak, `readonly`
+  hanya baca). Ruang memercayai header yang diberikan Worker (`x-zk-user/name/role/space/readonly/lang`); DO hanya
+  bisa dicapai lewat binding.
+- **Frame JSON** (`shared/space-room.ts`): dari app `send`, `edit`, `delete`, `read`, `typing`, `history`,
+  `topic.create/update/remove`, `lock`, `unlock`; dari ruang `hello`, `presence`, `msg`, `edited`, `deleted`, `read`,
+  `typing`, `history`, `topic`, `topic.removed`, `lock`, `unlock`, `files`, `role`, `error`. Kode tutup: 4403 keluar dari
+  Space, 4410 Space hilang, 1008 banjir frame.
+- **Topik:** topik pertama dibuat saat ruang pertama kali dibuka (`umum`, atau `general` kalau yang membuka memakai
+  bahasa Inggris) dan **terbuka untuk tamu**; topik baru milik tim kecuali dibuka untuk tamu (`guests`). Tamu tidak
+  pernah melihat topik tim, tidak menerima kabar siapa yang online, dan tidak bisa membuat topik. Mengubah/menghapus
+  topik: admin Space atau pembuatnya; menghapus topik menghapus pesannya. Maks `space_max_topics` (100).
+- **Pesan:** urutan = `seq` (autoincrement), id = ULID untuk rujukan. Thread satu tingkat. Teks maks
+  `space_message_max_chars` (4.000). Ubah: penulisnya. Hapus: penulis atau admin → teks hilang, baris tetap untuk balasan
+  di sekitarnya. Riwayat per halaman 50, terbaru dulu. Tanda baca per orang per topik (`reads`), dibawa ke perangkat
+  lain orang itu; jumlah belum dibaca di `hello`. Mengetik diteruskan paling sering sekali per 3 detik, tidak disimpan.
+  Laju: 40 frame per 10 detik, lebih dari itu ditolak, dua kali lipatnya menutup koneksi.
+- **Mention** `<@userId>` di teks: orang yang **tidak sedang di ruang** mendapat notifikasi `space_mention` (lonceng, dan
+  email kecuali dimatikan di Pengaturan), hanya kalau ia masih di Space dan boleh melihat topik itu
+  (`rooms/space-room-effects.ts`).
+- **Kunci dokumen (W5, sisi server):** `lock`/`unlock` per id item; satu orang memegang, yang lain menerima siapa dan
+  menolak `locked`; lepas sendiri saat koneksi pemegangnya putus. Pengecekan bahwa item ada di Space menyusul bersama
+  tab Files.
+- **Ruang mengikuti keanggotaan:** perubahan anggota/peran tim atau Space memberi tahu ruang setelah respons
+  (`syncRooms` → `/internal/member`): peran baru dikirim ulang (`role` + `hello`), yang keluar ditutup 4403. Worker tetap
+  mengecek peran di setiap koneksi baru.
+- **Hapus:** Space/tim dihapus → antrean `cleanup` `space_room purge` (ruang ditutup 4410, penyimpanan DO dihapus).
+  **Akun dihapus (T15)** → `space_room forget` untuk **setiap ruang yang pernah ia masuki**, termasuk Space yang sudah ia
+  tinggalkan: tabel `space_seen` di D1 akses (`migrations-access/0007`), ditulis ruang saat kunjungan pertama. Pesan yang
+  tidak dibalas dihapus; pesan yang dibalas orang lain menjadi baris kosong tanpa penulis ("pesan tidak tersedia").
+- **Ekspor data:** `spaceChat` = pesan orang itu dari tiap ruang di `space_seen` (maks 30 ruang per ekspor, `more`
+  kalau lebih; batas subrequest Workers Free).
+- **Fitur readiness** `spaces_chat` (butuh `SPACE_ROOM`, setelah `spaces`), `capabilities.spacesChat`.
+
+**Belum:** tampilan chat di app (dan jembatan WebSocket di server dev), pesan lama pindah ke R2 setelah
+`space_chat_hot_days` dan dikompres relay, Space beku (W2), file sebagai topik/lampiran (tab Files), peringatan batas
+Free dari Analytics API di relay.

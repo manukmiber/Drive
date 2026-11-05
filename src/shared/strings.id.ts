@@ -1632,6 +1632,7 @@ export const t = {
       file_expiring: 'Pengingat hapus otomatis',
       node_shared: 'Dibagikan dengan saya',
       file_request_files: 'File masuk lewat link minta file',
+      space_mention: 'Disebut di Spaces',
     } as Record<string, string>,
   },
   family: {
@@ -2362,6 +2363,9 @@ export const t = {
     sharedSignIn: (email: string) =>
       `Masuk ke Zeiko Drive dengan Akun Zeiko yang memakai alamat ${email} untuk membukanya.`,
     ctaShared: 'Buka Dibagikan dengan saya',
+    mentionTitle: (by: string, space: string) => `${by} menyebut kamu di ${space}`,
+    mentionBody: (topic: string, excerpt: string) => `Di #${topic}: “${excerpt}”`,
+    ctaMention: 'Buka chatnya',
     requestFilesTitle: (title: string, n: number) =>
       n === 1 ? `1 file baru lewat "${title}"` : `${n} file baru lewat "${title}"`,
     requestFilesBody:

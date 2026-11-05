@@ -39,7 +39,8 @@ export type FeatureId =
   | 'people_shares'
   | 'webdav'
   | 'webhooks'
-  | 'spaces';
+  | 'spaces'
+  | 'spaces_chat';
 
 export interface Feature {
   id: FeatureId;
@@ -360,6 +361,20 @@ export async function readiness(ctx: Ctx): Promise<Feature[]> {
         ),
       ],
     },
+    {
+      id: 'spaces_chat',
+      title: 'Zeiko Spaces: live chat',
+      what: 'Each Space has a live room: chat topics, threads, mentions, who is here, document locks (ADR-096).',
+      hidden: true,
+      after: ['spaces'],
+      needs: [
+        deploy(
+          'SPACE_ROOM',
+          Boolean(env.SPACE_ROOM),
+          'A Durable Object (SQLite, works on Workers Free): deploy with the regenerated wrangler.jsonc (migration v2 adds SpaceRoom), after migrations-access/0007.',
+        ),
+      ],
+    },
   ];
 
   const ready = new Map<FeatureId, boolean>();
@@ -396,6 +411,8 @@ export async function capabilities(ctx: Ctx) {
     webhooks: Boolean(env.ACCESS_DB),
     /** W1 (ADR-095): teams and Spaces, in the access database, once the owner opens them. */
     spaces: Boolean(env.ACCESS_DB) && (await ctx.config()).spaces_open,
+    /** W3/W4 (ADR-096): each Space's live room (chat), once Spaces are open. */
+    spacesChat: Boolean(env.ACCESS_DB && env.SPACE_ROOM) && (await ctx.config()).spaces_open,
   };
 }
 

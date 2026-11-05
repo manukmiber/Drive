@@ -1606,6 +1606,7 @@ export const en: Strings = {
       file_expiring: 'Auto-delete reminders',
       node_shared: 'Shared with me',
       file_request_files: 'Files through a file request',
+      space_mention: 'Mentions in Spaces',
     } as Record<string, string>,
   },
   family: {
@@ -2331,6 +2332,9 @@ export const en: Strings = {
     sharedSignIn: (email: string) =>
       `Sign in to Zeiko Drive with the Zeiko Account that uses ${email} to open it.`,
     ctaShared: 'Open Shared with me',
+    mentionTitle: (by: string, space: string) => `${by} mentioned you in ${space}`,
+    mentionBody: (topic: string, excerpt: string) => `In #${topic}: “${excerpt}”`,
+    ctaMention: 'Open the chat',
     requestFilesTitle: (title: string, n: number) =>
       n === 1 ? `1 new file through "${title}"` : `${n} new files through "${title}"`,
     requestFilesBody:

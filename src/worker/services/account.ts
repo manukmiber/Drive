@@ -7,6 +7,7 @@ import { deleteActivity, exportActivity } from './activity';
 import { exportTexts } from './content-index';
 import { deleteGrantsOfUser, exportGrants } from './grants';
 import { deleteTeamsOfUser, exportTeams } from './spaces';
+import { exportRooms } from './space-room';
 import { deleteRequestsOfUser, exportRequests } from './file-requests';
 import { deleteUserIndex } from './drive-index-sync';
 import type { Ctx } from '../context';
@@ -89,6 +90,8 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
     fileRequests: await exportRequests(ctx, userId),
     // W1: the teams and Spaces the person is in (ADR-095).
     spaces: await exportTeams(ctx, userId),
+    // W4: what the person wrote in Spaces' chats (ADR-096), from each room they were in.
+    spaceChat: await exportRooms(ctx, userId),
     shares: await qa(
       'SELECT title, kind, expires_at, download_count, revoked_at, created_at FROM shares WHERE created_by = ?1',
       userId,

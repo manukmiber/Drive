@@ -20,6 +20,7 @@ import { ShimD1Database, openSqlite } from './shims/d1';
 import { ShimKV } from './shims/kv';
 import { ShimR2Bucket } from './shims/r2';
 import { ShimQueue } from './shims/queue';
+import { DevSpaceRooms } from './shims/space-room';
 import {
   ShimAnalytics,
   ShimAssets,
@@ -42,6 +43,8 @@ export interface DevRuntimeOptions {
   extraD1?: string[];
   /** Rate limits per binding; tests default to effectively unlimited. */
   rateLimits?: Partial<Record<RateLimitName, { limit: number; period: number }>>;
+  /** Spaces' live rooms (ADR-096) in Node, as the SPACE_ROOM binding. Off: no binding, as on a deploy without it. */
+  rooms?: boolean;
 }
 
 export const RATE_LIMIT_NAMES = [
@@ -86,6 +89,8 @@ export interface DevRuntime {
   access: ShimD1Database;
   kv: ShimKV;
   r2: ShimR2Bucket;
+  /** The SPACE_ROOM binding when `rooms` was asked for. */
+  rooms: DevSpaceRooms | null;
   queues: Record<QueueBinding, ShimQueue<QueueMessage>>;
   analytics: ShimAnalytics;
   email: ShimSendEmail;
@@ -172,6 +177,8 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
     EMAIL: email,
     ...(opts.clock ? { CLOCK: opts.clock } : {}),
   } as unknown as Env;
+  const rooms = opts.rooms ? new DevSpaceRooms(() => env, now) : null;
+  if (rooms) (env as { SPACE_ROOM?: unknown }).SPACE_ROOM = rooms;
 
   const waits = new Set<Promise<unknown>>();
   const execCtx = (): ExecutionContext =>
@@ -196,6 +203,7 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
     access,
     kv,
     r2,
+    rooms,
     queues,
     analytics,
     email,
@@ -218,6 +226,7 @@ export async function createDevRuntime(opts: DevRuntimeOptions = {}): Promise<De
     },
     runCron: (cron) => runScheduled(cron, env),
     close: () => {
+      rooms?.close();
       sqlite.close();
       accessSqlite.close();
       if (temp) rmSync(dir, { recursive: true, force: true });

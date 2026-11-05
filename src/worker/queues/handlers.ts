@@ -12,6 +12,7 @@ import { processCompressJob } from '../services/compress';
 import { processArchiveJob } from '../services/archives';
 import { processS3Scan, purgeS3Account } from '../services/s3-objects';
 import { replicateAccount, unreplicateAccount } from '../services/s3-replicas';
+import { tellRoom } from '../services/space-room';
 
 registerQueueHandler('scan', async (ctx, body, attempts) => {
   if (body.type === 'scan') await processScan(ctx, body.blobId, body.vt);
@@ -26,6 +27,8 @@ registerQueueHandler('cleanup', async (ctx, body) => {
   if (body.type === 'purge_pool' && !body.dryRun) await purgePool(ctx, body.poolId);
   if (body.type === 's3_purge' && !(await purgeS3Account(ctx, body.userId)))
     await ctx.env.CLEANUP_QUEUE.send({ type: 's3_purge', userId: body.userId });
+  if (body.type === 'space_room')
+    await tellRoom(ctx.env, body.spaceId, body.call, body.userId ? { user: body.userId } : {});
   if (body.type === 's3_replicate' && !(await replicateAccount(ctx, body.userId)))
     await ctx.env.CLEANUP_QUEUE.send({ type: 's3_replicate', userId: body.userId });
   if (body.type === 's3_unreplicate' && !(await unreplicateAccount(ctx, body.userId)))

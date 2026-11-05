@@ -164,14 +164,16 @@ function bindings(env, nsBase, ids) {
     ...(email === 'cloudflare' || env === 'dev'
       ? { send_email: [{ name: 'EMAIL', allowed_sender_addresses: ['no-reply@zeiko.biz.id'] }] }
       : {}),
-    ...(!containers
-      ? {}
-      : {
-          containers: CONTAINERS.map(({ binding: _b, ...c }) => c),
-          durable_objects: {
-            bindings: CONTAINERS.map((c) => ({ name: c.binding, class_name: c.class_name })),
-          },
-        }),
+    ...(!containers ? {} : { containers: CONTAINERS.map(({ binding: _b, ...c }) => c) }),
+    // Spaces' live rooms (ADR-096) are SQLite Durable Objects, which Workers Free has: always bound.
+    durable_objects: {
+      bindings: [
+        ...(containers
+          ? CONTAINERS.map((c) => ({ name: c.binding, class_name: c.class_name }))
+          : []),
+        { name: 'SPACE_ROOM', class_name: 'SpaceRoom' },
+      ],
+    },
   };
 }
 // Hashing multi-GB files in the scan consumer needs more than the 30 s default CPU budget, so
@@ -237,7 +239,11 @@ const config = {
     run_worker_first: true,
   },
   triggers: { crons: ['5 17 * * *', '0 * * * *', '0 19 * * *'] },
-  migrations: [{ tag: 'v1', new_sqlite_classes: CONTAINERS.map((c) => c.class_name) }],
+  migrations: [
+    { tag: 'v1', new_sqlite_classes: CONTAINERS.map((c) => c.class_name) },
+    // W3 (ADR-096): append-only, like D1 migrations.
+    { tag: 'v2', new_sqlite_classes: ['SpaceRoom'] },
+  ],
   ...bindings('dev', 900, {
     app: 'http://localhost:5173',
     uc: 'http://uc.localhost:8790',

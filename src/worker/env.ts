@@ -124,6 +124,8 @@ export interface Env {
   EMAIL?: SendEmail;
   /** Containers (absent in local dev; adapters fall back to mocks). */
   SCANNER?: DurableObjectNamespace;
+  /** W3 (ADR-096): one live room per Space (chat, who is here, document locks). */
+  SPACE_ROOM?: DurableObjectNamespace;
   MEDIA_CONTAINER?: DurableObjectNamespace;
   ARCHIVER?: DurableObjectNamespace;
 

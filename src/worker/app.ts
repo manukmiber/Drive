@@ -43,6 +43,7 @@ import { v1 } from './routes/v1';
 import { notifications } from './routes/notifications';
 import { family } from './routes/family';
 import { spaces, teams } from './routes/spaces';
+import { liveSpaceOf, spaceLive } from './routes/space-live';
 import { s3 } from './routes/s3';
 import { handleS3, resolveS3Host } from './routes/s3-api';
 import { handleDav, isDavHost } from './routes/webdav';
@@ -53,6 +54,19 @@ import { appPath, basePath } from './lib/paths';
 export function createApp() {
   const app = new Hono<AppBindings>();
 
+  // A Space's live room (ADR-096): a WebSocket, answered before anything that rewrites responses.
+  app.use('*', async (c, next) => {
+    const spaceId = liveSpaceOf(c.req.raw);
+    if (!spaceId) return next();
+    let waitUntil: ((p: Promise<unknown>) => void) | undefined;
+    try {
+      const exec = c.executionCtx;
+      waitUntil = (p) => exec.waitUntil(p);
+    } catch {
+      // No execution context (tests).
+    }
+    return spaceLive(c.req.raw, c.env, waitUntil, spaceId);
+  });
   // Drive over WebDAV (ADR-089) has a host of its own: never the app's cookies, Origin or CSRF. It is
   // answered before S3, whose own addresses are looked up for any other host.
   app.use('*', async (c, next) => {

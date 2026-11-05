@@ -45,6 +45,12 @@
         "MediaContainer",
         "ScannerContainer"
       ]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": [
+        "SpaceRoom"
+      ]
     }
   ],
   "vars": {
@@ -238,6 +244,14 @@
       ]
     }
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SPACE_ROOM",
+        "class_name": "SpaceRoom"
+      }
+    ]
+  },
   "env": {
     "staging": {
       "routes": [
@@ -446,6 +460,14 @@
       },
       "media": {
         "binding": "MEDIA"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SPACE_ROOM",
+            "class_name": "SpaceRoom"
+          }
+        ]
       }
     },
     "production": {
@@ -670,6 +692,14 @@
       },
       "media": {
         "binding": "MEDIA"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SPACE_ROOM",
+            "class_name": "SpaceRoom"
+          }
+        ]
       }
     }
   }

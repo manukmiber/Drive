@@ -122,6 +122,9 @@ export const configSchema = z.object({
   team_default_seats: int().min(1).max(1000).default(5),
   team_default_max_spaces: int().min(1).max(1000).default(5),
   team_default_max_guests: int().min(0).max(1000).default(10),
+  /** A chat message's length, and topics per Space (W4, ADR-096). */
+  space_message_max_chars: int().min(100).max(20_000).default(4000),
+  space_max_topics: int().min(1).max(1000).default(100),
   /** D3 (ADR-086): open file request links per person. */
   file_request_max_open: int().min(0).default(50),
   /** ADR-088: unfinished drops one link may have at once, and from one address. */
