@@ -139,7 +139,7 @@ Pemetaan node → implementasi:
 
 > **Keadaan sekarang, bukan target.** Sejak ADR-064 (pemilik, 2026-10-26) Drive tidak boleh memakai D1: pohon file pindah
 > ke index R2 per user/keluarga, akun/paket/pembayaran ke relay, sisanya sesuai tabel di ADR-064. Model di bawah tetap
-> menggambarkan kode sampai fase R di `docs/ROADMAP.md` selesai. Jangan menambah tabel atau kolom Drive di sini.
+> menggambarkan kode sampai fase R di `/root/docs/roadmap.md` (di luar repo) selesai. Jangan menambah tabel atau kolom Drive di sini.
 
 Boleh disempurnakan. Perubahan besar dicatat di `DECISIONS.md`.
 
@@ -686,7 +686,7 @@ Setiap fase selesai = DoD terpenuhi + test hijau + `PROGRESS.md` diperbarui + co
 ## 16. Keputusan terbuka
 
 - **Drive tanpa D1 (ADR-064):** R0 dijawab 2026-10-26 kecuali tempat notifikasi, preferensi email, dan daftar berhenti
-  berlangganan. Lihat `docs/ROADMAP.md` bagian R0.
+  berlangganan. Lihat `/root/docs/roadmap.md` (di luar repo) bagian R0.
 
 Pakai default ini sampai pemilik menjawab. Semua dibuat sebagai config supaya mudah diubah.
 
