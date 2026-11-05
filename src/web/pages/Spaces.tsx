@@ -428,8 +428,10 @@ function SpaceFiles({
   }, [rootId, isIdle, mutate]);
   const nav = useMemo(
     () =>
-      rootId ? { rootId, open: (id: string) => onOpen(id === rootId ? undefined : id) } : null,
-    [rootId, onOpen],
+      rootId
+        ? { rootId, spaceId, open: (id: string) => onOpen(id === rootId ? undefined : id) }
+        : null,
+    [rootId, spaceId, onOpen],
   );
   if (!nav) return <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>;
   const at = folder ?? nav.rootId;

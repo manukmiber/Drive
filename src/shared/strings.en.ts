@@ -1037,6 +1037,18 @@ export const en: Strings = {
     opacity: 'Opacity',
   },
   editor: {
+    together: {
+      joining: 'Connecting to shared editing…',
+      live: 'Edited together · saved automatically',
+      saving: 'Saving…',
+      saved: 'Saved',
+      saveFailed: 'Couldn’t save yet. Your changes are safe in the Space; we’ll try again.',
+      refused: 'Your last change wasn’t taken. Try again.',
+      cannot:
+        'This document can’t be edited together right now (the Space’s chat isn’t connected, or the document is too large). You can open it on your own: your changes save as usual.',
+      alone: 'Open on my own',
+      with: (names: string) => `Also open for ${names}`,
+    },
     tools: 'Tools',
     toolsTitle: 'Tools & editors',
     toolsSubtitle:

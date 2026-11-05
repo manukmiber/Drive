@@ -51,6 +51,8 @@
     "@tanstack/react-query": "^5.104.5",
     "@tanstack/react-router": "^1.170.45",
     "@tanstack/react-virtual": "^3.14.21",
+    "@tiptap/extension-collaboration": "3.32.0",
+    "@tiptap/extension-collaboration-caret": "3.32.0",
     "@tiptap/extension-highlight": "3.32.0",
     "@tiptap/extension-image": "3.32.0",
     "@tiptap/extension-list": "3.32.0",
@@ -62,6 +64,7 @@
     "@tiptap/pm": "3.32.0",
     "@tiptap/react": "3.32.0",
     "@tiptap/starter-kit": "3.32.0",
+    "@tiptap/y-tiptap": "3.1.0",
     "better-auth": "^1.7.12",
     "clsx": "^2.1.1",
     "codemirror": "6.0.2",
@@ -81,6 +84,8 @@
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "tailwind-merge": "^3.7.0",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.33",
     "zod": "^4.6.7"
   },
   "devDependencies": {

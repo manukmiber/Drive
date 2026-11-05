@@ -6,6 +6,8 @@
 //
 // Who the person is and their role are decided by the Worker before the socket reaches the room
 // (routes/space-live.ts); the room trusts them, and is told when they change (setMember).
+import { MAX_DOC_DATA, type DocClientFrame, type DocServerFrame } from '../../shared/space-doc';
+import { DOC_SCHEMA, DocError, RoomDocs } from './space-room-docs';
 import { ulid } from '../lib/ids';
 import {
   HISTORY_PAGE,
@@ -39,6 +41,8 @@ export interface ConnState {
   window: number;
   count: number;
   typingAt: number;
+  /** W6 (ADR-100): files this connection has open to edit together, with when it opened each. */
+  docs?: Record<string, number>;
 }
 
 export interface RoomSocket {
@@ -105,6 +109,7 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS locks (
      node TEXT PRIMARY KEY, user_id TEXT NOT NULL, conn TEXT NOT NULL, since INTEGER NOT NULL)`,
   'CREATE TABLE IF NOT EXISTS meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)',
+  ...DOC_SCHEMA,
 ];
 
 const MESSAGE_SELECT = `SELECT m.seq, m.id, m.topic, m.thread, m.author, p.name AS author_name, m.at,
@@ -221,10 +226,21 @@ class FrameError extends Error {
 type Frame = Record<string, unknown>;
 
 export class SpaceRoomCore {
+  private docs: RoomDocs;
+
   constructor(
     private host: RoomHost,
     private limits: RoomLimits,
-  ) {}
+  ) {
+    this.docs = new RoomDocs({
+      get sql() {
+        return host.sql;
+      },
+      now: () => host.now(),
+      connections: () => host.connections(),
+      send: (conn, frame) => this.send(conn, frame),
+    });
+  }
 
   setLimits(limits: RoomLimits): void {
     this.limits = limits;
@@ -304,6 +320,7 @@ export class SpaceRoomCore {
 
   /** A connection went (closed, errored): its locks go, and if it was the person's last, so do they. */
   closed(conn: Conn): void {
+    this.docs.closed(conn);
     for (const r of this.sql.exec('SELECT node FROM locks WHERE conn = ?', conn.state.id)) {
       this.sql.exec('DELETE FROM locks WHERE node = ?', String(r.node));
       this.broadcast({ t: 'unlock', node: String(r.node) }, (c) => c.socket !== conn.socket);
@@ -321,20 +338,33 @@ export class SpaceRoomCore {
     if (!this.pace(conn)) return [];
     let frame: Frame;
     try {
-      if (raw.length > MAX_FRAME_CHARS) throw new FrameError('too_long', 'frame too large');
+      // A file's snapshot (W6) may be large; every other frame is small.
+      if (raw.length > MAX_DOC_DATA + 2_000) throw new FrameError('too_long', 'frame too large');
       const parsed: unknown = JSON.parse(raw);
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
         throw new FrameError('bad_frame', 'a frame is a JSON object');
       frame = parsed as Frame;
+      const doc = typeof frame.t === 'string' && frame.t.startsWith('doc.');
+      if (!doc && raw.length > MAX_FRAME_CHARS) throw new FrameError('too_long', 'frame too large');
     } catch (e) {
       this.fail(conn, e instanceof FrameError ? e : new FrameError('bad_frame', 'not JSON'));
       return [];
     }
     try {
+      if (typeof frame.t === 'string' && frame.t.startsWith('doc.')) {
+        this.docs.handle(conn, frame as unknown as DocClientFrame);
+        return [];
+      }
       return this.handle(conn, frame);
     } catch (e) {
       if (e instanceof FrameError) {
         this.fail(conn, e, typeof frame.nonce === 'string' ? frame.nonce : undefined);
+        return [];
+      }
+      if (e instanceof DocError) {
+        // The app tells a file's refusals apart by this nonce.
+        const node = typeof frame.node === 'string' ? frame.node.slice(0, 64) : '';
+        this.fail(conn, new FrameError(e.code, e.message), `doc:${node}`);
         return [];
       }
       throw e;
@@ -814,6 +844,8 @@ export class SpaceRoomCore {
       c.state.role = role;
       if (readonly !== undefined) c.state.readonly = readonly;
       c.save();
+      // Guests have no files (ADR-099): what they had open closes.
+      if (role === 'guest') this.docs.dropUser(user);
       this.send(c, { t: 'role', role, readonly: c.state.readonly });
       this.hello(c);
     }
@@ -887,7 +919,7 @@ export class SpaceRoomCore {
 
   /* ------------------------------------------------------------ helpers -- */
 
-  private send(conn: Conn, frame: ServerFrame): void {
+  private send(conn: Conn, frame: ServerFrame | DocServerFrame): void {
     try {
       conn.socket.send(JSON.stringify(frame));
     } catch {

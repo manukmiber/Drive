@@ -4,12 +4,26 @@
 import { Workbook, type WorkbookInstance } from '@fortune-sheet/react';
 import '@fortune-sheet/react/dist/index.css';
 import { FileDown } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { DocPerson } from '../../../shared/space-doc';
 import { Button } from '../../components/Button';
 import { Menu } from '../../components/ui/Menu';
 import { toast } from '../../components/ui/Toast';
+import { useCatalog } from '../../lib/catalog';
+import { useFolderNav } from '../../lib/folder-nav';
 import { t } from '../../lib/i18n';
-import { extOf, resultName, withExt, type EditRequest, type Source } from '../files';
+import { isDocFrame } from '../../lib/live-doc';
+import { useSpaceRoom } from '../../lib/space-room';
+import { colourOf } from '../doc/collab';
+import {
+  extOf,
+  replaceAndWait,
+  resultName,
+  withExt,
+  type EditRequest,
+  type Source,
+} from '../files';
+import { SheetCollab, type SheetPhase } from './collab';
 import {
   BarButton,
   Busy,
@@ -165,7 +179,146 @@ export function SheetEditor({ request, onClose }: { request: EditRequest; onClos
         <Busy label={t.editor.loadingFile(Math.round(progress * 100))} progress={progress} />
       </EditorFrame>
     );
+  return <Choose source={source} start={start} onClose={onClose} />;
+}
+
+/** A Space's .xlsx opens to be edited together (W6, ADR-100); anything else, alone. */
+function Choose({
+  source,
+  start,
+  onClose,
+}: {
+  source: Source;
+  start: { sheets: SheetData[]; delimiter: Delimiter };
+  onClose: () => void;
+}) {
+  const area = useFolderNav();
+  const catalog = useCatalog();
+  const [solo, setSolo] = useState(false);
+  const together =
+    !solo &&
+    source.node?.space === 'team' &&
+    extOf(source.name) === 'xlsx' &&
+    Boolean(area?.spaceId) &&
+    Boolean(catalog.data?.capabilities?.spacesChat);
+  if (together)
+    return (
+      <Together
+        source={source}
+        start={start}
+        spaceId={area!.spaceId!}
+        onClose={onClose}
+        onAlone={() => setSolo(true)}
+      />
+    );
   return <Workspace start={source} {...start} onClose={onClose} />;
+}
+
+/** How often the saver writes the file while people edit (it is also written on leaving). */
+const SAVE_EVERY_MS = 60_000;
+
+interface Shared {
+  collab: SheetCollab;
+  sheets: SheetData[];
+  people: DocPerson[];
+  saver: boolean;
+}
+
+function Together({
+  source,
+  start,
+  spaceId,
+  onClose,
+  onAlone,
+}: {
+  source: Source;
+  start: { sheets: SheetData[]; delimiter: Delimiter };
+  spaceId: string;
+  onClose: () => void;
+  onAlone: () => void;
+}) {
+  const room = useSpaceRoom(spaceId, true);
+  const [phase, setPhase] = useState<SheetPhase>('joining');
+  const [sheets, setSheets] = useState<SheetData[] | null>(null);
+  const [people, setPeople] = useState<DocPerson[]>([]);
+  const [saver, setSaver] = useState(false);
+  const [refused, setRefused] = useState(false);
+  const { send, listen } = room;
+  const nodeId = source.node!.id;
+  const [collab] = useState(
+    () =>
+      new SheetCollab({ send }, nodeId, start.sheets, {
+        phase: setPhase,
+        start: setSheets,
+        people: setPeople,
+        saver: setSaver,
+      }),
+  );
+  const open = room.state.status === 'open';
+
+  useEffect(() => {
+    if (!open) return;
+    const off = listen((f) => {
+      if (f.t === 'error' && f.nonce === `doc:${nodeId}`) {
+        if (collab.phase !== 'live') setRefused(true);
+        else toast(t.editor.together.refused, { tone: 'error' });
+      } else if (isDocFrame(f)) collab.live.take(f);
+    });
+    collab.join();
+    return () => {
+      off();
+      collab.leave();
+    };
+  }, [open, listen, nodeId, collab]);
+
+  const down = ['unavailable', 'removed', 'gone', 'signin'].includes(room.state.status);
+  if (refused || (down && phase !== 'live'))
+    return (
+      <EditorFrame title={source.name} onClose={onClose}>
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <p className="max-w-sm text-sm text-[var(--fg-muted)]">{t.editor.together.cannot}</p>
+          <Button variant="secondary" onClick={onAlone}>
+            {t.editor.together.alone}
+          </Button>
+        </div>
+      </EditorFrame>
+    );
+  if (phase !== 'live' || !sheets)
+    return (
+      <EditorFrame title={source.name} onClose={onClose}>
+        <Busy label={t.editor.together.joining} />
+      </EditorFrame>
+    );
+  return (
+    <Workspace
+      start={source}
+      sheets={sheets}
+      delimiter={start.delimiter}
+      onClose={onClose}
+      shared={{ collab, sheets, people, saver }}
+    />
+  );
+}
+
+function People({ people }: { people: DocPerson[] }) {
+  if (people.length < 2) return null;
+  return (
+    <span
+      className="mr-1 flex items-center -space-x-1.5"
+      title={t.editor.together.with(people.map((p) => p.name).join(', '))}
+    >
+      {people.slice(0, 4).map((p) => (
+        <span
+          key={p.user}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white ring-2 ring-[var(--card)]"
+          style={{ background: colourOf(p.user) }}
+          aria-label={p.name}
+        >
+          {(p.name.trim()[0] ?? '?').toUpperCase()}
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function Workspace({
@@ -173,13 +326,17 @@ function Workspace({
   sheets,
   delimiter,
   onClose,
+  shared,
 }: {
   start: Source;
   sheets: SheetData[];
   delimiter: Delimiter;
   onClose: () => void;
+  /** Edited together (W6): the room has the live copy, the saver writes the file. */
+  shared?: Shared;
 }) {
   const book = useRef<WorkbookInstance>(null);
+  const collab = shared?.collab ?? null;
   const [source, setSource] = useState(start);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -226,13 +383,61 @@ function Workspace({
     }
   }
 
+  // W6: the saver writes the file now and then, and when leaving; anyone may write it now.
+  const [writing, setWriting] = useState(false);
+  const writingRef = useRef(false);
+  const writeNow = useCallback(async (): Promise<boolean> => {
+    const wb = book.current;
+    if (!wb || !collab || !source.node || writingRef.current) return false;
+    writingRef.current = true;
+    setWriting(true);
+    try {
+      collab.live.flush();
+      const upto = collab.live.last;
+      const { writeXlsx } = await import('./xlsx');
+      await replaceAndWait(await writeXlsx(wb), source.node);
+      collab.wrote(upto);
+      return true;
+    } catch {
+      toast(t.editor.together.saveFailed, { tone: 'error' });
+      return false;
+    } finally {
+      writingRef.current = false;
+      setWriting(false);
+    }
+  }, [collab, source]);
+  const isSaver = Boolean(shared?.saver);
+  useEffect(() => {
+    if (!isSaver || !collab) return;
+    const id = setInterval(() => {
+      if (collab.unsaved) void writeNow();
+    }, SAVE_EVERY_MS);
+    return () => clearInterval(id);
+  }, [isSaver, collab, writeNow]);
+
+  async function leave() {
+    if (collab && isSaver && collab.unsaved) await writeNow();
+    onClose();
+  }
+
   return (
     <EditorFrame
       title={source.name}
-      onClose={onClose}
-      dirty={dirty}
+      onClose={() => void leave()}
+      dirty={!collab && dirty}
       actions={
         <>
+          {shared && (
+            <>
+              <People people={shared.people} />
+              <span
+                className="mr-1 hidden text-xs text-[var(--fg-muted)] sm:inline"
+                aria-live="polite"
+              >
+                {writing ? t.editor.together.saving : t.editor.together.live}
+              </span>
+            </>
+          )}
           <BarButton
             icon={FileDown}
             label={t.editor.saveAs}
@@ -241,7 +446,15 @@ function Workspace({
               setSaveMenu({ x: r.right - 240, y: r.bottom + 4 });
             }}
           />
-          <Button onClick={() => void save(own)} disabled={busy} className="ml-1 h-9 px-4">
+          <Button
+            onClick={() =>
+              collab
+                ? void writeNow().then((ok) => ok && toast(t.editor.together.saved))
+                : void save(own)
+            }
+            disabled={busy || writing}
+            className="ml-1 h-9 px-4"
+          >
             {t.common.save}
           </Button>
         </>
@@ -258,7 +471,10 @@ function Workspace({
             down never reloads the page. */}
         <div className="zk-sheet absolute inset-0">
           <Workbook
-            ref={book}
+            ref={(wb) => {
+              book.current = wb;
+              collab?.attach(wb);
+            }}
             data={sheets as never}
             lang="en"
             currency="Rp"
@@ -266,7 +482,7 @@ function Workspace({
             cellContextMenu={CELL_MENU}
             headerContextMenu={HEADER_MENU}
             // FortuneSheet reports changes while it is still drawing itself.
-            onOp={() => queueMicrotask(() => setDirty(true))}
+            onOp={(ops) => (collab ? collab.local(ops) : queueMicrotask(() => setDirty(true)))}
           />
         </div>
       </div>

@@ -1,5 +1,7 @@
 // Document editor (ADR-051): TipTap on a page. Opens .docx (through mammoth) and new documents;
 // saves .docx (docx/html), Markdown or a web page.
+import Collaboration from '@tiptap/extension-collaboration';
+import CollaborationCaret from '@tiptap/extension-collaboration-caret';
 import Highlight from '@tiptap/extension-highlight';
 import Image from '@tiptap/extension-image';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
@@ -40,14 +42,21 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../../components/Button';
 import { PromptDialog } from '../../components/ui/Dialog';
 import { Menu } from '../../components/ui/Menu';
 import { toast } from '../../components/ui/Toast';
+import type { DocPerson } from '../../../shared/space-doc';
+import { useCatalog } from '../../lib/catalog';
 import { cn } from '../../lib/cn';
+import { useFolderNav } from '../../lib/folder-nav';
 import { lang, t } from '../../lib/i18n';
-import { resultName, withExt, type EditRequest, type Source } from '../files';
+import { isDocFrame } from '../../lib/live-doc';
+import { useMe } from '../../lib/session';
+import { useSpaceRoom } from '../../lib/space-room';
+import { replaceAndWait, resultName, withExt, type EditRequest, type Source } from '../files';
+import { DocCollab, colourOf, type DocPhase } from './collab';
 import '../prose.css';
 import {
   BarButton,
@@ -97,7 +106,156 @@ export function DocEditor({ request, onClose }: { request: EditRequest; onClose:
         <Busy label={t.editor.loadingFile(Math.round(progress * 100))} progress={progress} />
       </EditorFrame>
     );
-  return <Workspace start={source} html={start.html} fromWord={start.fromWord} onClose={onClose} />;
+  return <Choose source={source} html={start.html} fromWord={start.fromWord} onClose={onClose} />;
+}
+
+/** A Space's Word file opens to be edited together (W6, ADR-100); anything else, alone. */
+function Choose({
+  source,
+  html,
+  fromWord,
+  onClose,
+}: {
+  source: Source;
+  html: string;
+  fromWord: boolean;
+  onClose: () => void;
+}) {
+  const area = useFolderNav();
+  const catalog = useCatalog();
+  const me = useMe();
+  const [solo, setSolo] = useState(false);
+  const together =
+    !solo &&
+    Boolean(me.data) &&
+    source.node?.space === 'team' &&
+    /\.docx$/i.test(source.name) &&
+    Boolean(area?.spaceId) &&
+    Boolean(catalog.data?.capabilities?.spacesChat);
+  if (together)
+    return (
+      <Together
+        source={source}
+        html={html}
+        spaceId={area!.spaceId!}
+        me={{ id: me.data!.user.id, name: me.data!.user.name || me.data!.user.email }}
+        onClose={onClose}
+        onAlone={() => setSolo(true)}
+      />
+    );
+  return <Workspace start={source} html={html} fromWord={fromWord} onClose={onClose} />;
+}
+
+/** How often the saver writes the file while people edit (it is also written on leaving). */
+const SAVE_EVERY_MS = 60_000;
+
+interface Shared {
+  collab: DocCollab;
+  phase: DocPhase;
+  people: DocPerson[];
+  saver: boolean;
+}
+
+function Together({
+  source,
+  html,
+  spaceId,
+  me,
+  onClose,
+  onAlone,
+}: {
+  source: Source;
+  html: string;
+  spaceId: string;
+  me: { id: string; name: string };
+  onClose: () => void;
+  onAlone: () => void;
+}) {
+  const room = useSpaceRoom(spaceId, true);
+  const [phase, setPhase] = useState<DocPhase>('joining');
+  const [people, setPeople] = useState<DocPerson[]>([]);
+  const [saver, setSaver] = useState(false);
+  const [refused, setRefused] = useState(false);
+  const { send, listen } = room;
+  const nodeId = source.node!.id;
+  // One shared copy for as long as the editor is open; it joins whenever the room is there.
+  const [collab] = useState(
+    () =>
+      new DocCollab({ send }, nodeId, me, {
+        phase: setPhase,
+        people: setPeople,
+        saver: setSaver,
+      }),
+  );
+  const open = room.state.status === 'open';
+
+  useEffect(() => {
+    if (!open) return;
+    const off = listen((f) => {
+      if (f.t === 'error' && f.nonce === `doc:${nodeId}`) {
+        if (collab.phase !== 'live') setRefused(true);
+        else toast(t.editor.together.refused, { tone: 'error' });
+      } else if (isDocFrame(f)) collab.live.take(f);
+    });
+    collab.join();
+    return () => {
+      off();
+      collab.leave();
+    };
+  }, [open, listen, nodeId, collab]);
+
+  const down = ['unavailable', 'removed', 'gone', 'signin'].includes(room.state.status);
+  if (refused || (down && phase !== 'live'))
+    return (
+      <EditorFrame title={source.name} onClose={onClose}>
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+          <p className="max-w-sm text-sm text-[var(--fg-muted)]">{t.editor.together.cannot}</p>
+          <Button variant="secondary" onClick={onAlone}>
+            {t.editor.together.alone}
+          </Button>
+        </div>
+      </EditorFrame>
+    );
+  if (phase === 'joining' || phase === 'waiting')
+    return (
+      <EditorFrame title={source.name} onClose={onClose}>
+        <Busy label={t.editor.together.joining} />
+      </EditorFrame>
+    );
+  return (
+    <Workspace
+      start={source}
+      html={html}
+      fromWord={false}
+      onClose={onClose}
+      shared={{ collab, phase, people, saver }}
+    />
+  );
+}
+
+function People({ people, me }: { people: DocPerson[]; me: string | undefined }) {
+  const others = people.filter((p) => p.user !== me);
+  if (!others.length) return null;
+  return (
+    <span
+      className="mr-1 flex items-center -space-x-1.5"
+      title={t.editor.together.with(others.map((p) => p.name).join(', '))}
+    >
+      {others.slice(0, 4).map((p) => (
+        <span
+          key={p.user}
+          className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold text-white ring-2 ring-[var(--card)]"
+          style={{ background: colourOf(p.user) }}
+          aria-label={p.name}
+        >
+          {(p.name.trim()[0] ?? '?').toUpperCase()}
+        </span>
+      ))}
+      {others.length > 4 && (
+        <span className="pl-2.5 text-xs text-[var(--fg-muted)]">+{others.length - 4}</span>
+      )}
+    </span>
+  );
 }
 
 function Workspace({
@@ -105,12 +263,17 @@ function Workspace({
   html,
   fromWord,
   onClose,
+  shared,
 }: {
   start: Source;
   html: string;
   fromWord: boolean;
   onClose: () => void;
+  /** Edited together (W6): the document lives in the room, the file is written by the saver. */
+  shared?: Shared;
 }) {
+  const me = useMe();
+  const collab = shared?.collab ?? null;
   const [source, setSource] = useState(start);
   // The document as last saved, with the editor it belongs to (a document only compares with one
   // of its own editor; React's strict mode makes two in development).
@@ -131,7 +294,18 @@ function Workspace({
       StarterKit.configure({
         link: { openOnClick: false, defaultProtocol: 'https' },
         trailingNode: false,
+        // Edited together, undo is Yjs's own (it undoes only this person's changes).
+        ...(collab ? { undoRedo: false as const } : {}),
       }),
+      ...(collab
+        ? [
+            Collaboration.configure({ document: collab.ydoc }),
+            CollaborationCaret.configure({
+              provider: { awareness: collab.awareness },
+              user: collab.awareness.getLocalState()?.user as Record<string, string>,
+            }),
+          ]
+        : []),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
       Highlight,
       Image.configure({ allowBase64: true }),
@@ -145,7 +319,8 @@ function Workspace({
       CharacterCount,
       Markdown,
     ],
-    content: html,
+    // Edited together the document comes from the room; the first person fills it from the file.
+    content: collab ? undefined : html,
     autofocus: 'start',
     editorProps: {
       attributes: {
@@ -156,6 +331,13 @@ function Workspace({
     },
     // What was opened counts as saved once the editor has tidied it (tables, lists).
     onCreate: ({ editor: e }) => {
+      if (collab) {
+        if (collab.phase === 'seeding') {
+          e.commands.setContent(html);
+          collab.seeded();
+        }
+        return;
+      }
       setTimeout(() => setSaved({ editor: e, doc: e.state.doc }));
     },
   });
@@ -191,10 +373,42 @@ function Workspace({
         canUndo: e.can().undo(),
         canRedo: e.can().redo(),
         words: (e.storage.characterCount as { words: () => number }).words(),
-        dirty: saved?.editor === e && !e.state.doc.eq(saved.doc),
+        dirty: !collab && saved?.editor === e && !e.state.doc.eq(saved.doc),
       };
     },
   });
+
+  // W6: the saver writes the file now and then, and when leaving; anyone may write it now.
+  const [writing, setWriting] = useState(false);
+  const writingRef = useRef(false);
+  const writeNow = useCallback(async (): Promise<boolean> => {
+    if (!editor || !collab || !source.node || writingRef.current) return false;
+    writingRef.current = true;
+    setWriting(true);
+    try {
+      collab.live.flush();
+      const upto = collab.live.last;
+      const { writeDocx } = await import('./write');
+      const blob = await writeDocx(editor.getHTML(), source.name.replace(/\.docx$/i, ''));
+      await replaceAndWait(blob, source.node);
+      collab.wrote(upto);
+      return true;
+    } catch {
+      toast(t.editor.together.saveFailed, { tone: 'error' });
+      return false;
+    } finally {
+      writingRef.current = false;
+      setWriting(false);
+    }
+  }, [editor, collab, source]);
+  const isSaver = Boolean(shared?.saver);
+  useEffect(() => {
+    if (!isSaver || !collab) return;
+    const id = setInterval(() => {
+      if (collab.unsaved) void writeNow();
+    }, SAVE_EVERY_MS);
+    return () => clearInterval(id);
+  }, [isSaver, collab, writeNow]);
 
   if (!editor || !s)
     return (
@@ -202,6 +416,12 @@ function Workspace({
         <Busy label={t.common.loading} />
       </EditorFrame>
     );
+
+  /** Leaving a shared document: the saver writes what the file does not have yet. */
+  async function leave() {
+    if (collab && isSaver && collab.unsaved) await writeNow();
+    onClose();
+  }
 
   const chain = () => editor.chain().focus();
 
@@ -260,10 +480,21 @@ function Workspace({
   return (
     <EditorFrame
       title={source.name}
-      onClose={onClose}
+      onClose={() => void leave()}
       dirty={s.dirty}
       actions={
         <>
+          {shared && (
+            <>
+              <People people={shared.people} me={me.data?.user.id} />
+              <span
+                className="mr-1 hidden text-xs text-[var(--fg-muted)] sm:inline"
+                aria-live="polite"
+              >
+                {writing ? t.editor.together.saving : t.editor.together.live}
+              </span>
+            </>
+          )}
           <BarButton
             icon={Undo2}
             label={t.editor.undo}
@@ -284,7 +515,15 @@ function Workspace({
               setSaveMenu({ x: r.right - 220, y: r.bottom + 4 });
             }}
           />
-          <Button onClick={() => void save('docx')} disabled={busy} className="ml-1 h-9 px-4">
+          <Button
+            onClick={() =>
+              collab
+                ? void writeNow().then((ok) => ok && toast(t.editor.together.saved))
+                : void save('docx')
+            }
+            disabled={busy || writing}
+            className="ml-1 h-9 px-4"
+          >
             {t.common.save}
           </Button>
         </>

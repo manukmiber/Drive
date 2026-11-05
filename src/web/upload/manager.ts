@@ -120,8 +120,9 @@ export class UploadManager {
       /** Default: ask (the conflict prompt). Editors pass rename or replace (ADR-050). */
       onConflict?: UploadTask['onConflict'];
     }>,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const batchId = crypto.randomUUID();
+    const ids: string[] = [];
     for (const it of items) {
       const task: UploadTask = {
         id: crypto.randomUUID(),
@@ -147,9 +148,30 @@ export class UploadManager {
         }
       }
       this.tasks.push(task);
+      ids.push(task.id);
     }
     this.emit();
     this.pump();
+    return ids;
+  }
+
+  /** Resolves with the node when the task is done; rejects when it fails or is canceled. */
+  settled(id: string): Promise<NodeDto> {
+    return new Promise((resolve, reject) => {
+      const check = () => {
+        const t = this.tasks.find((x) => x.id === id);
+        if (!t) return finish(() => reject(new Error('gone')));
+        if (t.status === 'done' && t.node) return finish(() => resolve(t.node!));
+        if (['error', 'canceled', 'skipped'].includes(t.status))
+          return finish(() => reject(new Error(t.errorCode ?? t.status)));
+      };
+      const finish = (f: () => void) => {
+        stop();
+        f();
+      };
+      const stop = this.subscribe(check);
+      check();
+    });
   }
 
   /** Answer the "Lanjutkan upload?" offer. */

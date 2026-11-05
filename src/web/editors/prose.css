@@ -136,3 +136,29 @@
 .z-prose.ProseMirror .tableWrapper table {
   display: table;
 }
+
+/* W6 (ADR-100): where the others are in a document edited together; their colour comes inline. */
+.z-prose .collaboration-carets__caret {
+  position: relative;
+  margin: 0 -1px;
+  border-left: 2px solid;
+  pointer-events: none;
+  word-break: normal;
+}
+.z-prose .collaboration-carets__label {
+  position: absolute;
+  top: -1.45em;
+  left: -2px;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px 4px 4px 0;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: normal;
+  white-space: nowrap;
+  user-select: none;
+}
+.z-prose .ProseMirror-yjs-selection,
+.z-prose .collaboration-carets__selection {
+  opacity: 0.35;
+}

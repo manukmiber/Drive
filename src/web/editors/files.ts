@@ -168,6 +168,18 @@ export function saveToDrive(blob: Blob, name: string, parentId: string, replace:
   void uploads().add([{ file, parentId, name, onConflict: replace ? 'replace' : 'rename' }]);
 }
 
+/**
+ * Writes a new version of a Drive file and waits until it is there (W6: the saver tells the room
+ * only after the file holds the changes, ADR-100).
+ */
+export async function replaceAndWait(blob: Blob, node: NodeDto): Promise<NodeDto> {
+  const file = new File([blob], node.name, { type: blob.type, lastModified: Date.now() });
+  const [id] = await uploads().add([
+    { file, parentId: node.parentId!, name: node.name, onConflict: 'replace' },
+  ]);
+  return uploads().settled(id!);
+}
+
 export function downloadBlob(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

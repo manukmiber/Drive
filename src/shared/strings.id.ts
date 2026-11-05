@@ -1032,6 +1032,18 @@ export const t = {
     opacity: 'Kepekatan',
   },
   editor: {
+    together: {
+      joining: 'Menyambung ke edit bersama…',
+      live: 'Diedit bersama · tersimpan otomatis',
+      saving: 'Menyimpan…',
+      saved: 'Tersimpan',
+      saveFailed: 'Belum bisa menyimpan. Perubahan tetap aman di Space, nanti dicoba lagi.',
+      refused: 'Perubahan terakhir tidak diterima. Coba lagi.',
+      cannot:
+        'Dokumen ini belum bisa diedit bersama sekarang (chat Space tidak tersambung, atau dokumennya terlalu besar). Kamu bisa membukanya sendiri: perubahanmu disimpan seperti biasa.',
+      alone: 'Buka sendiri',
+      with: (names: string) => `Sedang dibuka juga oleh ${names}`,
+    },
     tools: 'Alat',
     toolsTitle: 'Alat & editor',
     toolsSubtitle:

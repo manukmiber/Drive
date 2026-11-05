@@ -4,6 +4,7 @@
 // without waking it), and stops for good when the room says the person is out (4403) or the Space
 // is gone (4410).
 import { useCallback, useEffect, useReducer, useRef } from 'react';
+import type { DocClientFrame, DocServerFrame } from '../../shared/space-doc';
 import { ROOM_CLOSE, type ClientFrame, type ServerFrame } from '../../shared/space-room';
 import { emptyRoom, listKey, roomReduce, type Pending, type RoomState } from './space-room-state';
 
@@ -30,10 +31,15 @@ export function liveUrl(spaceId: string): string {
   return `${proto}//${window.location.host}/api/spaces/${spaceId}/live`;
 }
 
+/** Every frame as it arrives (an editor's file frames, ADR-100, go only here). */
+export type RoomListener = (f: ServerFrame | DocServerFrame) => void;
+
 export interface Room {
   state: RoomState;
   /** Sends a frame if connected; false when it could not go. */
-  send: (f: ClientFrame) => boolean;
+  send: (f: ClientFrame | DocClientFrame) => boolean;
+  /** Hears every frame; returns how to stop. */
+  listen: (fn: RoomListener) => () => void;
   /** A message, shown at once as pending until the room has it. */
   post: (topic: string, text: string, thread?: string | null) => void;
   /** Asks to make a topic; the nonce comes back in `state.made` with its id. */
@@ -51,6 +57,7 @@ export function useSpaceRoom(spaceId: string, enabled: boolean): Room {
   const [state, dispatch] = useReducer(roomReduce, emptyRoom);
   const ws = useRef<WebSocket | null>(null);
   const kick = useRef<() => void>(() => {});
+  const listeners = useRef(new Set<RoomListener>());
 
   useEffect(() => {
     if (!enabled) return;
@@ -75,14 +82,18 @@ export function useSpaceRoom(spaceId: string, enabled: boolean): Room {
       };
       sock.onmessage = (e) => {
         if (typeof e.data !== 'string') return;
-        let f: ServerFrame | { t: 'pong' };
+        let f: ServerFrame | DocServerFrame | { t: 'pong' };
         try {
-          f = JSON.parse(e.data) as ServerFrame | { t: 'pong' };
+          f = JSON.parse(e.data) as ServerFrame | DocServerFrame | { t: 'pong' };
         } catch {
           return;
         }
         if (f.t === 'pong') return;
-        dispatch({ kind: 'frame', frame: f, now: Date.now() });
+        // A file's frames, and its refusals, belong to the editor that has it open.
+        const forFile =
+          f.t.startsWith('doc.') || (f.t === 'error' && Boolean(f.nonce?.startsWith('doc:')));
+        if (!forFile) dispatch({ kind: 'frame', frame: f as ServerFrame, now: Date.now() });
+        for (const l of listeners.current) l(f);
       };
       sock.onclose = (e) => {
         clearInterval(ping);
@@ -125,7 +136,7 @@ export function useSpaceRoom(spaceId: string, enabled: boolean): Room {
     };
   }, [spaceId, enabled]);
 
-  const send = useCallback((f: ClientFrame) => {
+  const send = useCallback((f: ClientFrame | DocClientFrame) => {
     const sock = ws.current;
     if (!sock || sock.readyState !== WebSocket.OPEN) return false;
     sock.send(JSON.stringify(f));
@@ -186,5 +197,22 @@ export function useSpaceRoom(spaceId: string, enabled: boolean): Room {
   const dismiss = useCallback(() => dispatch({ kind: 'dismiss' }), []);
   const retry = useCallback(() => kick.current(), []);
 
-  return { state, send, post, makeTopic, loadHistory, markRead, resend, discard, dismiss, retry };
+  const listen = useCallback((fn: RoomListener) => {
+    listeners.current.add(fn);
+    return () => void listeners.current.delete(fn);
+  }, []);
+
+  return {
+    state,
+    send,
+    listen,
+    post,
+    makeTopic,
+    loadHistory,
+    markRead,
+    resend,
+    discard,
+    dismiss,
+    retry,
+  };
 }

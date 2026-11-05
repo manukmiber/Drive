@@ -2,6 +2,18 @@
 
 Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` untuk detail tiap fase.
 
+## Zeiko Spaces — W6: dokumen dan spreadsheet bersama (ADR-100, 2026-11-05)
+- [x] Salinan hidup per file di ruang live (`docs`, `doc_items`): seed, saver, ringkas, dihapus setelah tersimpan.
+- [x] Dokumen `.docx`: Yjs + TipTap Collaboration/Caret, simpan otomatis 60 detik dan saat menutup.
+- [x] Spreadsheet `.xlsx`: snapshot + operasi FortuneSheet, edit sendiri diterapkan ulang di atas milik orang lain.
+- [x] Dicek di Chromium (dua akun mengetik bersamaan, simpan, buka ulang). Test ruang `space-docs.test.ts`.
+- [ ] Kunci "sedang diedit" (W5) untuk editor teks; `.csv` bersama; uji DO di staging.
+
+## Zeiko Spaces — W1e: file Space (ADR-099, 2026-11-05)
+- [x] Folder teratas per Space (`nodes.space = 'team'`), kuota pemilik tim, `spaces.root_node` (akses 0009).
+- [x] Izin per peran, batas pindah, hapus Space/tim, serahkan tim, Sampah; tab File di halaman Space.
+- [ ] Index R2 per Space, log Aktivitas per Space, folder untuk tamu.
+
 ## Zeiko Spaces — W1b/W4: tampilan di app (ADR-098, 2026-11-05)
 - [x] Bagian Spaces di sidebar dan header HP; `/spaces`, `/spaces/tim/:id`, `/spaces/:id` (Chat, Orang), dua bahasa.
 - [x] Buat tim dan Space, tambah orang/undangan, ganti peran, keluarkan, serahkan tim, cabut undangan, keluar, hapus.

@@ -2979,3 +2979,47 @@ dokumen bersama).
 
 **Belum:** index R2 per Space, log Aktivitas per Space (sekarang tercatat di log pemilik tim), folder untuk tamu,
 kabar `files` ke ruang live setelah perubahan, kuota tim sungguhan (W2/R7).
+
+## ADR-100 — W6: dokumen dan spreadsheet Space diedit bersama lewat ruang live
+
+Tanggal: 2026-11-05. Status: diterima (pemilik: "Kerjakan editor dokumen, spreadsheet, …", memilih edit bersama
+langsung; T4 sebelumnya menaruh W6 sesudah rilis pertama).
+
+**Keputusan:**
+- **Ruang live Space menyimpan satu salinan hidup per file yang sedang dibuka**
+  (`rooms/space-room-docs.ts`, tabel `docs` dan `doc_items` di SQLite DO). Salinan hidup = snapshot awal + perubahan
+  setelahnya, berurutan. Ruang tidak pernah membaca file dan tidak mengerti isinya: ia hanya menyimpan, mengurutkan,
+  dan meneruskan (`shared/space-doc.ts`). Tidak ada `yjs` di Worker.
+- **Satu orang mengisi snapshot** (`seed`): orang pertama yang membuka file. Kalau ia pergi sebelum mengirim, orang
+  berikutnya diminta (`doc.seedme`). Yang lain menunggu.
+- **Satu orang menyimpan** (`saver`): koneksi penulis yang paling lama membuka file itu. Ia menulis file ke Drive
+  setiap 60 detik kalau ada perubahan, dan saat menutup editor, sebagai versi baru (ADR-084) lewat antrean upload
+  biasa (`replaceAndWait`: menunggu upload selesai). Setelah itu ia memberi tahu ruang sampai mana file sudah memuat
+  perubahan (`doc.saved`). Siapa pun boleh menekan Simpan.
+- **Salinan hidup dihapus** kalau tidak ada lagi yang membuka file dan semuanya sudah tersimpan. Kalau belum
+  tersimpan, salinan itu tetap ada, dan orang berikutnya membuka dari situ (lalu menjadi saver). Jadi perubahan tidak
+  hilang walaupun penyimpan terakhir tertutup paksa.
+- **Ringkas:** setelah lebih dari 300 perubahan, penyimpan mengirim salinan utuhnya (`doc.compact`), dan salinan itu
+  menggantikan semua perubahan sampai titik tersebut. Ini hanya dilakukan kalau semua perubahannya sendiri sudah
+  diterima ruang.
+- **Dokumen** = dokumen Yjs. TipTap Collaboration dan CollaborationCaret menampilkan kursor serta nama orang lain.
+  Undo-nya milik Yjs, jadi hanya membatalkan perubahan sendiri. File tetap `.docx`, tidak ada format baru. Konversinya
+  sama dengan editor biasa (ADR-051): header/footer dan komentar Word tetap tidak ikut.
+- **Spreadsheet** = snapshot sheet FortuneSheet (`celldata`) + operasinya (`onOp`/`applyOp`). Ruanglah yang
+  menentukan urutan. Kalau operasi orang lain datang sementara edit sel sendiri belum bernomor, edit sendiri itu
+  diterapkan ulang di atasnya, jadi semua salinan berakhir sama. Operasi struktur (baris, kolom, sheet) tidak
+  diterapkan ulang: dua orang menyisipkan baris pada saat yang sama masih bisa berbeda sampai file dibuka lagi.
+- **Kapan:** file `.docx`/`.xlsx` di Space, dibuka dari tab File (`FolderNavContext.spaceId`), dengan
+  `capabilities.spacesChat`. Editor membuka WebSocket ruang sendiri. Gagal tersambung atau file terlalu besar →
+  tawaran "Buka sendiri" (editor biasa).
+- **Batas:**
+  - maks. 5 file terbuka per koneksi;
+  - satu data maks. 900.000 karakter (frame dokumen boleh sebesar itu, frame lain tetap 32.000);
+  - perubahan dikirim paling sering sekali per 600 ms, karena setiap kiriman = satu baris ditulis di DO (batas
+    Workers Free);
+  - kursor paling sering sekali per detik;
+  - tamu tidak bisa membuka file (ADR-099).
+
+**Belum:** kunci "sedang diedit" (W5) untuk editor teks dan editor lain, `.csv`/`.tsv` bersama, reconnect yang
+melewati satu ringkasan bisa kehilangan perubahan di spreadsheet (dokumen tidak), dan uji Durable Object sungguhan
+di staging.
