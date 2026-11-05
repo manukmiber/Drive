@@ -126,16 +126,20 @@ const searchRoute = createRoute({
 });
 
 // W1b/W4 (ADR-098): a Space opens on its chat; `topic` is where a mention's notice points.
+// W1e (ADR-099): its Files tab keeps the open folder in `folder`.
+const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+type SpaceSearch = { tab?: 'people' | 'files'; topic?: string; folder?: string };
 const spaceRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/spaces/$spaceId',
-  validateSearch: (s: Record<string, unknown>): { tab?: 'people'; topic?: string } => ({
-    ...(s.tab === 'people' ? { tab: 'people' as const } : {}),
-    ...(typeof s.topic === 'string' && /^[0-9A-Z]{26}$/.test(s.topic) ? { topic: s.topic } : {}),
+  validateSearch: (s: Record<string, unknown>): SpaceSearch => ({
+    ...(s.tab === 'people' || s.tab === 'files' ? { tab: s.tab } : {}),
+    ...(typeof s.topic === 'string' && ULID.test(s.topic) ? { topic: s.topic } : {}),
+    ...(typeof s.folder === 'string' && ULID.test(s.folder) ? { folder: s.folder } : {}),
   }),
   component: function SpaceRoutePage() {
     const { spaceId } = spaceRoute.useParams();
-    const { tab, topic } = spaceRoute.useSearch();
+    const { tab, topic, folder } = spaceRoute.useSearch();
     const navigate = spaceRoute.useNavigate();
     return (
       <SpacePage
@@ -143,13 +147,20 @@ const spaceRoute = createRoute({
         spaceId={spaceId}
         tab={tab ?? 'chat'}
         topic={topic}
-        onNavigate={(next: { tab?: 'chat' | 'people'; topic?: string }) =>
+        folder={folder}
+        onNavigate={(next: {
+          tab?: 'chat' | 'people' | 'files';
+          topic?: string;
+          folder?: string;
+        }) =>
           void navigate({
             search: {
-              ...(next.tab === 'people' ? { tab: 'people' as const } : {}),
+              ...(next.tab && next.tab !== 'chat' ? { tab: next.tab } : {}),
               ...(next.topic ? { topic: next.topic } : {}),
+              ...(next.folder ? { folder: next.folder } : {}),
             },
-            replace: true,
+            // Folders are places to go back from; switching tabs or topics is not.
+            replace: next.tab !== 'files',
           })
         }
       />

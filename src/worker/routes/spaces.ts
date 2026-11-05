@@ -14,6 +14,7 @@ import {
   getSpace,
   getTeam,
   listMine,
+  openSpaceFiles,
   removeSpaceMember,
   removeTeamMember,
   renameSpace,
@@ -148,6 +149,10 @@ export const spaces = new Hono<AppBindings>()
   )
   .get('/:id', validate('param', z.object({ id })), async (c) =>
     c.json(await getSpace(c.get('ctx'), c.get('user')!.id, c.req.valid('param').id)),
+  )
+  // W1e (ADR-099): the Space's files, made the first time they are opened.
+  .post('/:id/files', validate('param', z.object({ id })), async (c) =>
+    c.json(await openSpaceFiles(c.get('ctx'), c.get('user')!.id, c.req.valid('param').id)),
   )
   .patch('/:id', validate('param', z.object({ id })), validate('json', name), async (c) => {
     await renameSpace(

@@ -2025,7 +2025,7 @@ export const en: Strings = {
       readonly: 'This team is read-only: new messages, people and Spaces can’t be added for now.',
       frozen: 'This team is frozen. Its Spaces are still listed, but what’s inside is locked.',
     },
-    tabs: { chat: 'Chat', people: 'People' },
+    tabs: { chat: 'Chat', people: 'People', files: 'Files' },
     people: {
       teamTitle: 'Team members',
       spaceTitle: 'People in this Space',

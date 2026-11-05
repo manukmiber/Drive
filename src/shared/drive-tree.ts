@@ -19,7 +19,7 @@ export interface DriveNode {
   mime: string | null;
   status: 'uploading' | 'scanning' | 'ready' | 'rejected';
   scanStatus: string | null;
-  space: 'personal' | 'family';
+  space: 'personal' | 'family' | 'team';
   ownerId: string;
   createdBy: string;
   familyCanEdit: boolean;

@@ -5,6 +5,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import {
   ArrowLeft,
   ChevronRight,
+  FolderOpen,
   LayoutGrid,
   LogOut,
   MessagesSquare,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { sendJson } from '../lib/api';
+import { FolderNavContext } from '../lib/folder-nav';
 import { useCatalog } from '../lib/catalog';
 import { cn } from '../lib/cn';
 import { t } from '../lib/i18n';
@@ -42,6 +44,7 @@ import { People, RoleChip } from '../components/spaces/People';
 import { PromptDialog } from '../components/ui/Dialog';
 import { Menu, type MenuItem } from '../components/ui/Menu';
 import { toast } from '../components/ui/Toast';
+import { Drive } from './Drive';
 
 const card = 'z-card rounded-2xl p-5';
 
@@ -401,18 +404,58 @@ export function TeamPage({ teamId }: { teamId: string }) {
   );
 }
 
-export type SpaceTab = 'chat' | 'people';
+/** W1e (ADR-099): the Space's files in Drive's own explorer, folders kept inside the Space page. */
+function SpaceFiles({
+  spaceId,
+  rootId,
+  folder,
+  onOpen,
+}: {
+  spaceId: string;
+  rootId: string | null;
+  folder: string | undefined;
+  onOpen: (folderId: string | undefined) => void;
+}) {
+  const qc = useQueryClient();
+  const open = useMutation({
+    mutationFn: () => sendJson<{ rootId: string }>('POST', `/api/spaces/${spaceId}/files`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: spaceKey(spaceId) }),
+    onError: (e) => toast(spaceError(e), { tone: 'error' }),
+  });
+  const { mutate, isIdle } = open;
+  useEffect(() => {
+    if (!rootId && isIdle) mutate();
+  }, [rootId, isIdle, mutate]);
+  const nav = useMemo(
+    () =>
+      rootId ? { rootId, open: (id: string) => onOpen(id === rootId ? undefined : id) } : null,
+    [rootId, onOpen],
+  );
+  if (!nav) return <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>;
+  const at = folder ?? nav.rootId;
+  return (
+    <div className="h-full overflow-y-auto">
+      <FolderNavContext.Provider value={nav}>
+        <Drive key={at} folderId={at} />
+      </FolderNavContext.Provider>
+    </div>
+  );
+}
+
+export type SpaceTab = 'chat' | 'people' | 'files';
 
 export function SpacePage({
   spaceId,
   tab,
   topic,
+  folder,
   onNavigate,
 }: {
   spaceId: string;
   tab: SpaceTab;
   topic: string | undefined;
-  onNavigate: (next: { tab?: SpaceTab; topic?: string }) => void;
+  folder: string | undefined;
+  onNavigate: (next: { tab?: SpaceTab; topic?: string; folder?: string }) => void;
 }) {
   const q = useSpace(spaceId);
   const me = useMe();
@@ -501,6 +544,10 @@ export function SpacePage({
 
   const tabs: Array<{ id: SpaceTab; label: string; icon: typeof Users }> = [
     { id: 'chat', label: t.spaces.tabs.chat, icon: MessagesSquare },
+    // W1e (ADR-099): guests have no files yet, and a frozen team's are locked.
+    ...(q.data.files && !frozen
+      ? [{ id: 'files' as const, label: t.spaces.tabs.files, icon: FolderOpen }]
+      : []),
     { id: 'people', label: t.spaces.tabs.people, icon: Users },
   ];
 
@@ -565,7 +612,14 @@ export function SpacePage({
       )}
 
       <div className="relative min-h-0 flex-1">
-        {tab === 'chat' ? (
+        {tab === 'files' && q.data.files && !frozen ? (
+          <SpaceFiles
+            spaceId={spaceId}
+            rootId={q.data.files.rootId}
+            folder={folder}
+            onOpen={(id) => onNavigate({ tab: 'files', folder: id })}
+          />
+        ) : tab === 'chat' ? (
           !chatOn || frozen ? (
             <p className="p-6 text-sm text-[var(--fg-muted)]">{t.spaces.chat.off}</p>
           ) : (

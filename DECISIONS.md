@@ -2938,3 +2938,44 @@ server ADR-095–097: tanpa ini, tim dan ruang live tidak terpakai.
 
 **Belum:** lampiran dan thread per file (butuh tab Files), kunci dokumen di editor, cari pesan, lapor pesan, pesan lama
 ke R2, reaksi/sematkan, DM, push, anggota luar (W1d), undangan lewat link.
+
+## ADR-099 — W1e: file Space, dihitung di penyimpanan pemilik tim
+
+Tanggal: 2026-11-05. Status: diterima (pemilik, jawaban T6: "Kuota pemilik tim dulu"; dibutuhkan voice note dan
+dokumen bersama).
+
+**Keputusan:**
+- **Satu folder teratas per Space** di D1 utama, dengan nilai baru `nodes.space = 'team'`. Ini nilai baru di kolom yang
+  sudah ada (kolomnya sengaja tanpa CHECK), bukan tabel atau kolom baru, jadi masih sesuai ADR-064. Folder ini milik
+  pemilik tim (`owner_id`) dan ada di pool pribadi pemilik tim, sehingga upload memakai paket dan kuota pemilik tim.
+  Tanpa paket aktif, upload ditolak seperti di Drive pribadinya.
+- **Folder mana milik Space mana** disimpan di D1 akses: `spaces.root_node` (`migrations-access/0009`, unik). Folder
+  dibuat saat file Space pertama kali dibuka (`POST /api/spaces/:id/files`). Kalau dua orang membuka bersamaan, yang
+  pertama menang dan folder lain dihapus.
+- **Izin** (`services/space-files.ts`, `teamAccess`, dipanggil dari `nodeAccess`): naik ke folder teratas (CTE
+  rekursif), cari Space-nya, lalu ambil peran orang itu (sekali per request).
+  - Admin: semuanya.
+  - Anggota: lihat, tambah, dan ubah semuanya (tim bekerja di file yang sama); hapus hanya yang ia buat.
+  - Tamu: belum bisa melihat file.
+  - Tim `readonly` hanya bisa dilihat; tim `frozen` tertutup.
+  - Folder teratas tidak bisa diganti nama atau dihapus lewat Drive.
+  - Yang tidak punya peran jatuh ke aturan share ke orang (ADR-085), seperti item pribadi.
+- **Item baru di Space milik pemilik tim** (`spaceOwner`), jadi tidak ikut hilang saat pembuatnya keluar atau akunnya
+  dihapus.
+- **Item tetap di Space-nya:** pindah keluar, masuk, atau antar-Space ditolak (`SPACE_BOUNDARY`). Menyalin tetap jalan
+  lewat aturan pool yang ada.
+- **Hapus Space/tim:** isinya masuk sampah tanpa nama penghapus dengan `purge_at` sekarang, jadi tidak muncul di Sampah
+  siapa pun. Purge per jam (`deleteSubtree`, sekarang boleh untuk folder teratas Space) menghapus isinya dan
+  membebaskan kuota.
+- **Serahkan tim:** file Space pindah ke pool dan kepemilikan pemilik baru (`moveSpaceFiles`), lalu `used_bytes` dan
+  `reserved_bytes` kedua pool dihitung ulang. Blob yang juga dipakai item di luar Space tetap berlabel pool lama; yang
+  dihitung adalah pool tiap item.
+- **Baca:** Space belum punya index R2 sendiri (`s/{spaceId}/index.txt` menyusul). Daftar isi lewat jalur D1 yang
+  juga dipakai folder share (`listChildren` + `requireNode`); index pribadi dan keluarga tidak memuatnya. Sampah
+  menambah item Space yang dibuang orang itu (`listTeamTrash`).
+- **App:** tab **File** di halaman Space (bukan untuk tamu, dan tidak untuk tim beku) memakai explorer Drive. Folder
+  terbuka di `?tab=files&folder=…` lewat `FolderNavContext`, jadi buka folder, breadcrumb, dan dialog Pindahkan tetap
+  di dalam Space.
+
+**Belum:** index R2 per Space, log Aktivitas per Space (sekarang tercatat di log pemilik tim), folder untuk tamu,
+kabar `files` ke ruang live setelah perubahan, kuota tim sungguhan (W2/R7).

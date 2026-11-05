@@ -2054,7 +2054,7 @@ export const t = {
         'Tim ini sedang baca saja: pesan baru, orang baru, dan Space baru belum bisa ditambahkan.',
       frozen: 'Tim ini dibekukan. Daftar Space tetap terlihat, tapi isinya terkunci.',
     },
-    tabs: { chat: 'Chat', people: 'Orang' },
+    tabs: { chat: 'Chat', people: 'Orang', files: 'File' },
     people: {
       teamTitle: 'Anggota tim',
       spaceTitle: 'Orang di Space ini',

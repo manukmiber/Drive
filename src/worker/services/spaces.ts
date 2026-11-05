@@ -14,6 +14,7 @@ import { ulid } from '../lib/ids';
 import { DAY_MS } from '../../shared/constants';
 import { notify } from './notify';
 import { consumeUsage } from './share-send';
+import { dropSpaceFiles, ensureSpaceRoot, moveSpaceFiles, renameSpaceRoot } from './space-files';
 import { forgetInRooms, forgetSeen, purgeRooms, tellRoomQuietly } from './space-room';
 import {
   dropInvite,
@@ -58,6 +59,8 @@ interface SpaceRow {
   created_by: string;
   created_at: number;
   updated_at: number;
+  /** W1e (ADR-099): the folder its files hang from, made the first time they are opened. */
+  root_node: string | null;
 }
 
 interface SpaceMemberRow {
@@ -411,6 +414,7 @@ export async function getSpace(ctx: Ctx, userId: string, spaceId: string) {
       space: spaceDto(space, team, role),
       members: [] as MemberDto[],
       invites: [] as InviteDto[],
+      files: null,
     };
   const A = db(ctx);
   const [{ results: admins }, { results: rows }] = await Promise.all([
@@ -440,7 +444,17 @@ export async function getSpace(ctx: Ctx, userId: string, spaceId: string) {
       ...rows.map((r) => person(r.user_id, r.role, r.added_at)),
     ],
     invites,
+    /** Its files' top folder; null until someone first opens them (`openSpaceFiles`). */
+    files: { rootId: space.root_node },
   };
+}
+
+/** W1e (ADR-099): the Space's files, made on first use. Guests have no files yet. */
+export async function openSpaceFiles(ctx: Ctx, userId: string, spaceId: string) {
+  const { space, team, role } = await requireSpace(ctx, userId, spaceId);
+  if (role === 'guest') throw new AppError('FORBIDDEN', 'guests do not see the files yet');
+  if (team.status === 'frozen') throw new AppError('READ_ONLY', 'this team is frozen');
+  return { rootId: await ensureSpaceRoot(ctx, space, team.owner_id, userId) };
 }
 
 /* -------------------------------------------------------------- teams -- */
@@ -505,13 +519,15 @@ export async function deleteTeam(ctx: Ctx, userId: string, teamId: string): Prom
 async function dropTeams(ctx: Ctx, teamIds: string[]): Promise<void> {
   const A = db(ctx);
   const spaceIds: string[] = [];
+  const roots: Array<string | null> = [];
   for (const slice of idSlices(teamIds)) {
     const { results } = await A.prepare(
-      'SELECT id FROM spaces WHERE team_id IN (SELECT value FROM json_each(?1))',
+      'SELECT id, root_node FROM spaces WHERE team_id IN (SELECT value FROM json_each(?1))',
     )
       .bind(slice)
-      .all<{ id: string }>();
+      .all<{ id: string; root_node: string | null }>();
     spaceIds.push(...results.map((r) => r.id));
+    roots.push(...results.map((r) => r.root_node));
   }
   for (const slice of idSlices(teamIds))
     await A.batch([
@@ -530,9 +546,10 @@ async function dropTeams(ctx: Ctx, teamIds: string[]): Promise<void> {
         'DELETE FROM space_invites WHERE team_id IN (SELECT value FROM json_each(?1))',
       ).bind(slice),
     ]);
-  // Their live rooms go too: chat, topics, read marks (ADR-096).
+  // Their live rooms go too: chat, topics, read marks (ADR-096); and their files (ADR-099).
   await purgeRooms(ctx, spaceIds);
   await forgetSeen(ctx.env, spaceIds);
+  await dropSpaceFiles(ctx, roots);
 }
 
 /**
@@ -681,6 +698,16 @@ export async function transferTeam(ctx: Ctx, userId: string, teamId: string, mem
          AND space_id IN (SELECT id FROM spaces WHERE team_id = ?1)`,
     ).bind(teamId, memberId),
   ]);
+  // The Spaces' files are counted on the owner's storage (T6): now the new owner's.
+  const { results: roots } = await A.prepare('SELECT root_node FROM spaces WHERE team_id = ?1')
+    .bind(teamId)
+    .all<{ root_node: string | null }>();
+  await moveSpaceFiles(
+    ctx,
+    roots.map((r) => r.root_node),
+    userId,
+    memberId,
+  );
   syncRooms(ctx, memberId, await teamSpaceIds(ctx, teamId));
   return getTeam(ctx, userId, teamId);
 }
@@ -712,6 +739,7 @@ export async function createSpace(
     created_by: userId,
     created_at: now,
     updated_at: now,
+    root_node: null,
   };
   await A.prepare(
     `INSERT INTO spaces (id, team_id, name, created_by, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?5)`,
@@ -722,16 +750,18 @@ export async function createSpace(
 }
 
 export async function renameSpace(ctx: Ctx, userId: string, spaceId: string, name: string) {
-  const { team } = await requireSpaceAdmin(ctx, userId, spaceId);
+  const { team, space } = await requireSpaceAdmin(ctx, userId, spaceId);
   assertActive(team);
+  const clean = cleanName(name);
   await db(ctx)
     .prepare('UPDATE spaces SET name = ?2, updated_at = ?3 WHERE id = ?1')
-    .bind(spaceId, cleanName(name), ctx.now())
+    .bind(spaceId, clean, ctx.now())
     .run();
+  await renameSpaceRoot(ctx, space.root_node, clean);
 }
 
 export async function deleteSpace(ctx: Ctx, userId: string, spaceId: string): Promise<void> {
-  await requireSpaceAdmin(ctx, userId, spaceId);
+  const { space } = await requireSpaceAdmin(ctx, userId, spaceId);
   const A = db(ctx);
   await A.batch([
     A.prepare('DELETE FROM space_members WHERE space_id = ?1').bind(spaceId),
@@ -740,6 +770,7 @@ export async function deleteSpace(ctx: Ctx, userId: string, spaceId: string): Pr
   ]);
   await purgeRooms(ctx, [spaceId]);
   await forgetSeen(ctx.env, [spaceId]);
+  await dropSpaceFiles(ctx, [space.root_node]);
 }
 
 /**

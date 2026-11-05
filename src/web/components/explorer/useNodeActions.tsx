@@ -58,6 +58,7 @@ import {
   toolFor,
   type EditRequest,
 } from '../../editors/files';
+import { useFolderNav } from '../../lib/folder-nav';
 import { useMe } from '../../lib/session';
 import { useCatalog } from '../../lib/catalog';
 import { Button } from '../Button';
@@ -92,7 +93,8 @@ export function useNodeActions(items: NodeDto[]) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const me = useMe();
-  const rootId = me.data?.space.personalRootId ?? '';
+  const area = useFolderNav();
+  const rootId = area?.rootId ?? me.data?.space.personalRootId ?? '';
   const [renaming, setRenaming] = useState<NodeDto | null>(null);
   const [moving, setMoving] = useState<string[] | null>(null);
   const [preview, setPreview] = useState<{ list: NodeDto[]; index: number } | null>(null);
@@ -127,6 +129,7 @@ export function useNodeActions(items: NodeDto[]) {
   const open = useCallback(
     (node: NodeDto) => {
       if (node.kind === 'folder') {
+        if (area) return area.open(node.id);
         void navigate(
           node.id === rootId
             ? { to: '/drive' }
@@ -147,7 +150,7 @@ export function useNodeActions(items: NodeDto[]) {
       }
       void downloadFile(node.id).catch((e) => toast(errorText(e), { tone: 'error' }));
     },
-    [items, navigate, rootId],
+    [items, navigate, rootId, area],
   );
 
   const trash = useCallback(
@@ -398,7 +401,7 @@ export function useNodeActions(items: NodeDto[]) {
       {moving && rootId && (
         <MoveDialog
           rootId={rootId}
-          familyRootId={me.data?.space.familyRootId ?? null}
+          familyRootId={area ? null : (me.data?.space.familyRootId ?? null)}
           excludeIds={moving}
           onCancel={() => setMoving(null)}
           onMove={(target) => {

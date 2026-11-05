@@ -19,6 +19,7 @@ import {
   type NodeDto,
   type SortKey,
 } from '../lib/files';
+import { useFolderNav } from '../lib/folder-nav';
 import { useMe } from '../lib/session';
 import { fromDrop, resolveTargets } from '../upload/folders';
 import { takeSharedFiles, toTargets } from '../upload/share-target';
@@ -74,6 +75,7 @@ function writePref(key: string, value: string): void {
 export function Drive({ folderId }: { folderId?: string }) {
   const me = useMe();
   const qc = useQueryClient();
+  const area = useFolderNav();
   const rootId = me.data?.space.personalRootId ?? '';
   const id = folderId ?? rootId;
   const [view, setView] = useState<View>(() => readPref<View>('zk.view', 'list'));
@@ -231,6 +233,15 @@ export function Drive({ folderId }: { folderId?: string }) {
                   )}
                   <span className="truncate font-semibold tracking-tight">{nameOf(c)}</span>
                 </span>
+              ) : area ? (
+                // A Space's files (ADR-099): its folders open inside the Space page.
+                <button
+                  type="button"
+                  onClick={() => area.open(c.id)}
+                  className="truncate rounded-md px-1.5 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+                >
+                  {i === 0 ? nameOf(c) : c.name}
+                </button>
               ) : i === 0 ? (
                 <Link
                   to={c.id === me.data?.space.familyRootId ? '/keluarga' : '/drive'}

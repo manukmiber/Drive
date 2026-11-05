@@ -5,13 +5,7 @@
 // is gone (4410).
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { ROOM_CLOSE, type ClientFrame, type ServerFrame } from '../../shared/space-room';
-import {
-  emptyRoom,
-  listKey,
-  roomReduce,
-  type Pending,
-  type RoomState,
-} from './space-room-state';
+import { emptyRoom, listKey, roomReduce, type Pending, type RoomState } from './space-room-state';
 
 export {
   listKey,

@@ -424,6 +424,8 @@ describe('IDOR (SPEC §14.1)', () => {
       ['GET', `/api/spaces/${spaceId}`, undefined],
       ['PATCH', `/api/spaces/${spaceId}`, { name: 'diambil' }],
       ['DELETE', `/api/spaces/${spaceId}`, undefined],
+      // W1e (ADR-099): a Space's files (their node routes are in space-files.test.ts).
+      ['POST', `/api/spaces/${spaceId}/files`, undefined],
       ['POST', `/api/spaces/${spaceId}/members`, { email: 'penyerang@example.com', role: 'guest' }],
       ['PATCH', `/api/spaces/${spaceId}/members/${b.userId}`, { role: 'guest' }],
       ['DELETE', `/api/spaces/${spaceId}/members/${a.userId}`, undefined],

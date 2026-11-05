@@ -3,12 +3,15 @@
 import type { Ctx } from '../context';
 import { AppError } from '../lib/errors';
 import { grantFor, type GrantRole } from './grant-lookup';
+import { teamAccess } from './space-files';
+import { spaceRole } from './spaces';
 
 export interface NodeRecord {
   rid: number;
   id: string;
   pool_id: string;
-  space: 'personal' | 'family';
+  /** `team`: a Zeiko Space's files (W1e, ADR-099). */
+  space: 'personal' | 'family' | 'team';
   family_id: string | null;
   owner_id: string;
   created_by: string;
@@ -71,6 +74,13 @@ export async function nodeAccess(ctx: Ctx, userId: string, node: NodeRecord): Pr
   if (node.space === 'personal') {
     if (node.owner_id !== userId) return sharedAccess(ctx, userId, node);
     return { view: true, edit: true, remove: true, add: true, isOwner: true };
+  }
+  if (node.space === 'team') {
+    const a = await teamAccess(ctx, userId, node, async (c, u, spaceId) => {
+      const r = await spaceRole(c, u, spaceId);
+      return r && { spaceId, role: r.role, status: r.team.status };
+    });
+    return a.view ? a : sharedAccess(ctx, userId, node);
   }
   if (!node.family_id) return NONE;
   const role = await familyRole(ctx, userId, node.family_id);

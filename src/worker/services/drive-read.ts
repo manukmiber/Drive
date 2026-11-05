@@ -26,7 +26,14 @@ import { requireNode, type Access } from './access';
 import { FAMILY_ROOT_NAME, PERSONAL_ROOT_NAME } from './accounts';
 import { indexKey, readIndex, type IndexDoc, type IndexOwner } from './drive-index';
 import { project, readFamilyTree, readTree } from './drive-index-sync';
-import { breadcrumb, getNodeDto, listChildren, type Crumb, type NodeDto } from './nodes';
+import {
+  breadcrumb,
+  getNodeDto,
+  listChildren,
+  listTeamTrash,
+  type Crumb,
+  type NodeDto,
+} from './nodes';
 
 export type DriveSpace = 'personal' | 'family';
 
@@ -333,11 +340,12 @@ export async function searchTrees(
 
 /** The Trash: the person's own, and what they put there in their family's space. */
 export async function readTrash(ctx: Ctx, userId: string): Promise<NodeDto[]> {
-  const [own, family] = await Promise.all([
+  const [own, family, team] = await Promise.all([
     driveTree(ctx, userId, 'personal'),
     driveTree(ctx, userId, 'family'),
+    ctx.env.ACCESS_DB ? listTeamTrash(ctx, userId) : Promise.resolve([]),
   ]);
-  return [...(own?.tree.trash() ?? []), ...(family?.tree.trash(500, userId) ?? [])]
+  return [...(own?.tree.trash() ?? []), ...(family?.tree.trash(500, userId) ?? []), ...team]
     .sort((a, b) => b.trashedAt! - a.trashedAt! || (a.id < b.id ? 1 : -1))
     .slice(0, 500);
 }

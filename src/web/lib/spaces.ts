@@ -57,6 +57,8 @@ export interface SpaceView {
   /** Empty for a guest: guests never see who else is there. */
   members: MemberDto[];
   invites: InviteDto[];
+  /** W1e (ADR-099): the Space's files; null for a guest, rootId null until first opened. */
+  files: { rootId: string | null } | null;
 }
 
 export const spacesKey = ['spaces'] as const;

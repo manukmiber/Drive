@@ -21,6 +21,7 @@ import { ulid } from '../lib/ids';
 import { nameKey, nameWithSuffix, sanitizeName } from '../lib/names';
 import { loadNode, nodeAccess, requireNode, type NodeRecord } from './access';
 import { addUsedIfFits, quotaFullError } from './quota';
+import { topOf } from './space-files';
 import { forgetSharedNodes, revokeSharesOfNodes } from './shares';
 
 /** A file or folder as the app and the API see it (shared with the index reads, ADR-077). */
@@ -274,10 +275,11 @@ export async function requireWritableFolder(
 
 /**
  * Who owns a new item in `parent`: in a personal space always that space's owner, also when someone
- * it was shared with makes it (D2, ADR-085); in a family's space its maker (SPEC §9.2).
+ * it was shared with makes it (D2, ADR-085); in a Space the team's owner, so nothing goes when a
+ * member does (ADR-099); in a family's space its maker (SPEC §9.2).
  */
 export function spaceOwner(parent: Pick<NodeRecord, 'space' | 'owner_id'>, userId: string): string {
-  return parent.space === 'personal' ? parent.owner_id : userId;
+  return parent.space === 'personal' || parent.space === 'team' ? parent.owner_id : userId;
 }
 
 /** The user's Drive index is behind D1: it is written after the response (R3, ADR-074). */
@@ -532,6 +534,14 @@ export async function moveNodes(
     if (node.pool_id !== target.pool_id) {
       throw new AppError('BAD_REQUEST', 'cannot move across storage pools');
     }
+    // A Space's files stay in that Space (ADR-099): copying in or out is the way across.
+    if (
+      (node.space === 'team' || target.space === 'team') &&
+      (node.space !== target.space || (await topOf(ctx, node)) !== (await topOf(ctx, target)))
+    )
+      throw new AppError('FORBIDDEN', 'items move only within their Space', {
+        reason: 'SPACE_BOUNDARY',
+      });
     // Pribadi ⇄ Keluarga changes who can see the item: explicit confirmation (SPEC §9.1).
     if (node.space !== target.space || node.family_id !== target.family_id) {
       if (!opts.confirmSpaceChange) {
@@ -752,7 +762,9 @@ export interface DeleteResult {
 export async function deleteSubtree(ctx: Ctx, rootId: string): Promise<DeleteResult> {
   const root = await loadNode(ctx, rootId);
   if (!root) return { nodes: 0, orphanBlobIds: [] };
-  if (root.parent_id === null) throw new AppError('FORBIDDEN', 'cannot delete a root folder');
+  // A Space's top folder goes with its Space (ADR-099); other top folders never do.
+  if (root.parent_id === null && root.space !== 'team')
+    throw new AppError('FORBIDDEN', 'cannot delete a root folder');
   const DB = ctx.env.DB;
   const now = ctx.now();
 
@@ -855,12 +867,24 @@ export async function deleteForever(ctx: Ctx, userId: string, ids: string[]): Pr
   return total;
 }
 
+/** What the person put in a Space's trash (ADR-099): Spaces have no index of their own yet. */
+export async function listTeamTrash(ctx: Ctx, userId: string): Promise<NodeDto[]> {
+  const { results } = await ctx.env.DB.prepare(
+    `${SELECT_DTO}
+     WHERE n.trash_root_id = n.id AND n.space = 'team' AND n.trashed_by = ?1
+     ORDER BY n.trashed_at DESC LIMIT 500`,
+  )
+    .bind(userId)
+    .all<Row>();
+  return results.map(toDto);
+}
+
 /** The Trash in D1 (emptying it works there); the app's list is `readTrash` (ADR-077). */
 export async function listTrash(ctx: Ctx, userId: string, only?: 'family'): Promise<NodeDto[]> {
   const personal = only ? '' : `(n.space = 'personal' AND n.owner_id = ?1) OR `;
   const { results } = await ctx.env.DB.prepare(
     `${SELECT_DTO}
-     WHERE n.trash_root_id = n.id AND (${personal}(n.space = 'family' AND n.trashed_by = ?1))
+     WHERE n.trash_root_id = n.id AND (${personal}(n.space IN ('family', 'team') AND n.trashed_by = ?1))
      ORDER BY n.trashed_at DESC LIMIT 500`,
   )
     .bind(userId)
