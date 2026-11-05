@@ -2,6 +2,12 @@
 
 Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` untuk detail tiap fase.
 
+## Zeiko Spaces — W1c: undangan dan notifikasi (ADR-097, 2026-11-05)
+- [x] Undangan untuk alamat tanpa akun Drive (`space_invites`, `migrations-access/0008`): menahan kursi/tempat tamu, email, kedaluwarsa.
+- [x] Diklaim saat membuka Spaces; dicabut admin; ikut terhapus bersama tim/Space; IDOR.
+- [x] Notifikasi `space_added` saat ditambahkan ke tim atau Space.
+- [ ] Pemilik: migrasi `migrations-access/0008` di D1 akses remote, deploy.
+
 ## Zeiko Spaces — W3/W4: ruang live dan chat, server (ADR-096, 2026-11-05)
 - [x] Durable Object `SpaceRoom` per Space (SQLite, hibernatable), inti `SpaceRoomCore` dites di Node, shim dev/test.
 - [x] `GET /api/spaces/:id/live` sebelum middleware: Origin, sesi, peran, status tim.

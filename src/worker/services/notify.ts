@@ -32,7 +32,8 @@ export type NotificationType =
   | 'node_shared'
   | 'file_request_files'
   | 'webhook_disabled'
-  | 'space_mention';
+  | 'space_mention'
+  | 'space_added';
 
 /** Queue a notice. It reaches the bell once the relay has it (the queue retries until then). */
 export async function notify(
@@ -171,6 +172,15 @@ export function renderNotice(
         title: m.webhookOffTitle,
         paragraphs: [m.webhookOffBody(String(p.url))],
         cta: { label: m.ctaSettings, url: `${app}/pengaturan` },
+      };
+    case 'space_added':
+      return {
+        title: m.spaceAddedTitle(String(p.by), String(p.name)),
+        paragraphs: [m.spaceAddedBody(Boolean(p.space), String(p.role))],
+        cta: {
+          label: m.ctaSpaces,
+          url: p.space ? `${app}/spaces/${String(p.space)}` : `${app}/spaces`,
+        },
       };
     case 'space_mention':
       return {
@@ -370,6 +380,7 @@ export const PREF_TYPES = [
   'node_shared',
   'file_request_files',
   'space_mention',
+  'space_added',
 ] as const;
 
 export async function getPrefs(ctx: Ctx, userId: string) {

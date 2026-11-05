@@ -11,7 +11,21 @@ import type { Ctx } from '../context';
 import { idSlices } from '../lib/access-db';
 import { AppError } from '../lib/errors';
 import { ulid } from '../lib/ids';
+import { DAY_MS } from '../../shared/constants';
+import { notify } from './notify';
+import { consumeUsage } from './share-send';
 import { forgetInRooms, forgetSeen, purgeRooms, tellRoomQuietly } from './space-room';
+import {
+  dropInvite,
+  emailInvite,
+  inviteDto,
+  invitedGuests,
+  invitedSeats,
+  invitesFor,
+  openInvites,
+  putInvite,
+  type InviteDto,
+} from './space-invites';
 
 export type TeamRole = 'owner' | 'admin' | 'member';
 export type SpaceRole = 'admin' | 'member' | 'guest';
@@ -59,7 +73,8 @@ export interface TeamDto {
   name: string;
   role: TeamRole;
   status: TeamStatus;
-  seats: { used: number; total: number };
+  /** `used` counts the seats open invitations hold (`invited`). */
+  seats: { used: number; total: number; invited: number };
   maxSpaces: number;
   maxGuests: number;
   createdAt: number;
@@ -199,19 +214,44 @@ function syncRooms(ctx: Ctx, userId: string, spaceIds: readonly string[]): void 
   );
 }
 
-/** A Drive account by email: people are added by the address they sign in with. */
-async function personByEmail(ctx: Ctx, email: string): Promise<{ id: string }> {
-  const e = email.trim().toLowerCase();
-  const person = await ctx.env.DB.prepare(
-    `SELECT id FROM users WHERE lower(email) = ?1 AND status != 'deleted'`,
-  )
-    .bind(e)
+const EMAIL = /^[^\s@<>"]+@[^\s@<>"]+\.[a-z]{2,}$/i;
+
+/** An address as invitations keep it: lower case, and a real address. */
+function cleanEmail(v: string): string {
+  const e = v.trim().toLowerCase();
+  if (!EMAIL.test(e) || e.length > 254) throw new AppError('VALIDATION', 'invalid email');
+  return e;
+}
+
+/** The Drive account that signs in with this address, if there is one. */
+async function personOf(ctx: Ctx, email: string): Promise<{ id: string } | null> {
+  return ctx.env.DB.prepare(`SELECT id FROM users WHERE lower(email) = ?1 AND status != 'deleted'`)
+    .bind(email)
     .first<{ id: string }>();
-  if (!person)
-    throw new AppError('NOT_FOUND', 'nobody uses Zeiko Drive with that email yet', {
-      reason: 'no_account',
-    });
-  return person;
+}
+
+/** Who is acting, for the words of a notice or an invitation. */
+async function byName(ctx: Ctx, userId: string): Promise<string> {
+  const u = await ctx.env.DB.prepare('SELECT name, email FROM users WHERE id = ?1')
+    .bind(userId)
+    .first<{ name: string; email: string }>();
+  return u?.name || u?.email || '';
+}
+
+/** Invitations by email to people without Drive count against the inviter's daily sharing limit. */
+async function inviteAllowance(ctx: Ctx, userId: string): Promise<void> {
+  const cfg = await ctx.config();
+  const day = new Date(ctx.now()).toISOString().slice(0, 10);
+  if (
+    !(await consumeUsage(
+      ctx,
+      `space_invite:${userId}:${day}`,
+      1,
+      cfg.person_share_daily_limit,
+      DAY_MS,
+    ))
+  )
+    throw new AppError('RATE_LIMITED', 'daily invitation limit reached');
 }
 
 async function names(
@@ -230,8 +270,10 @@ async function names(
   return out;
 }
 
+/** Seats taken per team: its members, and the open invitations holding one (W1c). */
 async function seatsUsed(ctx: Ctx, teamIds: string[]): Promise<Map<string, number>> {
   const out = new Map<string, number>();
+  for (const [id, n] of await invitedSeats(db(ctx), teamIds, ctx.now())) out.set(id, n);
   for (const slice of idSlices(teamIds)) {
     const { results } = await db(ctx)
       .prepare(
@@ -240,17 +282,17 @@ async function seatsUsed(ctx: Ctx, teamIds: string[]): Promise<Map<string, numbe
       )
       .bind(slice)
       .all<{ team_id: string; n: number }>();
-    for (const r of results) out.set(r.team_id, r.n);
+    for (const r of results) out.set(r.team_id, (out.get(r.team_id) ?? 0) + r.n);
   }
   return out;
 }
 
-const teamDto = (t: TeamRow, role: TeamRole, used: number): TeamDto => ({
+const teamDto = (t: TeamRow, role: TeamRole, used: number, invited = 0): TeamDto => ({
   id: t.id,
   name: t.name,
   role,
   status: t.status,
-  seats: { used, total: t.seats },
+  seats: { used, total: t.seats, invited },
   maxSpaces: t.max_spaces,
   maxGuests: t.max_guests,
   createdAt: t.created_at,
@@ -274,6 +316,7 @@ export async function listMine(
 ): Promise<{ teams: TeamDto[]; spaces: SpaceDto[] }> {
   const A = spacesDb(ctx.env);
   if (!A) return { teams: [], spaces: [] };
+  await claimInvites(ctx, userId);
   const [{ results: mine }, { results: rows }] = await Promise.all([
     A.prepare('SELECT * FROM team_members WHERE user_id = ?1').bind(userId).all<TeamMemberRow>(),
     A.prepare('SELECT * FROM space_members WHERE user_id = ?1').bind(userId).all<SpaceMemberRow>(),
@@ -343,8 +386,12 @@ export async function getTeam(ctx: Ctx, userId: string, teamId: string) {
     results.map((m) => m.user_id),
   );
   const spaces = (await listMine(ctx, userId)).spaces.filter((s) => s.team.id === teamId);
+  const invites =
+    role === 'member' ? [] : (await openInvites(db(ctx), teamId, null, ctx.now())).map(inviteDto);
+  const held = (await invitedSeats(db(ctx), [teamId], ctx.now())).get(teamId) ?? 0;
   return {
-    team: teamDto(team, role, results.length),
+    team: teamDto(team, role, results.length + held, held),
+    invites,
     members: results.map((m): MemberDto => ({
       userId: m.user_id,
       name: who.get(m.user_id)?.name ?? null,
@@ -359,7 +406,12 @@ export async function getTeam(ctx: Ctx, userId: string, teamId: string) {
 /** A Space and who is in it. A guest sees only themself. */
 export async function getSpace(ctx: Ctx, userId: string, spaceId: string) {
   const { space, team, role } = await requireSpace(ctx, userId, spaceId);
-  if (role === 'guest') return { space: spaceDto(space, team, role), members: [] as MemberDto[] };
+  if (role === 'guest')
+    return {
+      space: spaceDto(space, team, role),
+      members: [] as MemberDto[],
+      invites: [] as InviteDto[],
+    };
   const A = db(ctx);
   const [{ results: admins }, { results: rows }] = await Promise.all([
     A.prepare(
@@ -379,12 +431,15 @@ export async function getSpace(ctx: Ctx, userId: string, spaceId: string) {
     role: r,
     since,
   });
+  const invites =
+    role === 'admin' ? (await openInvites(A, team.id, spaceId, ctx.now())).map(inviteDto) : [];
   return {
     space: spaceDto(space, team, role),
     members: [
       ...admins.map((m) => person(m.user_id, 'admin', m.joined_at)),
       ...rows.map((r) => person(r.user_id, r.role, r.added_at)),
     ],
+    invites,
   };
 }
 
@@ -471,6 +526,9 @@ async function dropTeams(ctx: Ctx, teamIds: string[]): Promise<void> {
         slice,
       ),
       A.prepare('DELETE FROM teams WHERE id IN (SELECT value FROM json_each(?1))').bind(slice),
+      A.prepare(
+        'DELETE FROM space_invites WHERE team_id IN (SELECT value FROM json_each(?1))',
+      ).bind(slice),
     ]);
   // Their live rooms go too: chat, topics, read marks (ADR-096).
   await purgeRooms(ctx, spaceIds);
@@ -491,16 +549,26 @@ export async function addTeamMember(
   assertActive(team);
   if (input.role === 'admin' && role !== 'owner')
     throw new AppError('FORBIDDEN', 'only the team owner can add admins');
-  const person = await personByEmail(ctx, input.email);
+  const email = cleanEmail(input.email);
+  const person = await personOf(ctx, email);
   const A = db(ctx);
-  if (await teamRole(ctx, teamId, person.id))
+  if (person && (await teamRole(ctx, teamId, person.id)))
     throw new AppError('CONFLICT', 'already on the team', { reason: 'already_member' });
+  const pending = (await openInvites(A, teamId, null, ctx.now())).some((i) => i.email === email);
   const used = (await seatsUsed(ctx, [teamId])).get(teamId) ?? 0;
-  if (used >= team.seats)
+  // A second invitation to the same address renews the first and takes no second seat.
+  if (used >= team.seats && !pending)
     throw new AppError('CONFLICT', 'every seat is taken', {
       reason: 'seats_full',
       seats: team.seats,
     });
+  if (!person) {
+    // W1c: no Drive account yet — the seat waits for the address, and one email goes.
+    await inviteAllowance(ctx, userId);
+    await putInvite(ctx, A, { teamId, spaceId: null, email, role: input.role, by: userId });
+    await emailInvite(ctx, email, userId, { name: team.name, space: false, role: input.role });
+    return getTeam(ctx, userId, teamId);
+  }
   const now = ctx.now();
   await A.batch([
     A.prepare(
@@ -512,6 +580,12 @@ export async function addTeamMember(
     ).bind(teamId, person.id),
   ]);
   syncRooms(ctx, person.id, await teamSpaceIds(ctx, teamId));
+  await notify(ctx, person.id, 'space_added', {
+    by: await byName(ctx, userId),
+    name: team.name,
+    team: teamId,
+    role: input.role,
+  });
   return getTeam(ctx, userId, teamId);
 }
 
@@ -662,6 +736,7 @@ export async function deleteSpace(ctx: Ctx, userId: string, spaceId: string): Pr
   await A.batch([
     A.prepare('DELETE FROM space_members WHERE space_id = ?1').bind(spaceId),
     A.prepare('DELETE FROM spaces WHERE id = ?1').bind(spaceId),
+    A.prepare('DELETE FROM space_invites WHERE space_id = ?1').bind(spaceId),
   ]);
   await purgeRooms(ctx, [spaceId]);
   await forgetSeen(ctx.env, [spaceId]);
@@ -677,11 +752,42 @@ export async function addSpaceMember(
   spaceId: string,
   input: { email: string; role: 'member' | 'guest' },
 ) {
-  const { team } = await requireSpaceAdmin(ctx, userId, spaceId);
+  const { team, space } = await requireSpaceAdmin(ctx, userId, spaceId);
   assertActive(team);
-  const person = await personByEmail(ctx, input.email);
-  await putSpaceMember(ctx, userId, spaceId, team, person.id, input.role);
+  const email = cleanEmail(input.email);
+  const person = await personOf(ctx, email);
+  if (person) {
+    await putSpaceMember(ctx, userId, spaceId, team, person.id, input.role);
+    return getSpace(ctx, userId, spaceId);
+  }
+  // W1c: no Drive account yet. Someone outside the team can only be a guest; the place waits.
+  if (input.role !== 'guest')
+    throw new AppError('VALIDATION', 'add them to the team first, or as a guest', {
+      reason: 'not_on_team',
+    });
+  const A = db(ctx);
+  const pending = (await openInvites(A, team.id, spaceId, ctx.now())).some(
+    (i) => i.email === email,
+  );
+  if (!pending) await guestRoom(ctx, spaceId, team);
+  await inviteAllowance(ctx, userId);
+  await putInvite(ctx, A, { teamId: team.id, spaceId, email, role: 'guest', by: userId });
+  await emailInvite(ctx, email, userId, { name: space.name, space: true, role: 'guest' });
   return getSpace(ctx, userId, spaceId);
+}
+
+/** Guests in a Space, and the open invitations holding a guest's place, stay within the plan's. */
+async function guestRoom(ctx: Ctx, spaceId: string, team: TeamRow): Promise<void> {
+  const g = await db(ctx)
+    .prepare(`SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?1 AND role = 'guest'`)
+    .bind(spaceId)
+    .first<{ n: number }>();
+  const held = await invitedGuests(db(ctx), spaceId, ctx.now());
+  if ((g?.n ?? 0) + held >= team.max_guests)
+    throw new AppError('CONFLICT', `at most ${team.max_guests} guests in a Space`, {
+      reason: 'guests_full',
+      max: team.max_guests,
+    });
 }
 
 export async function setSpaceRole(
@@ -731,18 +837,7 @@ async function putSpaceMember(
     .first<{ role: string }>();
   if (before?.role === role)
     throw new AppError('CONFLICT', 'already in this Space', { reason: 'already_member' });
-  if (role === 'guest') {
-    const g = await A.prepare(
-      `SELECT COUNT(*) AS n FROM space_members WHERE space_id = ?1 AND role = 'guest'`,
-    )
-      .bind(spaceId)
-      .first<{ n: number }>();
-    if ((g?.n ?? 0) >= team.max_guests)
-      throw new AppError('CONFLICT', `at most ${team.max_guests} guests in a Space`, {
-        reason: 'guests_full',
-        max: team.max_guests,
-      });
-  }
+  if (role === 'guest') await guestRoom(ctx, spaceId, team);
   if (before)
     await A.prepare('UPDATE space_members SET role = ?3 WHERE space_id = ?1 AND user_id = ?2')
       .bind(spaceId, personId, role)
@@ -754,6 +849,94 @@ async function putSpaceMember(
       .bind(spaceId, personId, role, actorId, ctx.now())
       .run();
   syncRooms(ctx, personId, [spaceId]);
+  if (!before) {
+    const space = await A.prepare('SELECT name FROM spaces WHERE id = ?1')
+      .bind(spaceId)
+      .first<{ name: string }>();
+    await notify(ctx, personId, 'space_added', {
+      by: await byName(ctx, actorId),
+      name: space?.name ?? '',
+      team: team.id,
+      space: spaceId,
+      role,
+    });
+  }
+}
+
+/** Admins take back an invitation that is still waiting (its seat or guest's place comes free). */
+export async function revokeTeamInvite(
+  ctx: Ctx,
+  userId: string,
+  teamId: string,
+  inviteId: string,
+): Promise<void> {
+  const { role } = await requireTeamAdmin(ctx, userId, teamId);
+  const invite = (await openInvites(db(ctx), teamId, null, ctx.now())).find(
+    (i) => i.id === inviteId,
+  );
+  if (invite?.role === 'admin' && role !== 'owner')
+    throw new AppError('FORBIDDEN', 'only the team owner can take back an admin invitation');
+  if (!(await dropInvite(db(ctx), inviteId, teamId, null)))
+    throw new AppError('NOT_FOUND', 'not found');
+}
+
+export async function revokeSpaceInvite(
+  ctx: Ctx,
+  userId: string,
+  spaceId: string,
+  inviteId: string,
+): Promise<void> {
+  const { team } = await requireSpaceAdmin(ctx, userId, spaceId);
+  if (!(await dropInvite(db(ctx), inviteId, team.id, spaceId)))
+    throw new AppError('NOT_FOUND', 'not found');
+}
+
+/**
+ * W1c: invitations waiting for this person's address become memberships, the first time they open
+ * Spaces after signing in to Drive with it. A team invitation already holds its seat; a Space's holds
+ * a guest's place, and becomes a member's if they are on that team by then. Invitations to a team or
+ * Space that is gone, or to someone already in, just go.
+ */
+export async function claimInvites(ctx: Ctx, userId: string): Promise<void> {
+  const A = spacesDb(ctx.env);
+  if (!A) return;
+  const u = await ctx.env.DB.prepare('SELECT email FROM users WHERE id = ?1')
+    .bind(userId)
+    .first<{ email: string }>();
+  if (!u?.email) return;
+  const invites = await invitesFor(A, u.email.toLowerCase(), ctx.now());
+  if (!invites.length) return;
+  const now = ctx.now();
+  // Team invitations first, so a Space's of the same team finds them on it.
+  invites.sort((a, b) => Number(a.space_id !== null) - Number(b.space_id !== null));
+  for (const i of invites) {
+    const team = await teamRow(ctx, i.team_id);
+    const inTeam = team ? await teamRole(ctx, team.id, userId) : null;
+    if (team && i.space_id === null && !inTeam) {
+      await A.batch([
+        A.prepare(
+          `INSERT OR IGNORE INTO team_members (team_id, user_id, role, added_by, joined_at) VALUES (?1, ?2, ?3, ?4, ?5)`,
+        ).bind(team.id, userId, i.role === 'admin' ? 'admin' : 'member', i.invited_by, now),
+        A.prepare(
+          `UPDATE space_members SET role = 'member' WHERE user_id = ?2 AND role = 'guest'
+             AND space_id IN (SELECT id FROM spaces WHERE team_id = ?1)`,
+        ).bind(team.id, userId),
+      ]);
+    }
+    if (team && i.space_id !== null && inTeam !== 'owner' && inTeam !== 'admin') {
+      const there = await A.prepare('SELECT 1 FROM spaces WHERE id = ?1 AND team_id = ?2')
+        .bind(i.space_id, team.id)
+        .first();
+      const nowInTeam = await teamRole(ctx, team.id, userId);
+      if (there)
+        await A.prepare(
+          `INSERT OR IGNORE INTO space_members (space_id, user_id, role, added_by, added_at) VALUES (?1, ?2, ?3, ?4, ?5)`,
+        )
+          .bind(i.space_id, userId, nowInTeam ? 'member' : 'guest', i.invited_by, now)
+          .run();
+    }
+    await A.prepare('DELETE FROM space_invites WHERE id = ?1').bind(i.id).run();
+  }
 }
 
 /** Admins take someone out of a Space; anyone may leave one they were added to. */

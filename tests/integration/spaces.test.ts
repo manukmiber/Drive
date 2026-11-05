@@ -6,12 +6,13 @@ import { DAY_MS } from '../../src/shared/constants';
 import { invalidateConfigMemo } from '../../src/worker/services/config';
 import { makeRuntime } from '../helpers/runtime';
 import { signIn, type Session } from '../helpers/session';
+import { noticesOf } from '../helpers/notices';
 
 interface Team {
   id: string;
   name: string;
   role: string;
-  seats: { used: number; total: number };
+  seats: { used: number; total: number; invited: number };
 }
 interface Space {
   id: string;
@@ -238,7 +239,7 @@ describe('Zeiko Spaces: teams and Spaces (W1, ADR-095)', () => {
       }),
     ).toBe('guests_full');
     const got = await json<{ team: Team }>(owner, 'GET', `/api/teams/${t.id}`);
-    expect(got.team.seats).toEqual({ used: 2, total: 2 });
+    expect(got.team.seats).toEqual({ used: 2, total: 2, invited: 0 });
   });
 
   it('keeps members and guests apart, and turns a guest who joins the team into a member', async () => {
@@ -252,7 +253,8 @@ describe('Zeiko Spaces: teams and Spaces (W1, ADR-095)', () => {
 
     expect(await add('teman@example.com', 'member')).toBe('not_on_team');
     expect(await add('pisah@example.com', 'guest')).toBe('team_admin');
-    expect(await add('belum-ada@example.com', 'guest')).toBe('no_account');
+    // An address without Drive is invited (W1c): as a guest only, since it is on no team.
+    expect(await add('belum-ada@example.com', 'member')).toBe('not_on_team');
     await json(owner, 'POST', `/api/spaces/${s.id}/members`, {
       email: 'teman@example.com',
       role: 'guest',
@@ -335,5 +337,109 @@ describe('Zeiko Spaces: teams and Spaces (W1, ADR-095)', () => {
       )
       .get(leaver.userId, leaver.userId) as { n: number };
     expect(rows.n).toBe(0);
+  });
+
+  it('invites an address without Drive: the seat waits, one email goes, and signing in claims it', async () => {
+    const rt = await open({ team_default_seats: 3 });
+    const owner = await signIn(rt, 'pengundang@example.com');
+    const admin = await signIn(rt, 'wakil@example.com');
+    const t = await team(owner);
+    const s = await space(owner, t.id);
+    await json(owner, 'POST', `/api/teams/${t.id}/members`, {
+      email: 'wakil@example.com',
+      role: 'admin',
+    });
+
+    const after = await json<{
+      team: Team;
+      invites: Array<{ id: string; email: string; role: string }>;
+    }>(admin, 'POST', `/api/teams/${t.id}/members`, { email: 'Calon@Example.com' });
+    expect(after.invites).toMatchObject([{ email: 'calon@example.com', role: 'member' }]);
+    expect(after.team.seats).toEqual({ used: 3, total: 3, invited: 1 });
+    // The seat it holds is taken; asking again renews it instead of taking another.
+    await signIn(rt, 'lain@example.com');
+    expect(
+      await reason(owner, 'POST', `/api/teams/${t.id}/members`, { email: 'lain@example.com' }),
+    ).toBe('seats_full');
+    await json(owner, 'POST', `/api/teams/${t.id}/members`, { email: 'calon@example.com' });
+    // A guest invitation to the Space for an address without Drive.
+    const sp = await json<{ invites: Array<{ email: string; role: string }> }>(
+      owner,
+      'POST',
+      `/api/spaces/${s.id}/members`,
+      { email: 'klien-baru@example.com', role: 'guest' },
+    );
+    expect(sp.invites).toMatchObject([{ email: 'klien-baru@example.com', role: 'guest' }]);
+
+    await rt.settle();
+    const { mails } = (await (
+      await rt.fetch(new Request('http://localhost:5173/__dev/mail'))
+    ).json()) as {
+      mails: Array<{ to: string[]; subject: string; text: string }>;
+    };
+    const toCalon = mails.filter((m) => m.to.includes('calon@example.com'));
+    expect(toCalon.length).toBeGreaterThanOrEqual(1);
+    expect(toCalon[0]!.subject).toContain('Studio Lumen');
+    expect(toCalon[0]!.text).toContain('/spaces');
+    expect(mails.some((m) => m.to.includes('klien-baru@example.com'))).toBe(true);
+
+    // Signing in with that address: the team for one, the Space as a guest for the other.
+    const calon = await signIn(rt, 'calon@example.com');
+    expect((await mine(calon)).teams.map((x) => [x.id, x.role])).toEqual([[t.id, 'member']]);
+    const klien = await signIn(rt, 'klien-baru@example.com');
+    expect((await mine(klien)).spaces.map((x) => [x.id, x.role])).toEqual([[s.id, 'guest']]);
+    const now = await json<{ team: Team; invites: unknown[] }>(owner, 'GET', `/api/teams/${t.id}`);
+    expect(now.invites).toEqual([]);
+    expect(now.team.seats).toEqual({ used: 3, total: 3, invited: 0 });
+  });
+
+  it('takes back a waiting invitation, frees its seat, and lets nobody else see or take it', async () => {
+    const clock = new FakeClock(Date.UTC(2026, 10, 5));
+    const rt = await open({ team_default_seats: 3, space_invite_days: 14 }, clock);
+    const owner = await signIn(rt, 'cabut@example.com');
+    const member = await signIn(rt, 'biasa@example.com');
+    const t = await team(owner);
+    await json(owner, 'POST', `/api/teams/${t.id}/members`, { email: 'biasa@example.com' });
+    expect(
+      (await json<{ invites: unknown[] }>(member, 'GET', `/api/teams/${t.id}`)).invites,
+    ).toEqual([]);
+    await json(owner, 'PATCH', `/api/teams/${t.id}/members/${member.userId}`, { role: 'admin' });
+    const inv = (
+      await json<{ invites: Array<{ id: string }> }>(owner, 'POST', `/api/teams/${t.id}/members`, {
+        email: 'jadi-admin@example.com',
+        role: 'admin',
+      })
+    ).invites[0]!;
+    // An admin may not take back an admin's invitation; the owner may.
+    expect(await status(member, 'DELETE', `/api/teams/${t.id}/invites/${inv.id}`)).toBe(403);
+    expect(await status(owner, 'DELETE', `/api/teams/${t.id}/invites/${inv.id}`)).toBe(204);
+    expect(await status(owner, 'DELETE', `/api/teams/${t.id}/invites/${inv.id}`)).toBe(404);
+
+    // One that runs out frees its seat and is never claimed.
+    await json(owner, 'POST', `/api/teams/${t.id}/members`, { email: 'telat@example.com' });
+    clock.advance(15 * DAY_MS);
+    const late = await signIn(rt, 'telat@example.com');
+    expect((await mine(late)).teams).toEqual([]);
+    expect(
+      (await json<{ team: Team }>(owner, 'GET', `/api/teams/${t.id}`)).team.seats.invited,
+    ).toBe(0);
+  });
+
+  it('tells people already on Drive when they are added, with a notice', async () => {
+    const rt = await open();
+    const owner = await signIn(rt, 'pemberi-tahu@example.com');
+    const friend = await signIn(rt, 'yang-diberi@example.com');
+    const t = await team(owner);
+    const s = await space(owner, t.id);
+    await json(owner, 'POST', `/api/teams/${t.id}/members`, { email: 'yang-diberi@example.com' });
+    await json(owner, 'POST', `/api/spaces/${s.id}/members`, {
+      email: 'yang-diberi@example.com',
+      role: 'member',
+    });
+    const notices = (await noticesOf(rt, friend.userId)).filter((n) => n.type === 'space_added');
+    expect(notices.map((n) => [n.payload.name, n.payload.role, n.payload.space ?? null])).toEqual([
+      ['Studio Lumen', 'member', null],
+      ['Klien: rebrand', 'member', s.id],
+    ]);
   });
 });

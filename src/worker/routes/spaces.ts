@@ -18,6 +18,8 @@ import {
   removeTeamMember,
   renameSpace,
   renameTeam,
+  revokeSpaceInvite,
+  revokeTeamInvite,
   setSpaceRole,
   setTeamRole,
   transferTeam,
@@ -91,6 +93,15 @@ export const teams = new Hono<AppBindings>()
       return c.body(null, 204);
     },
   )
+  .delete(
+    '/:id/invites/:inviteId',
+    validate('param', z.object({ id, inviteId: id })),
+    async (c) => {
+      const p = c.req.valid('param');
+      await revokeTeamInvite(c.get('ctx'), c.get('user')!.id, p.id, p.inviteId);
+      return c.body(null, 204);
+    },
+  )
   .post(
     '/:id/owner',
     validate('param', z.object({ id })),
@@ -126,6 +137,15 @@ export const teams = new Hono<AppBindings>()
 
 export const spaces = new Hono<AppBindings>()
   .use('*', requireUser)
+  .delete(
+    '/:id/invites/:inviteId',
+    validate('param', z.object({ id, inviteId: id })),
+    async (c) => {
+      const p = c.req.valid('param');
+      await revokeSpaceInvite(c.get('ctx'), c.get('user')!.id, p.id, p.inviteId);
+      return c.body(null, 204);
+    },
+  )
   .get('/:id', validate('param', z.object({ id })), async (c) =>
     c.json(await getSpace(c.get('ctx'), c.get('user')!.id, c.req.valid('param').id)),
   )

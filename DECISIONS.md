@@ -2878,3 +2878,27 @@ dihapus). Server saja: tampilan chat di app menyusul.
 **Belum:** tampilan chat di app (dan jembatan WebSocket di server dev), pesan lama pindah ke R2 setelah
 `space_chat_hot_days` dan dikompres relay, Space beku (W2), file sebagai topik/lampiran (tab Files), peringatan batas
 Free dari Analytics API di relay.
+
+## ADR-097 — W1c: undangan Spaces untuk alamat yang belum punya akun Drive, dan notifikasi saat ditambahkan
+
+Tanggal: 2026-11-05. Status: diterima (pemilik: "Fokus sama zeiko spaces dulu").
+
+**Keputusan:**
+- Menambah orang ke tim atau Space dengan email yang **belum punya akun Drive** tidak lagi ditolak (`no_account`),
+  tapi menjadi **undangan** di D1 akses (`space_invites`, `migrations-access/0008`): tim, Space (kosong = tim itu
+  sendiri), email huruf kecil, peran, pengundang, waktu, kedaluwarsa (`space_invite_days`, 14). Satu email dikirim
+  dalam bahasa pengundang, dengan ajakan masuk Drive memakai alamat itu (`services/space-invites.ts`).
+- **Undangan menahan tempatnya:** undangan tim memakai satu kursi (`seats.used` menghitungnya, `seats.invited`
+  menyebutnya), undangan Space menahan satu tempat tamu. Mengundang alamat yang sama lagi memperbarui undangan itu,
+  tanpa kursi kedua. Ke Space, alamat tanpa akun hanya bisa diundang sebagai tamu, karena belum ada di tim.
+- **Diklaim saat orang itu membuka Spaces** setelah masuk Drive dengan alamat itu (`claimInvites`, di `listMine`, seperti
+  `claimGrants` D2): undangan tim dulu, lalu undangan Space, yang menjadi `member` kalau ia sudah di tim itu. Undangan ke
+  tim/Space yang sudah hilang, atau untuk orang yang sudah di dalam, dibuang. Yang kedaluwarsa dibuang dan tidak pernah
+  diklaim.
+- Admin melihat undangan yang menunggu (`invites` di `GET /api/teams/:id` dan `GET /api/spaces/:id`) dan bisa
+  mencabutnya (`DELETE …/invites/:id`). Hanya pemilik yang mencabut undangan admin. Undangan lewat email ke alamat tanpa
+  akun dihitung terhadap `person_share_daily_limit` pengundang. Tim/Space dihapus → undangannya ikut.
+- **Orang yang sudah punya akun Drive** tetap langsung masuk, dan mendapat notifikasi `space_added` (lonceng, dan email
+  kecuali dimatikan di Pengaturan), untuk tim maupun Space.
+
+**Belum:** undangan lewat link, anggota luar (W1d), tampilan.

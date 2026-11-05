@@ -398,6 +398,20 @@ describe('IDOR (SPEC §14.1)', () => {
     const teamId = ((await teamRes.json()) as { team: { id: string } }).team.id;
     const spaceRes = await a.req('POST', `/api/teams/${teamId}/spaces`, { name: 'Ruang A' });
     const spaceId = ((await spaceRes.json()) as { space: { id: string } }).space.id;
+    // W1c: invitations waiting for addresses without Drive.
+    const teamInvite = (
+      (await (
+        await a.req('POST', `/api/teams/${teamId}/members`, { email: 'calon-idor@example.com' })
+      ).json()) as { invites: Array<{ id: string }> }
+    ).invites[0]!.id;
+    const spaceInvite = (
+      (await (
+        await a.req('POST', `/api/spaces/${spaceId}/members`, {
+          email: 'tamu-idor@example.com',
+          role: 'guest',
+        })
+      ).json()) as { invites: Array<{ id: string }> }
+    ).invites[0]!.id;
     for (const [m, path, body] of [
       ['GET', `/api/teams/${teamId}`, undefined],
       ['PATCH', `/api/teams/${teamId}`, { name: 'diambil' }],
@@ -413,6 +427,9 @@ describe('IDOR (SPEC §14.1)', () => {
       ['POST', `/api/spaces/${spaceId}/members`, { email: 'penyerang@example.com', role: 'guest' }],
       ['PATCH', `/api/spaces/${spaceId}/members/${b.userId}`, { role: 'guest' }],
       ['DELETE', `/api/spaces/${spaceId}/members/${a.userId}`, undefined],
+      ['DELETE', `/api/teams/${teamId}/invites/${teamInvite}`, undefined],
+      ['DELETE', `/api/spaces/${spaceId}/invites/${spaceInvite}`, undefined],
+      ['DELETE', `/api/spaces/${spaceId}/invites/${teamInvite}`, undefined],
     ] as const) {
       const res = await b.req(m, path, body);
       if (res.status < 400 || res.status >= 500) leaks.push(`${m} ${path} → ${res.status}`);

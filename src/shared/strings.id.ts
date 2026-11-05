@@ -1633,6 +1633,7 @@ export const t = {
       node_shared: 'Dibagikan dengan saya',
       file_request_files: 'File masuk lewat link minta file',
       space_mention: 'Disebut di Spaces',
+      space_added: 'Ditambahkan ke tim atau Space',
     } as Record<string, string>,
   },
   family: {
@@ -2366,6 +2367,24 @@ export const t = {
     mentionTitle: (by: string, space: string) => `${by} menyebut kamu di ${space}`,
     mentionBody: (topic: string, excerpt: string) => `Di #${topic}: “${excerpt}”`,
     ctaMention: 'Buka chatnya',
+    spaceAddedTitle: (by: string, name: string) => `${by} menambahkan kamu ke ${name}`,
+    spaceAddedBody: (space: boolean, role: string) =>
+      space
+        ? role === 'guest'
+          ? 'Kamu tamu di Space ini: kamu melihat yang dibuka untuk tamu, tanpa data orang lain.'
+          : 'Space ini sekarang ada di Spaces, lengkap dengan file dan chatnya.'
+        : role === 'admin'
+          ? 'Kamu admin tim ini: kamu bisa menambah orang dan membuat Space.'
+          : 'Kamu sekarang anggota tim ini. Space yang kamu ikuti ada di Spaces.',
+    spaceInviteTitle: (by: string, name: string) =>
+      `${by} mengundang kamu ke ${name} di Zeiko Spaces`,
+    spaceInviteBody: (space: boolean, role: string) =>
+      space
+        ? 'Space adalah satu tempat untuk satu proyek: file, chat, dan dokumennya. Kamu masuk sebagai tamu.'
+        : `Tim menyimpan proyeknya di Spaces: file, chat, dan dokumen jadi satu. Kamu masuk sebagai ${role === 'admin' ? 'admin' : 'anggota'}.`,
+    spaceInviteSignIn: (email: string) =>
+      `Masuk ke Zeiko Drive dengan Akun Zeiko yang memakai alamat ${email}: undangannya menunggu di sana.`,
+    ctaSpaces: 'Buka Spaces',
     requestFilesTitle: (title: string, n: number) =>
       n === 1 ? `1 file baru lewat "${title}"` : `${n} file baru lewat "${title}"`,
     requestFilesBody:

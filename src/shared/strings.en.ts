@@ -1607,6 +1607,7 @@ export const en: Strings = {
       node_shared: 'Shared with me',
       file_request_files: 'Files through a file request',
       space_mention: 'Mentions in Spaces',
+      space_added: 'Added to a team or a Space',
     } as Record<string, string>,
   },
   family: {
@@ -2335,6 +2336,23 @@ export const en: Strings = {
     mentionTitle: (by: string, space: string) => `${by} mentioned you in ${space}`,
     mentionBody: (topic: string, excerpt: string) => `In #${topic}: “${excerpt}”`,
     ctaMention: 'Open the chat',
+    spaceAddedTitle: (by: string, name: string) => `${by} added you to ${name}`,
+    spaceAddedBody: (space: boolean, role: string) =>
+      space
+        ? role === 'guest'
+          ? 'You are a guest in this Space: you see what is opened to guests, and nobody else’s details.'
+          : 'This Space is in Spaces now, with its files and its chat.'
+        : role === 'admin'
+          ? 'You are an admin of this team: you can add people and make Spaces.'
+          : 'You are on this team now. Its Spaces you are added to are in Spaces.',
+    spaceInviteTitle: (by: string, name: string) => `${by} invited you to ${name} on Zeiko Spaces`,
+    spaceInviteBody: (space: boolean, role: string) =>
+      space
+        ? 'A Space is one place for a project: its files, its chat and its documents. You join it as a guest.'
+        : `A team keeps its projects in Spaces: files, chat and documents together. You join it as ${role === 'admin' ? 'an admin' : 'a member'}.`,
+    spaceInviteSignIn: (email: string) =>
+      `Sign in to Zeiko Drive with the Zeiko Account that uses ${email}: the invitation is waiting there.`,
+    ctaSpaces: 'Open Spaces',
     requestFilesTitle: (title: string, n: number) =>
       n === 1 ? `1 new file through "${title}"` : `${n} new files through "${title}"`,
     requestFilesBody:
