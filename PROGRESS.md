@@ -7,11 +7,13 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Dokumen `.docx`: Yjs + TipTap Collaboration/Caret, simpan otomatis 60 detik dan saat menutup.
 - [x] Spreadsheet `.xlsx`: snapshot + operasi FortuneSheet, edit sendiri diterapkan ulang di atas milik orang lain.
 - [x] Dicek di Chromium (dua akun mengetik bersamaan, simpan, buka ulang). Test ruang `space-docs.test.ts`.
+- [x] Di production (2026-11-05, `5f46137f`), belum dicoba dengan DO sungguhan karena `spaces_open` mati.
 - [ ] Kunci "sedang diedit" (W5) untuk editor teks; `.csv` bersama; uji DO di staging.
 
 ## Zeiko Spaces — W1e: file Space (ADR-099, 2026-11-05)
 - [x] Folder teratas per Space (`nodes.space = 'team'`), kuota pemilik tim, `spaces.root_node` (akses 0009).
 - [x] Izin per peran, batas pindah, hapus Space/tim, serahkan tim, Sampah; tab File di halaman Space.
+- [x] Di production (2026-11-05): akses `0009`, deploy (`5f46137f`).
 - [ ] Index R2 per Space, log Aktivitas per Space, folder untuk tamu.
 
 ## Zeiko Spaces — W1b/W4: tampilan di app (ADR-098, 2026-11-05)
@@ -26,7 +28,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Undangan untuk alamat tanpa akun Drive (`space_invites`, `migrations-access/0008`): menahan kursi/tempat tamu, email, kedaluwarsa.
 - [x] Diklaim saat membuka Spaces; dicabut admin; ikut terhapus bersama tim/Space; IDOR.
 - [x] Notifikasi `space_added` saat ditambahkan ke tim atau Space.
-- [ ] Pemilik: migrasi `migrations-access/0008` di D1 akses remote, deploy.
+- [x] Di production (pemilik, 2026-11-05, "Wrapping up, update roadmap, deploy"): akses `0008` bersama `0006–0009`.
 
 ## Zeiko Spaces — W3/W4: ruang live dan chat, server (ADR-096, 2026-11-05)
 - [x] Durable Object `SpaceRoom` per Space (SQLite, hibernatable), inti `SpaceRoomCore` dites di Node, shim dev/test.
@@ -34,7 +36,7 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Topik (tamu/tim), pesan, thread, ubah/hapus, riwayat, tanda baca, mengetik, laju, mention → `space_mention`.
 - [x] Kunci dokumen (W5 sisi server). Ruang mengikuti keanggotaan; hapus Space/akun lewat antrean; `space_seen`; ekspor.
 - [ ] ~~Tampilan chat di app~~ (ADR-098); pesan lama ke R2; Space beku; file di chat.
-- [ ] Pemilik: migrasi `migrations-access/0007` di D1 akses remote; deploy dengan `wrangler.jsonc` baru (migrasi DO `v2`).
+- [x] Di production (2026-11-05): akses `0007`, Worker `zeiko-production` `5f46137f-f9a1-4bd7-96d0-74f33f5d44ac`, migrasi DO `v2`; `spaces_open` masih mati.
 
 ## Zeiko Spaces — W1a: tim dan Space (ADR-095, 2026-11-05)
 - [x] `teams`, `team_members`, `spaces`, `space_members` di D1 akses (`migrations-access/0006`).
@@ -42,7 +44,8 @@ Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` un
 - [x] Kursi, Space per tim, tamu per Space, tim per orang dari config; `spaces_open` (mati) dan fitur readiness `spaces`.
 - [x] Hapus akun dan ekspor data; test `spaces.test.ts`; suite IDOR.
 - [ ] Tampilan di app, undangan link/email, anggota luar, tab Files (menunggu kuota tim), chat.
-- [ ] Pemilik: migrasi `migrations-access/0006` di D1 akses remote, deploy, lalu nyalakan `spaces_open` kalau sudah mau dibuka.
+- [x] Di production (2026-11-05): akses `0006`, deploy (`5f46137f`).
+- [ ] Pemilik: nyalakan `spaces_open` kalau sudah mau dibuka (katalog sekarang `spaces: false`).
 
 ## Arah baru: Drive tanpa D1 (ADR-064, pemilik 2026-10-26)
 Diagram pemilik meminta satu index per user di R2; sejak ADR-002 Drive memakai D1, dan cadangan `u/{userId}/index.json`
