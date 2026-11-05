@@ -11,6 +11,12 @@
         ],
         "createdAt": "2026-10-25T18:05:05.871Z",
         "reason": "Claude: L64 is the blockquote rule in Markdown/document reading text (a typographic quote marker), not a card side-tab"
+      },
+      {
+        "rule": "overused-font",
+        "value": "plus jakarta sans",
+        "createdAt": "2026-11-05T21:59:14.660Z",
+        "reason": "Zeiko brand typeface: proxychat/DESIGN.md sets Plus Jakarta Sans for every text style, and the Drive must match the Zeiko website (ADR-101); the logo wordmark is drawn in it"
       }
     ]
   }
