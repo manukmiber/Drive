@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { t } from '../lib/i18n';
 import { AdCard } from '../components/AdCard';
 import { FileView, type View } from '../components/explorer/FileView';
+import { fromInput } from '../upload/folders';
 import { decorVars, FolderGlyph } from '../components/FolderGlyph';
 import { errorText } from '../components/explorer/useNodeActions';
 import { toast } from '../components/ui/Toast';
@@ -59,7 +60,7 @@ function FolderBanner({ decor, name }: { decor: NonNullable<NodeDto['decor']>; n
       style={decorVars(decor.color)}
     >
       <FolderGlyph color={decor.color} icon={decor.icon} className="h-5 w-5" />
-      <span className="truncate">{name}</span>
+      <span className="truncate font-semibold">{name}</span>
     </div>
   );
 }
@@ -72,6 +73,10 @@ function writePref(key: string, value: string): void {
   }
 }
 
+/** A square tool button in the folder's bar: 44px on phones, 36px with a mouse. */
+const toolBtn =
+  'flex h-11 w-11 items-center justify-center rounded-lg border border-[var(--line)] text-[var(--muted)] transition-colors hover:bg-[var(--hover)] hover:text-[var(--ink)] md:h-9 md:w-9';
+
 export function Drive({ folderId }: { folderId?: string }) {
   const me = useMe();
   const qc = useQueryClient();
@@ -83,6 +88,7 @@ export function Drive({ folderId }: { folderId?: string }) {
   const [dir, setDir] = useState<'asc' | 'desc'>('asc');
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
+  const picker = useRef<HTMLInputElement>(null);
   const sentinel = useRef<HTMLDivElement>(null);
 
   const q = useInfiniteQuery({
@@ -156,6 +162,16 @@ export function Drive({ folderId }: { folderId?: string }) {
     }
   }
 
+  async function pick(list: FileList | null) {
+    if (!list?.length || !folder) return;
+    try {
+      await uploads().add(await resolveTargets(folder.id, fromInput(list)));
+      void refresh();
+    } catch (err) {
+      toast(errorText(err), { tone: 'error' });
+    }
+  }
+
   async function paste(clip: { ids: string[]; cut: boolean }) {
     if (!folder) return;
     try {
@@ -180,10 +196,10 @@ export function Drive({ folderId }: { folderId?: string }) {
         }
       }}
       className={cn(
-        'rounded-lg px-2 py-1.5 text-xs font-medium whitespace-nowrap transition-colors sm:px-3',
+        'h-10 rounded-md px-2.5 text-xs whitespace-nowrap transition-colors sm:px-3 md:h-8',
         sort === key
-          ? 'bg-[var(--card)] text-[var(--fg)] shadow-sm ring-1 ring-[var(--border)]'
-          : 'text-[var(--fg-muted)] hover:text-[var(--fg)]',
+          ? 'bg-[var(--surface)] font-bold text-[var(--ink)] ring-1 ring-[var(--line-strong)]'
+          : 'font-medium text-[var(--muted)] hover:text-[var(--ink)]',
       )}
       aria-pressed={sort === key}
     >
@@ -209,10 +225,10 @@ export function Drive({ folderId }: { folderId?: string }) {
       }}
       onDrop={onDrop}
     >
-      <div className="z-glass sticky top-0 z-10 flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-4 py-2 md:px-6">
+      <div className="z-glass sticky top-0 z-10 flex min-h-14 flex-wrap items-center gap-2 border-b border-[var(--line)] px-3 py-1.5 md:px-6">
         <nav
           aria-label={t.a11y.location}
-          className="flex min-w-0 flex-1 items-center gap-1 text-lg"
+          className="flex min-w-0 basis-full items-center gap-1 text-lg sm:basis-0 sm:flex-1"
         >
           {path.map((c, i) => (
             <span key={c.id} className="flex min-w-0 items-center gap-1">
@@ -231,21 +247,21 @@ export function Drive({ folderId }: { folderId?: string }) {
                       className="hidden h-5 w-5 md:block"
                     />
                   )}
-                  <span className="truncate font-semibold tracking-tight">{nameOf(c)}</span>
+                  <h1 className="truncate text-lg font-bold md:text-xl">{nameOf(c)}</h1>
                 </span>
               ) : area ? (
                 // A Space's files (ADR-099): its folders open inside the Space page.
                 <button
                   type="button"
                   onClick={() => area.open(c.id)}
-                  className="truncate rounded-md px-1.5 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+                  className="flex min-h-10 items-center truncate rounded-lg px-2 text-base text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
                 >
                   {i === 0 ? nameOf(c) : c.name}
                 </button>
               ) : i === 0 ? (
                 <Link
                   to={c.id === me.data?.space.familyRootId ? '/keluarga' : '/drive'}
-                  className="truncate rounded-md px-1.5 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+                  className="flex min-h-10 items-center truncate rounded-lg px-2 text-base text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
                 >
                   {nameOf(c)}
                 </Link>
@@ -253,7 +269,7 @@ export function Drive({ folderId }: { folderId?: string }) {
                 <Link
                   to="/drive/$folderId"
                   params={{ folderId: c.id }}
-                  className="flex min-w-0 items-center gap-1 rounded px-1 text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]"
+                  className="flex min-h-10 min-w-0 items-center gap-1 rounded-lg px-2 text-base text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
                 >
                   {(c.color || c.icon) && (
                     <FolderGlyph
@@ -268,8 +284,8 @@ export function Drive({ folderId }: { folderId?: string }) {
             </span>
           ))}
         </nav>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] p-0.5">
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <div className="flex flex-1 items-center gap-0.5 rounded-lg border border-[var(--line)] bg-[var(--ground)] p-0.5 sm:flex-none [&>button]:flex-1 sm:[&>button]:flex-none">
             {sortButton('name', t.files.sortName)}
             {sortButton('updated', t.files.sortDate)}
             {sortButton('size', t.files.sortSize)}
@@ -281,21 +297,25 @@ export function Drive({ folderId }: { folderId?: string }) {
               setView(v);
               writePref('zk.view', v);
             }}
-            className="rounded-xl border border-[var(--border)] p-2 text-[var(--fg-muted)] transition-colors hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+            className={toolBtn}
             aria-label={view === 'list' ? t.files.gridView : t.files.listView}
             title={view === 'list' ? t.files.gridView : t.files.listView}
           >
-            {view === 'list' ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
+            {view === 'list' ? (
+              <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+            ) : (
+              <List className="h-4 w-4" aria-hidden="true" />
+            )}
           </button>
           {folder?.parentId && (
             <Link
               to="/galeri"
               search={{ q: `di:"${folder.name.replace(/"/g, '')}"` }}
-              className="rounded-xl border border-[var(--border)] p-2 text-[var(--fg-muted)] transition-colors hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]"
+              className={toolBtn}
               aria-label={t.gallery.showAsGallery}
               title={t.gallery.showAsGallery}
             >
-              <Images className="h-4 w-4" />
+              <Images className="h-4 w-4" aria-hidden="true" />
             </Link>
           )}
         </div>
@@ -305,8 +325,23 @@ export function Drive({ folderId }: { folderId?: string }) {
         <FolderBanner key={folder.id} decor={folder.decor} name={folderName} />
       )}
 
-      {q.isPending && <p className="p-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>}
-      {q.isError && <p className="p-6 text-sm text-red-600">{errorText(q.error)}</p>}
+      {q.isPending && (
+        <p role="status" className="p-6 text-sm text-[var(--muted)]">
+          {t.common.loading}
+        </p>
+      )}
+      {q.isError && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 p-6 text-sm">
+          <p className="text-[var(--err)]">{errorText(q.error)}</p>
+          <button
+            type="button"
+            onClick={() => void q.refetch()}
+            className="h-10 rounded-lg border border-[var(--line-strong)] px-4 font-semibold text-[var(--ink)] hover:bg-[var(--hover)]"
+          >
+            {t.common.retry}
+          </button>
+        </div>
+      )}
       {q.isSuccess && (
         <FileView
           key={id}
@@ -315,11 +350,22 @@ export function Drive({ folderId }: { folderId?: string }) {
           label={folderName}
           onPaste={(clip) => void paste(clip)}
           empty={
-            <div className="m-4 flex flex-col items-center gap-4 rounded-3xl border border-dashed border-[var(--border-strong)] px-6 py-14 text-center text-sm text-[var(--fg-muted)] [background:radial-gradient(60%_80%_at_50%_0%,var(--glow),transparent_70%)] md:m-6">
-              <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500 to-teal-500 text-white shadow-[0_14px_30px_-12px_rgba(79,70,229,0.6)]">
-                <UploadCloud className="h-8 w-8" aria-hidden="true" />
+            // An empty folder says what to do next and does it: the picker opens straight into
+            // this folder, the same queue as dropping files here.
+            <div className="m-3 flex flex-col items-center gap-4 rounded-2xl border border-dashed border-[var(--line-strong)] px-6 py-12 text-center md:m-6">
+              <span className="z-tile h-14 w-14">
+                <UploadCloud className="h-6 w-6" aria-hidden="true" />
               </span>
-              <span className="max-w-sm">{t.files.emptyFolder}</span>
+              <p className="max-w-sm text-sm text-[var(--muted)]">{t.files.emptyFolder}</p>
+              {folder && (
+                <button
+                  type="button"
+                  onClick={() => picker.current?.click()}
+                  className="z-primary h-11 rounded-lg px-5 text-sm"
+                >
+                  {t.nav.uploadFile}
+                </button>
+              )}
             </div>
           }
         />
@@ -334,8 +380,15 @@ export function Drive({ folderId }: { folderId?: string }) {
         <AdCard placement="explorer_sidebar" className="mx-4 mb-4 md:hidden" />
       )}
 
+      <input
+        ref={picker}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => void pick(e.target.files).finally(() => (e.target.value = ''))}
+      />
       {dragging && folder && (
-        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand-500 bg-brand-50/80 text-brand-800 dark:bg-brand-800/40 dark:text-brand-100">
+        <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-2xl border-2 border-dashed border-[var(--ink)] bg-[color-mix(in_srgb,var(--bg)_90%,transparent)] p-6 text-center font-semibold text-[var(--ink)]">
           {t.upload.dropHere(folderName)}
         </div>
       )}

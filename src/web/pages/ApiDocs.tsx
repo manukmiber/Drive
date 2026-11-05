@@ -120,7 +120,7 @@ export function ApiDocs() {
   const card = 'z-card rounded-2xl p-5';
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
-      <h1 className="flex items-center gap-2 text-xl font-semibold">
+      <h1 className="flex items-center gap-2 text-2xl">
         <BookOpen className="h-5 w-5" aria-hidden="true" /> {t.apiDocs.title}
       </h1>
       <section className={card}>
@@ -151,13 +151,13 @@ export function ApiDocs() {
           <a
             href="/api/v1/openapi.json"
             download="zeiko-drive-openapi.json"
-            className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--border)] px-4 text-sm hover:bg-[var(--bg-subtle)]"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-[var(--border)] px-4 text-sm hover:bg-[var(--bg-subtle)]"
           >
             <Download className="h-4 w-4" aria-hidden="true" /> {t.apiDocs.download}
           </a>
           <Link
             to="/pengaturan"
-            className="inline-flex h-10 items-center rounded-full border border-[var(--border)] px-4 text-sm hover:bg-[var(--bg-subtle)]"
+            className="inline-flex h-10 items-center rounded-lg border border-[var(--border)] px-4 text-sm hover:bg-[var(--bg-subtle)]"
           >
             {t.apiDocs.manageTokens}
           </Link>

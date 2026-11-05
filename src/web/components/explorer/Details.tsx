@@ -117,20 +117,20 @@ export function Details({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
           <p className="font-medium break-words">{n.name}</p>
           <dl className="mt-4 space-y-3">
-            {row(t.files.type, n.kind === 'folder' ? 'Folder' : (n.mime ?? '—'))}
+            {row(t.files.type, n.kind === 'folder' ? 'Folder' : (n.mime ?? '–'))}
             {n.kind === 'file' && row(t.files.colSize, formatBytes(n.size))}
             {row(
               t.files.location,
               (q.data?.path ?? [])
                 .slice(0, -1)
                 .map((c) => c.name)
-                .join(' / ') || '—',
+                .join(' / ') || '–',
             )}
             {row(t.files.owner, n.ownerId === me.data?.user.id ? t.files.you : n.ownerId)}
             {row(t.files.space, n.space === 'family' ? t.files.spaceFamily : t.files.spacePersonal)}
             {row(t.files.created, formatDateTime(n.createdAt))}
             {row(t.files.modified, formatDateTime(n.updatedAt))}
-            {n.kind === 'file' && row(t.files.scanStatus, t.files.scanLabels[scan] ?? '—')}
+            {n.kind === 'file' && row(t.files.scanStatus, t.files.scanLabels[scan] ?? '–')}
           </dl>
           <Expiry
             key={n.id}
@@ -250,7 +250,7 @@ function Versions({
   }
   if (q.isPending) return <p className="mt-6 text-sm text-[var(--fg-muted)]">{t.common.loading}</p>;
   if (q.isError) return <p className="mt-6 text-sm text-red-600">{t.errors.generic}</p>;
-  const small = 'h-8 rounded-full border border-[var(--border)] px-3 text-xs disabled:opacity-50';
+  const small = 'h-8 rounded-lg border border-[var(--border)] px-3 text-xs disabled:opacity-50';
   return (
     <section className="mt-4" aria-labelledby="versi">
       <h3 id="versi" className="flex items-center gap-2 text-sm font-medium">

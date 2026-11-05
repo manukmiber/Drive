@@ -3,12 +3,14 @@ import { cn } from '../lib/cn';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
 
+// Zeiko buttons (ADR-101): 44px tall, 8px corners, 600 weight. Primary is ink (one per group of
+// actions), secondary an outline, ghost only text until hovered, danger the error red.
 const styles: Record<Variant, string> = {
-  primary: 'z-primary disabled:opacity-60 disabled:filter-none',
+  primary: 'z-primary',
   secondary:
-    'border border-[var(--border-strong)] bg-[var(--card)] text-[var(--fg)] shadow-[var(--hl)] hover:bg-[var(--bg-subtle)] disabled:opacity-60',
-  ghost: 'text-[var(--fg)] hover:bg-[var(--bg-subtle)]',
-  danger: 'bg-red-600 text-white hover:bg-red-700 disabled:opacity-60',
+    'border border-[var(--line-strong)] bg-[var(--surface)] text-[var(--ink)] hover:bg-[var(--hover)] active:bg-[var(--select)]',
+  ghost: 'text-[var(--ink)] hover:bg-[var(--hover)] active:bg-[var(--select)]',
+  danger: 'bg-red-600 text-white hover:bg-red-700 active:bg-red-700',
 };
 
 export function Button({
@@ -20,7 +22,7 @@ export function Button({
     <button
       type="button"
       className={cn(
-        'inline-flex h-10 items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold whitespace-nowrap transition-colors active:scale-[0.98]',
+        'inline-flex h-11 items-center justify-center gap-2 rounded-lg px-5 text-sm font-semibold whitespace-nowrap transition-colors disabled:opacity-50',
         styles[variant],
         className,
       )}

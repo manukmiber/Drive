@@ -260,7 +260,7 @@ export function DecorPanel({
                 aria-pressed={item.font === f}
                 style={{ fontFamily: FONT_STACK[f] }}
                 className={cn(
-                  'shrink-0 rounded-full border border-[var(--border)] px-3 py-1.5 text-sm',
+                  'shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm',
                   item.font === f &&
                     'border-brand-500 bg-[var(--accent-soft)] text-[var(--accent)]',
                 )}
@@ -385,7 +385,7 @@ function AddButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'flex items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-subtle)]',
+        'flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-sm hover:bg-[var(--bg-subtle)]',
         active && 'border-brand-500 bg-[var(--accent-soft)] text-[var(--accent)]',
       )}
     >

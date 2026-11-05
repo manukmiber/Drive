@@ -1,8 +1,13 @@
 @import 'tailwindcss';
 
-/* Dark is the default whatever the system says (the owner's, 2026-11-03: "everything is night
-   mode by default"); a page is light only when it pins .light on <html>. The colour tokens below
-   do the same, so `dark:` classes and tokens always agree. */
+/* Zeiko Drive wears Zeiko's own design (ADR-101, after proxychat/DESIGN.md): navy ink from the
+   logo, cream ink on the dark scheme, one accent (the amber of the logo's dot) that marks a price
+   and nothing else, Plus Jakarta Sans, flat surfaces divided by 1px lines.
+
+   Dark is the default whatever the system says (the owner's, 2026-11-03: "everything is night
+   mode by default"); a page is light only when <html> carries .light, which public/theme.js puts
+   there from the person's choice before the app draws. `dark:` classes and the tokens below use
+   the same test, so they always agree. */
 @custom-variant dark {
   &:where(.dark, .dark *) {
     @slot;
@@ -10,6 +15,20 @@
   &:where(:root:not(.light), :root:not(.light) *) {
     @slot;
   }
+}
+
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  src: url('./fonts/plus-jakarta-sans.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cousine';
+  src: url('./fonts/cousine.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
 }
 
 /* A folder's colour (ADR-058): FolderGlyph sets --dl/--dd, one shade per theme. */
@@ -32,75 +51,171 @@
   }
 }
 
-@theme {
-  --font-sans:
-    'InterVariable', 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
-  --color-brand-50: #eef2ff;
-  --color-brand-100: #e0e7ff;
-  --color-brand-200: #c7d2fe;
-  --color-brand-300: #a5b4fc;
-  --color-brand-400: #818cf8;
-  --color-brand-500: #6366f1;
-  --color-brand-600: #4f46e5;
-  --color-brand-700: #4338ca;
-  --color-brand-800: #3730a3;
-}
+/* ------------------------------------------------------------------ tokens */
 
-/* The same family of colours as the website (zeiko.biz.id): one indigo, deep neutral surfaces,
-   a light edge along the top of every raised surface. */
+/* Light. Every colour is a token here first, then redefined once for the dark scheme below; a
+   colour that lives in only one block disappears when somebody switches. */
 :root {
-  --bg: #f6f7fb;
-  --bg-subtle: #eef1f7;
-  --fg: #0a1022;
-  --fg-muted: #5b667b;
-  --border: #e1e5ee;
-  --border-strong: #ccd3e0;
-  --card: #ffffff;
-  --card-grad: linear-gradient(180deg, #ffffff, #fbfcfe);
-  --glass: rgba(255, 255, 255, 0.74);
-  --hl: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  --glow: rgba(79, 70, 229, 0.12);
-  --accent: #4338ca;
-  --accent-soft: #eef0ff;
-  --shadow-lg: 0 30px 60px -24px rgba(13, 19, 36, 0.3), 0 8px 18px -8px rgba(13, 19, 36, 0.1);
+  --bg: #ffffff;
+  --ground: #f4f5f8;
+  --surface: #ffffff;
+  --ink: #1f2639;
+  --on-ink: #ffffff;
+  --text: #1f2639;
+  --muted: #586074;
+  --line: #e3e5eb;
+  --line-strong: #cdd1da;
+  --hover: #eaecf1;
+  --select: #e6e9f0;
+  /* Bars, switches and counters: visible on every surface and able to carry white text. */
+  --fill: #1f2639;
+  --amber: #f0ae48;
+  --marker: #f7cd7c;
+  --focus: #2563eb;
+  --ok: #18794e;
+  --ok-bg: #e7f6ee;
+  --warn: #8a5300;
+  --warn-bg: #fdf3dc;
+  --err: #b42318;
+  --err-bg: #fdecea;
+  --shadow-pop: 0 10px 30px rgba(31, 38, 57, 0.14);
+
+  /* The navy ink as a scale, for the `brand-*` classes the screens use (light value, then a
+     `dark:` one beside it). Tints at 50–200, the ink at 600–800. */
+  --b50: #f0f2f6;
+  --b100: #e3e6ed;
+  --b200: #c9ceda;
+  --b300: #a3aabd;
+  --b400: #6e7891;
+  --b500: #3d4760;
+  --b600: #1f2639;
+  --b700: #1f2639;
+  --b800: #1f2639;
+  --b900: #141927;
   color-scheme: light;
 }
 
-:root:not(.light) {
-  --bg: #05070d;
-  --bg-subtle: #111726;
-  --fg: #edf0f8;
-  --fg-muted: #8c97ad;
-  --border: #1b2335;
-  --border-strong: #2b3650;
-  --card: #0c111c;
-  --card-grad: linear-gradient(180deg, #0f1522, #0b101a);
-  --glass: rgba(9, 12, 21, 0.7);
-  --hl: inset 0 1px 0 rgba(255, 255, 255, 0.045);
-  --glow: rgba(139, 149, 255, 0.14);
-  --accent: #a9afff;
-  --accent-soft: #151938;
-  --shadow-lg: 0 34px 70px -26px rgba(0, 0, 0, 0.85);
+:root:not(.light),
+:root.dark {
+  --bg: #10131b;
+  --ground: #151a24;
+  --surface: #1a2030;
+  --ink: #eee6d7;
+  --on-ink: #1f2639;
+  --text: #e9e4da;
+  --muted: #a3a9b8;
+  --line: #2a3142;
+  --line-strong: #3d465b;
+  --hover: #212838;
+  --select: #262e42;
+  --fill: #5b6992;
+  --amber: #f0ae48;
+  --marker: #66491a;
+  --focus: #7aa7ff;
+  --ok: #4cc38a;
+  --ok-bg: #12291f;
+  --warn: #f0b85a;
+  --warn-bg: #2b2214;
+  --err: #ff8a80;
+  --err-bg: #2e1716;
+  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.45);
+
+  /* Tints where the light scheme has them (50, 800 for `dark:bg-brand-800/40`), cream where a
+     `dark:text-brand-*` asks for text, and a slate fill at 500–700 that white text reads on. */
+  --b50: #1c2232;
+  --b100: #eee6d7;
+  --b200: #e6dcc9;
+  --b300: #eee6d7;
+  --b400: #a9b3cc;
+  --b500: #8b97b8;
+  --b600: #5b6992;
+  --b700: #4f5c83;
+  --b800: #3a4566;
+  --b900: #eee6d7;
   color-scheme: dark;
 }
 
-:root.dark {
-  --bg: #05070d;
-  --bg-subtle: #111726;
-  --fg: #edf0f8;
-  --fg-muted: #8c97ad;
-  --border: #1b2335;
-  --border-strong: #2b3650;
-  --card: #0c111c;
-  --card-grad: linear-gradient(180deg, #0f1522, #0b101a);
-  --glass: rgba(9, 12, 21, 0.7);
-  --hl: inset 0 1px 0 rgba(255, 255, 255, 0.045);
-  --glow: rgba(139, 149, 255, 0.14);
-  --accent: #a9afff;
-  --accent-soft: #151938;
-  --shadow-lg: 0 34px 70px -26px rgba(0, 0, 0, 0.85);
-  color-scheme: dark;
+/* The names the screens were written with, pointed at the tokens above. Flat: no gradient, no
+   glass, no highlight edge, no glow. */
+:root {
+  --fg: var(--text);
+  --fg-muted: var(--muted);
+  --bg-subtle: var(--ground);
+  --border: var(--line);
+  --border-strong: var(--line-strong);
+  --card: var(--surface);
+  --card-grad: var(--surface);
+  --glass: var(--bg);
+  --hl: 0 0 #0000;
+  --glow: transparent;
+  --accent: var(--ink);
+  --accent-soft: var(--select);
+  --shadow-lg: var(--shadow-pop);
 }
+
+@theme {
+  --font-sans:
+    'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  --font-mono: Cousine, ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* Two corners: 8px on controls and rows, 14px on cards, panels and dialogs. `rounded-xl` and
+     `rounded-2xl` are those two, so every screen moved with them. */
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.875rem;
+  --radius-3xl: 0.875rem;
+
+  /* Depth comes from lines, not shadows; only what floats over content (menus, dialogs, panels,
+     toasts) casts one. */
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow-md: var(--shadow-pop);
+  --shadow-lg: var(--shadow-pop);
+  --shadow-xl: var(--shadow-pop);
+  --shadow-2xl: var(--shadow-pop);
+
+  --color-brand-50: var(--b50);
+  --color-brand-100: var(--b100);
+  --color-brand-200: var(--b200);
+  --color-brand-300: var(--b300);
+  --color-brand-400: var(--b400);
+  --color-brand-500: var(--b500);
+  --color-brand-600: var(--b600);
+  --color-brand-700: var(--b700);
+  --color-brand-800: var(--b800);
+  --color-brand-900: var(--b900);
+
+  /* Warnings: Tailwind's amber at 600–800 is too light to read on white; these are Zeiko's
+     warning browns. The logo's amber itself is `--amber`, used by the price band only. */
+  --color-amber-600: #8a5300;
+  --color-amber-700: #8a5300;
+  --color-amber-800: #6e4200;
+  --color-red-600: #b42318;
+  --color-red-700: #9a1c12;
+}
+
+/* Semantic colours as classes: `bg-ink text-on-ink`, `bg-ground`, `border-line`… */
+@theme inline {
+  --color-ink: var(--ink);
+  --color-on-ink: var(--on-ink);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-hover: var(--hover);
+  --color-select: var(--select);
+  --color-fill: var(--fill);
+  --color-marker: var(--marker);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+}
+
+/* -------------------------------------------------------------------- base */
 
 html,
 body,
@@ -121,20 +236,44 @@ html.editor-open body {
 
 body {
   background: var(--bg);
-  color: var(--fg);
+  color: var(--text);
   font-family: var(--font-sans);
-  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
+  overflow-wrap: break-word;
+}
+
+/* The typographic voice (Zeiko's scale): page titles at 800 and drawn in a little, section and
+   card titles at 700, all in ink. Unlayered, so a screen's older `font-semibold` gives way; reading
+   text (.z-prose) sets its own. Only the style of wrapping: `text-wrap` would undo `truncate`. */
+h1,
+h2,
+h3 {
+  color: var(--ink);
+  text-wrap-style: balance;
+}
+h1 {
+  font-weight: 800;
+  letter-spacing: -0.015em;
+}
+h2,
+h3 {
+  font-weight: 700;
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--color-brand-500) 30%, transparent);
+  background: var(--marker);
+  color: var(--text);
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-brand-500);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+/* Rows and cards inside a scrolling list draw their ring inside, where nothing clips it. */
+.z-focus-inset:focus-visible {
+  outline-offset: -2px;
 }
 
 /* A field whose box already shows focus (its border lights up), like the Spaces message box. */
@@ -142,103 +281,141 @@ body {
   outline: none;
 }
 
-/* Indigo text was drawn for a white page; on the dark one it sinks. Lift it to the lighter
-   shades there, for every link and label that uses it. */
-:root:not(.light) :is(.text-brand-700, .text-brand-800) {
-  color: var(--color-brand-300);
+/* Every control says it can be pressed; a disabled one says it cannot. */
+@layer base {
+  a[href],
+  button:not(:disabled),
+  summary,
+  select:not(:disabled),
+  label[for],
+  [role='button'],
+  [role='tab'],
+  [role='switch'],
+  [role='menuitem'],
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled) {
+    cursor: pointer;
+  }
+  button:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
 }
-:root:not(.light) .border-brand-600 {
-  border-color: color-mix(in srgb, var(--color-brand-400) 60%, transparent);
+
+/* Status text on the dark scheme: the light scheme's reds and browns sink there, so lift them
+   to the dark scheme's own. */
+:root:not(.light) :is(.text-red-500, .text-red-600, .text-red-700) {
+  color: var(--err);
 }
-:root.dark :is(.text-brand-700, .text-brand-800) {
-  color: var(--color-brand-300);
+:root:not(.light) :is(.text-amber-600, .text-amber-700, .text-amber-800) {
+  color: var(--warn);
 }
-:root.dark .border-brand-600 {
-  border-color: color-mix(in srgb, var(--color-brand-400) 60%, transparent);
+:root:not(.light) :is(.bg-red-50, .bg-red-100) {
+  background-color: var(--err-bg);
+}
+:root:not(.light) :is(.bg-amber-50, .bg-amber-100) {
+  background-color: var(--warn-bg);
+}
+/* Ink text on the dark scheme is cream. */
+:root:not(.light) :is(.text-brand-600, .text-brand-700, .text-brand-800) {
+  color: var(--ink);
 }
 
 /* Thin scrollbars that match the surfaces. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* Sizes, counts and dates line up in columns. */
+time,
+.num {
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------- app shell */
 
 /* Component classes sit under the utilities, so a utility on the same element still wins. */
 @layer components {
-  /* A faint indigo light at the top of the app, behind everything. */
   .z-shell {
-    background:
-      radial-gradient(60% 40% at 85% -10%, var(--glow), transparent 70%),
-      radial-gradient(
-        40% 30% at 0% -5%,
-        color-mix(in srgb, #2dd4bf 7%, transparent),
-        transparent 70%
-      ),
-      var(--bg);
+    background: var(--bg);
   }
 
+  /* The sidebar is a well beside the page: the cool ground, a line between. */
   .z-side {
-    background: color-mix(in srgb, var(--card) 55%, transparent);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
+    background: var(--ground);
   }
 
+  /* Sticky bars over scrolling content: solid, a line below. */
   .z-glass {
-    background: var(--glass);
-    backdrop-filter: saturate(1.6) blur(16px);
-    -webkit-backdrop-filter: saturate(1.6) blur(16px);
+    background: var(--bg);
   }
 
-  /* Raised surfaces: a card that catches a little light along its top edge. */
+  /* Cards and panels: a surface and a 1px line, nothing else. */
   .z-card {
-    background: var(--card-grad);
-    border: 1px solid var(--border);
-    box-shadow: var(--hl);
+    background: var(--surface);
+    border: 1px solid var(--line);
   }
 
-  /* The one primary action of a place. */
+  /* The one primary action of a place: ink with its own text colour (navy on light, cream on
+     dark), 600 weight. */
   .z-primary {
-    background: linear-gradient(180deg, #5b54ee, var(--color-brand-700));
-    color: #fff;
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.22),
-      0 10px 24px -12px var(--color-brand-600);
-    transition:
-      filter 0.15s,
-      box-shadow 0.15s,
-      transform 0.15s;
+    background: var(--ink);
+    color: var(--on-ink);
+    font-weight: 600;
+    transition: background-color 0.15s;
   }
-  .z-primary:hover {
-    filter: brightness(1.08);
+  .z-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--ink) 86%, var(--bg));
   }
-  .z-primary:active {
-    transform: scale(0.98);
+  .z-primary:active:not(:disabled) {
+    background: color-mix(in srgb, var(--ink) 76%, var(--bg));
+  }
+
+  /* The price, on a highlighter band like a price circled on a printed list: the only amber. */
+  .z-price {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+    background: linear-gradient(
+      transparent 58%,
+      var(--marker) 58%,
+      var(--marker) 92%,
+      transparent 92%
+    );
+    padding: 0 0.1em;
+  }
+
+  /* The Zeiko tile: the logo's rounded navy square, reused for a person's initial and a file's
+     type, so the mark's shape runs through the app. */
+  .z-tile {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    border-radius: 0.5rem;
+    background: var(--ground);
+    border: 1px solid var(--line);
+    color: var(--ink);
+  }
+  .z-tile-ink {
+    background: var(--ink);
+    border-color: transparent;
+    color: var(--on-ink);
   }
 }
 
-/* The current place in a list of places. */
+/* A place in a list of places: muted text, ink and bold when it is the current one. */
 .z-nav {
-  position: relative;
   transition:
-    background 0.15s,
+    background-color 0.15s,
     color 0.15s;
 }
 .z-nav.active {
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
-}
-.z-nav.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 25%;
-  bottom: 25%;
-  width: 3px;
-  border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, #2dd4bf, var(--color-brand-500));
+  background: var(--select);
+  color: var(--ink);
+  font-weight: 650;
 }
 
 @media (prefers-reduced-motion: reduce) {

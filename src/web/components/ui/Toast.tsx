@@ -39,13 +39,13 @@ export function Toaster() {
       {list.map((x) => (
         <div
           key={x.id}
-          className={`pointer-events-auto flex items-center gap-4 rounded-xl px-4 py-3 text-sm text-white shadow-lg ${x.tone === 'error' ? 'bg-red-700' : 'bg-gray-900'}`}
+          className={`pointer-events-auto flex max-w-[calc(100vw-2rem)] items-center gap-4 rounded-lg px-4 py-3 text-sm shadow-lg ${x.tone === 'error' ? 'bg-red-600 text-white' : 'bg-[var(--ink)] text-[var(--on-ink)]'}`}
         >
           <span>{x.text}</span>
           {x.action && (
             <button
               type="button"
-              className="font-semibold text-brand-100"
+              className="-my-2 min-h-11 shrink-0 font-semibold underline underline-offset-4"
               onClick={() => {
                 toasts = toasts.filter((y) => y.id !== x.id);
                 emit();

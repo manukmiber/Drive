@@ -146,7 +146,7 @@ export function VideoFields({
                   c,
                   can.video.includes(c)
                     ? VIDEO_LABEL[c]!
-                    : `${VIDEO_LABEL[c]} — ${t.localCompress.unavailable}`,
+                    : `${VIDEO_LABEL[c]} (${t.localCompress.unavailable})`,
                   !can.video.includes(c),
                 ] as const,
             ),

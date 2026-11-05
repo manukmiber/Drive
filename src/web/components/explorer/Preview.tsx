@@ -96,7 +96,7 @@ function NoPreview({ node, onEdit }: { node: NodeDto; onEdit?: () => void }) {
           <button
             type="button"
             onClick={onEdit}
-            className="rounded-full bg-white px-5 py-2 text-sm font-medium text-gray-900"
+            className="rounded-lg bg-white px-5 py-2 text-sm font-medium text-gray-900"
           >
             {isZip(node.mime, node.name) ? t.editor.openZip : t.editor.openInEditor}
           </button>
@@ -106,8 +106,8 @@ function NoPreview({ node, onEdit }: { node: NodeDto; onEdit?: () => void }) {
           onClick={() => void downloadFile(node.id)}
           className={
             onEdit
-              ? 'rounded-full border border-white/40 px-5 py-2 text-sm font-medium text-white'
-              : 'rounded-full bg-white px-5 py-2 text-sm font-medium text-gray-900'
+              ? 'rounded-lg border border-white/40 px-5 py-2 text-sm font-medium text-white'
+              : 'rounded-lg bg-white px-5 py-2 text-sm font-medium text-gray-900'
           }
         >
           {t.common.download}
@@ -192,7 +192,7 @@ export function Preview({
             type="button"
             onClick={editIt}
             aria-label={t.editor.edit}
-            className="flex items-center gap-1.5 rounded-full px-3 py-2 text-sm hover:bg-white/10"
+            className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm hover:bg-white/10"
           >
             <Pencil className="h-4 w-4" />
             <span className="hidden sm:inline">{t.editor.edit}</span>

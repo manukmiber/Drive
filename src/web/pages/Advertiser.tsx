@@ -37,7 +37,7 @@ export function Advertiser() {
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4 md:p-6">
       <section className={card}>
-        <h1 className="flex items-center gap-2 text-xl font-semibold">
+        <h1 className="flex items-center gap-2 text-2xl">
           <Megaphone className="h-5 w-5 text-brand-600" />
           {t.ads.contactTitle}
         </h1>

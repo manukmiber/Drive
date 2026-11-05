@@ -341,7 +341,7 @@ function Workspace({ initial, onClose }: { initial: Clip[]; onClose: () => void 
             type="button"
             onClick={() => setHist((h) => ({ ...h, at: Math.max(0, h.at - 1) }))}
             disabled={hist.at === 0}
-            className="rounded-full px-3 py-2 text-sm hover:bg-[var(--bg-subtle)] disabled:opacity-40"
+            className="rounded-lg px-3 py-2 text-sm hover:bg-[var(--bg-subtle)] disabled:opacity-40"
           >
             {t.editor.undo}
           </button>

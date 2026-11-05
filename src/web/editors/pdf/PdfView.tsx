@@ -186,7 +186,7 @@ export function PageList({
         </div>
       </div>
       <div className="pointer-events-none absolute right-3 bottom-3 left-3 flex items-center justify-between">
-        <span className="rounded-full bg-black/70 px-3 py-1 text-xs text-white tabular-nums">
+        <span className="rounded-lg bg-black/70 px-3 py-1 text-xs text-white tabular-nums">
           {t.editor.pageOf(Math.min(current, pages.length), pages.length)}
         </span>
         {zoomable && (

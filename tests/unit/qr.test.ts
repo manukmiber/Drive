@@ -36,7 +36,8 @@ describe('QR with the logo (ADR-059)', () => {
     const plan = qrPlan(text);
     const svg = qrSvg(text);
     expect(svg).toContain(`viewBox="0 0 ${plan.side} ${plan.side}"`);
-    expect(svg).toContain('#4338ca');
+    expect(svg).toContain('#1f2639');
+    expect(svg).toContain('#f0ae48');
     const t = plan.tile!;
     // No module run starts inside the tile.
     for (const [, x, y] of svg.matchAll(/M(\d+) (\d+)h/g))
@@ -50,6 +51,6 @@ describe('QR with the logo (ADR-059)', () => {
 
   it('draws no logo when asked not to', () => {
     expect(qrPlan('https://zeiko.biz.id/x', false).tile).toBeNull();
-    expect(qrSvg('https://zeiko.biz.id/x', false)).not.toContain('#4338ca');
+    expect(qrSvg('https://zeiko.biz.id/x', false)).not.toContain('#1f2639');
   });
 });

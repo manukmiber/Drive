@@ -441,7 +441,7 @@ export function UploadPanel() {
                   aria-selected={tab === k}
                   onClick={() => setTab(k)}
                   className={cn(
-                    'rounded-full px-3 py-1 text-xs',
+                    'rounded-lg px-3 py-1 text-xs',
                     tab === k ? 'bg-brand-600 text-white' : 'hover:bg-[var(--border)]',
                   )}
                 >

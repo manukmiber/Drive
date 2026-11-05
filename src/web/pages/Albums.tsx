@@ -261,7 +261,7 @@ export function AlbumView({ id }: { id: string }) {
                     disabled={m.disabled}
                     onClick={() => m.onSelect()}
                     className={cn(
-                      'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--bg-subtle)]',
+                      'inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--bg-subtle)]',
                       m.danger && 'text-red-600',
                     )}
                   >

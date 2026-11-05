@@ -48,6 +48,10 @@ export default tseslint.config(
     },
   },
   {
+    files: ['src/web/public/theme.js'],
+    languageOptions: { globals: { document: 'readonly', localStorage: 'readonly' } },
+  },
+  {
     files: ['src/web/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: reactHooks.configs.recommended.rules,

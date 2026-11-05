@@ -60,10 +60,10 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
 
   const open = (e: React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    // Above the button on phones: about 37px a row.
+    // Above the button on phones: 44px a row (Menu's tap height) and its 8px of padding.
     setMenu(
       variant === 'fab'
-        ? { x: r.right - 200, y: r.top - 12 - items.length * 37 }
+        ? { x: r.right - 208, y: r.top - 16 - items.length * 44 }
         : { x: r.left, y: r.bottom + 4 },
     );
   };
@@ -75,7 +75,7 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
           type="button"
           onClick={open}
           disabled={!folder}
-          className="z-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-5 text-sm font-semibold disabled:opacity-50"
+          className="z-primary inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg px-5 text-sm disabled:opacity-50"
         >
           <Plus className="h-5 w-5" aria-hidden="true" />
           {t.nav.newButton}
@@ -87,9 +87,9 @@ export function NewMenu({ variant }: { variant: 'sidebar' | 'fab' }) {
             onClick={open}
             disabled={!folder}
             aria-label={t.nav.newButton}
-            className="z-primary fixed right-4 bottom-24 z-30 flex h-14 w-14 items-center justify-center rounded-2xl disabled:opacity-50 md:hidden"
+            className="z-primary fixed right-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] z-30 flex h-14 w-14 items-center justify-center rounded-2xl shadow-lg disabled:opacity-50 md:hidden"
           >
-            <Plus className="h-6 w-6" />
+            <Plus className="h-6 w-6" aria-hidden="true" />
           </button>
           {/* Wide screens have "New" in the sidebar; this one only uploads, straight to the picker. */}
           {folder && (

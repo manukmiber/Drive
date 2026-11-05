@@ -23,6 +23,8 @@ import type {
 } from '../lib/types';
 
 const card = 'z-card rounded-2xl p-5';
+/** A section's name inside a card. */
+const cardTitle = 'font-bold text-[var(--ink)]';
 const billingKey = ['billing'] as const;
 
 function useBilling() {
@@ -75,7 +77,9 @@ function PayDialog({ pay, onClose }: { pay: Started; onClose: () => void }) {
   return (
     <Dialog open title={t.billing.payTitle} onClose={onClose}>
       <div className="space-y-4 text-center">
-        <p className="text-2xl font-semibold">{formatRupiah(payment.amountIdr)}</p>
+        <p>
+          <span className="z-price text-3xl">{formatRupiah(payment.amountIdr)}</span>
+        </p>
         {pay.creditUsedIdr > 0 && (
           <p className="text-xs text-[var(--fg-muted)]">
             {t.billing.creditUsed(formatRupiah(pay.creditUsedIdr))}
@@ -83,7 +87,13 @@ function PayDialog({ pay, onClose }: { pay: Started; onClose: () => void }) {
         )}
         {qr && (
           <>
-            <img src={qr} alt="QRIS" className="mx-auto h-64 w-64 rounded-xl bg-white p-2" />
+            <img
+              src={qr}
+              alt="QRIS"
+              width={256}
+              height={256}
+              className="mx-auto h-64 w-64 rounded-lg border border-[var(--line)] bg-white p-2"
+            />
             <p className="text-sm text-[var(--fg-muted)]">{t.billing.scanQr}</p>
           </>
         )}
@@ -92,7 +102,7 @@ function PayDialog({ pay, onClose }: { pay: Started; onClose: () => void }) {
             href={payment.checkoutUrl}
             target="_blank"
             rel="noopener"
-            className="inline-block rounded-full bg-brand-700 px-5 py-2 text-sm font-medium text-white"
+            className="z-primary inline-flex h-11 items-center rounded-lg px-5 text-sm"
           >
             {t.billing.openCheckout}
           </a>
@@ -204,14 +214,14 @@ export function Billing() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-4 md:p-6">
-      <h1 className="text-xl font-semibold">{t.billing.title}</h1>
+      <h1 className="text-2xl">{t.billing.title}</h1>
 
       <div className="grid gap-4 md:grid-cols-2">
         <section className={card}>
-          <h2 className="font-medium">{t.billing.yourPlan}</h2>
+          <h2 className={cardTitle}>{t.billing.yourPlan}</h2>
           {current && sub ? (
             <>
-              <p className="mt-2 text-2xl font-semibold">{current.name}</p>
+              <p className="mt-2 text-2xl font-extrabold text-[var(--ink)]">{current.name}</p>
               <p className="text-sm text-[var(--fg-muted)]">
                 {formatRupiah(current.priceIdr)}
                 {t.billing.perMonth} · {t.billing.activeUntil(formatDate(sub.periodEnd))}
@@ -269,7 +279,7 @@ export function Billing() {
         </section>
 
         <section className={card}>
-          <h2 className="flex items-center gap-2 font-medium">
+          <h2 className={cn(cardTitle, 'flex items-center gap-2')}>
             <QrCode className="h-4 w-4" aria-hidden="true" /> {t.billing.paying}
           </h2>
           <p className="mt-2 text-sm text-[var(--fg-muted)]">{t.billing.payingBody}</p>
@@ -289,73 +299,76 @@ export function Billing() {
       </div>
 
       {!data.managedByFamily && (
-        <section>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {plans.map((p) => {
-              const isCurrent = p.code === sub?.planCode && active;
-              return (
-                <div
-                  key={p.code}
-                  className={cn(
-                    card,
-                    'flex flex-col',
-                    isCurrent &&
-                      'border-brand-500 shadow-[0_18px_44px_-22px_rgba(99,102,241,0.75)] ring-1 ring-brand-500',
-                  )}
-                >
-                  <p className="font-medium">{p.name}</p>
-                  <p className="mt-1 text-3xl font-bold tracking-tight">
-                    {formatBytes(p.storageBytes)}
-                  </p>
-                  <p className="text-sm">
-                    {formatRupiah(p.priceIdr)}
-                    <span className="text-[var(--fg-muted)]">{t.billing.perMonth}</span>
+        // The plans as a price list (ADR-101): one row each, what you get, the price on the
+        // marker band, and the one action. The plan you have is shaded, not lit up.
+        <ul className="divide-y divide-[var(--line)] overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)]">
+          {plans.map((p) => {
+            const isCurrent = p.code === sub?.planCode && active;
+            return (
+              <li
+                key={p.code}
+                className={cn(
+                  'grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto_11rem] sm:items-center sm:gap-6 md:px-5',
+                  isCurrent && 'bg-[var(--select)]',
+                )}
+              >
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-xl font-extrabold text-[var(--ink)] tabular-nums">
+                      {formatBytes(p.storageBytes)}
+                    </span>
+                    <span className="text-sm font-semibold text-[var(--muted)]">{p.name}</span>
                   </p>
                   {p.compressQuota > 0 && (
-                    <p className="mt-1 text-xs text-[var(--fg-muted)]">
+                    <p className="mt-0.5 text-xs text-[var(--muted)]">
                       {t.billing.compressPerMonth(
                         p.compressQuota.toLocaleString(lang === 'id' ? 'id-ID' : 'en-US'),
                       )}
                     </p>
                   )}
-                  <div className="flex-1" />
-                  <Button
-                    className="mt-4"
-                    variant={isCurrent ? 'secondary' : 'primary'}
-                    disabled={isCurrent || busy || !data.canPay}
-                    onClick={() => choose(p)}
-                  >
-                    {isCurrent ? (
-                      <>
-                        <Check className="h-4 w-4" /> {t.billing.current}
-                      </>
-                    ) : current && active ? (
-                      p.priceIdr > current.priceIdr ? (
-                        t.billing.upgrade
-                      ) : (
-                        t.billing.downgrade
-                      )
-                    ) : (
-                      t.billing.choose
-                    )}
-                  </Button>
                 </div>
-              );
-            })}
-          </div>
-        </section>
+                <p className="whitespace-nowrap">
+                  <span className="z-price text-2xl">{formatRupiah(p.priceIdr)}</span>
+                  <span className="text-sm text-[var(--muted)]">{t.billing.perMonth}</span>
+                </p>
+                {/* Outlined: a list of five is five choices, not five primary actions. */}
+                <Button
+                  className="w-full"
+                  variant="secondary"
+                  disabled={isCurrent || busy || !data.canPay}
+                  onClick={() => choose(p)}
+                >
+                  {isCurrent ? (
+                    <>
+                      <Check className="h-4 w-4" aria-hidden="true" /> {t.billing.current}
+                    </>
+                  ) : current && active ? (
+                    p.priceIdr > current.priceIdr ? (
+                      t.billing.upgrade
+                    ) : (
+                      t.billing.downgrade
+                    )
+                  ) : (
+                    t.billing.choose
+                  )}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
       {active && !data.managedByFamily && (
         <section className={card}>
-          <h2 className="font-medium">{t.billing.addons}</h2>
+          <h2 className={cardTitle}>{t.billing.addons}</h2>
           <p className="text-xs text-[var(--fg-muted)]">{t.billing.addonNote}</p>
-          <ul className="mt-3 divide-y divide-[var(--border)]">
+          <ul className="mt-3 divide-y divide-[var(--line)]">
             {catalog.data.addons.map((a) => (
-              <li key={a.code} className="flex items-center gap-3 py-2 text-sm">
-                <span className="flex-1">
-                  {a.name} · {formatRupiah(a.priceIdr)}
-                  {t.billing.perMonth}
+              <li key={a.code} className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3 text-sm">
+                <span className="min-w-0 flex-1 font-semibold">{a.name}</span>
+                <span className="whitespace-nowrap">
+                  <span className="z-price text-base">{formatRupiah(a.priceIdr)}</span>
+                  <span className="text-[var(--muted)]">{t.billing.perMonth}</span>
                 </span>
                 <Button
                   variant="secondary"
@@ -373,7 +386,7 @@ export function Billing() {
             <ul className="mt-3 space-y-1 text-sm">
               {data.addons.map((a) => (
                 <li key={a.id} className="flex items-center gap-2">
-                  <Check className="h-4 w-4 text-green-600" />{' '}
+                  <Check className="h-4 w-4 text-[var(--ok)]" aria-hidden="true" />{' '}
                   <span className="flex-1">{a.name}</span>
                   <label className="flex items-center gap-1 text-xs text-[var(--fg-muted)]">
                     <input
@@ -395,7 +408,7 @@ export function Billing() {
       )}
 
       <section className={card}>
-        <h2 className="font-medium">{t.billing.compress}</h2>
+        <h2 className={cardTitle}>{t.billing.compress}</h2>
         <div className="mt-3 grid gap-2 sm:grid-cols-4">
           {catalog.data.compressPacks.map((p) => (
             <button
@@ -412,10 +425,14 @@ export function Billing() {
                   { kind: 'compress', code: p.code },
                 )
               }
-              className="rounded-xl border border-[var(--border)] p-3 text-left text-sm hover:bg-[var(--bg-subtle)] disabled:opacity-50"
+              className="rounded-lg border border-[var(--line-strong)] p-3 text-left text-sm transition-colors hover:bg-[var(--hover)] disabled:opacity-50"
             >
-              <span className="block font-medium">{t.billing.compressPack(p.credits)}</span>
-              <span className="text-[var(--fg-muted)]">{formatRupiah(p.priceIdr)}</span>
+              <span className="block font-semibold text-[var(--ink)]">
+                {t.billing.compressPack(p.credits)}
+              </span>
+              <span className="z-price mt-1 inline-block text-base">
+                {formatRupiah(p.priceIdr)}
+              </span>
             </button>
           ))}
         </div>
@@ -441,17 +458,20 @@ export function BillingBanner() {
   if (!key) return null;
   const tone =
     key === 'noPlan'
-      ? 'bg-brand-50 text-brand-900 dark:bg-brand-800/40 dark:text-brand-100'
+      ? 'bg-[var(--select)] text-[var(--ink)]'
       : key === 'grace'
-        ? 'bg-amber-50 text-amber-900'
-        : 'bg-red-50 text-red-900';
+        ? 'bg-[var(--warn-bg)] text-[var(--warn)]'
+        : 'bg-[var(--err-bg)] text-[var(--err)]';
   return (
-    <div className={cn('flex flex-wrap items-center gap-3 px-4 py-2 text-sm', tone)} role="status">
+    <div
+      className={cn(
+        'flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-[var(--line)] px-4 py-2 text-sm font-medium md:px-6',
+        tone,
+      )}
+      role="status"
+    >
       <span className="flex-1">{t.billing.banner[key]}</span>
-      <Link
-        to="/paket"
-        className="rounded-full bg-brand-700 px-4 py-1 text-xs font-medium text-white"
-      >
+      <Link to="/paket" className="z-primary inline-flex h-10 items-center rounded-lg px-4 text-xs">
         {t.billing.banner.action}
       </Link>
     </div>

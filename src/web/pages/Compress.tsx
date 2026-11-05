@@ -70,7 +70,7 @@ export function Compress() {
     <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-xl font-semibold">{t.compress.title}</h1>
+          <h1 className="text-2xl">{t.compress.title}</h1>
           <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.compress.subtitle}</p>
         </div>
         <p className="text-sm">
@@ -87,7 +87,7 @@ export function Compress() {
           {t.compress.standaloneTitle}
         </h2>
         <p className="mt-1 text-sm text-[var(--fg-muted)]">
-          {t.compress.standaloneBody(max ? formatBytes(max) : '—')}
+          {t.compress.standaloneBody(max ? formatBytes(max) : '–')}
         </p>
         <div className="mt-4 text-sm">
           <MediaOptionsForm value={o} onChange={setO} image video />

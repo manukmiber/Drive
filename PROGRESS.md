@@ -2,6 +2,14 @@
 
 Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` untuk detail tiap fase.
 
+## Tampilan Drive memakai desain Zeiko + logo kawung (ADR-101, 2026-11-05)
+- [x] Token warna, huruf (Plus Jakarta Sans, Cousine), sudut 8/14 px, datar; tema gelap default + terang di perangkat.
+- [x] Logo kawung di sidebar, header HP, halaman masuk, favicon, ikon aplikasi, QR share, halaman share Worker, email.
+- [x] Shell (sidebar, header, navigasi bawah, tombol Baru), explorer (baris bergaris, ubin ekstensi), Paket (pita
+  harga), Pengaturan → Tampilan, Masuk, toast, menu, dialog, lonceng.
+- [x] Dicek di Chromium (Playwright): 1280 px dan 375 px, gelap dan terang.
+- [ ] Chat Spaces (file sedang diubah sesi lain), tata letak editor, tombol 36 px yang tersisa.
+
 ## Zeiko Spaces — W6: dokumen dan spreadsheet bersama (ADR-100, 2026-11-05)
 - [x] Salinan hidup per file di ruang live (`docs`, `doc_items`): seed, saver, ringkas, dihapus setelah tersimpan.
 - [x] Dokumen `.docx`: Yjs + TipTap Collaboration/Caret, simpan otomatis 60 detik dan saat menutup.

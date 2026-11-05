@@ -18,7 +18,7 @@ export function Duplicates() {
 
   return (
     <div className="mx-auto max-w-4xl p-4 md:p-6">
-      <h1 className="text-xl font-semibold">{t.duplicates.title}</h1>
+      <h1 className="text-2xl">{t.duplicates.title}</h1>
       <p className="mt-2 text-sm text-[var(--fg-muted)]">{t.duplicates.intro}</p>
       {q.data && q.data.saving > 0 && (
         <p className="mt-3 text-sm font-semibold text-brand-700">

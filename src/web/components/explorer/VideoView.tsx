@@ -138,7 +138,7 @@ export function VideoView({ url, node }: { url: string; node: NodeDto }) {
                 else if (v === 'off') setPicked({ kind: 'off' });
                 else if (v !== 'device') setPicked({ kind: 'node', id: v });
               }}
-              className="min-w-0 flex-1 truncate rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-white"
+              className="min-w-0 flex-1 truncate rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-white"
             >
               <option value="off" className="text-gray-900">
                 {t.files.subs.off}

@@ -134,7 +134,7 @@ export function RequestUpload({ id, sig }: { id: string; sig: string }) {
           <p className="mt-6 text-sm">{t.requests.notFound}</p>
         ) : (
           <>
-            <h1 className="mt-6 text-xl font-semibold break-words">{r.title}</h1>
+            <h1 className="mt-6 text-2xl break-words">{r.title}</h1>
             <p className="mt-1 text-sm text-[var(--fg-muted)]">
               {[
                 r.ownerName && t.requests.from(r.ownerName),

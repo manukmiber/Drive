@@ -18,7 +18,7 @@ export function Downloads() {
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
       <header>
-        <h1 className="text-xl font-semibold">{t.archive.pageTitle}</h1>
+        <h1 className="text-2xl">{t.archive.pageTitle}</h1>
         <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.archive.pageBody}</p>
       </header>
       {q.isSuccess && !jobs.length && (

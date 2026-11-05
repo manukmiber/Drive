@@ -9,7 +9,7 @@ import { door, sitePage, zeikoConfig } from '../lib/zeiko';
 
 const card = 'z-card rounded-2xl p-5';
 const linkBtn =
-  'inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium hover:bg-[var(--bg-subtle)]';
+  'inline-flex h-9 items-center rounded-lg border border-[var(--border)] px-4 text-sm font-medium hover:bg-[var(--bg-subtle)]';
 
 /** What the door's /v1/account says, as far as this page reads it. */
 interface DoorAccount {
@@ -64,7 +64,7 @@ export function AiDecision() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
-      <h1 className="flex items-center gap-2 text-xl font-semibold">
+      <h1 className="flex items-center gap-2 text-2xl">
         <Brain className="h-5 w-5" aria-hidden="true" />
         {t.ai.title}
       </h1>

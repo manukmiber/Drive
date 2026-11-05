@@ -1223,7 +1223,7 @@ function S3Page() {
 
   const header = (
     <>
-      <h1 className="flex items-center gap-2 text-xl font-semibold">
+      <h1 className="flex items-center gap-2 text-2xl">
         <Database className="h-5 w-5" aria-hidden="true" />
         {t.s3.title}
       </h1>

@@ -46,7 +46,7 @@ export function Trash() {
   return (
     <div className="mx-auto max-w-4xl p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="flex-1 text-xl font-semibold">{t.nav.trash}</h1>
+        <h1 className="flex-1 text-2xl">{t.nav.trash}</h1>
         {items.length > 0 && (
           <Button variant="secondary" onClick={() => setConfirm('all')}>
             {t.files.emptyTrashButton}

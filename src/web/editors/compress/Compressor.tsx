@@ -418,7 +418,7 @@ export function Compressor({ request, onClose }: { request: EditRequest; onClose
                   onClick={() => setTab(id)}
                   aria-current={shownTab === id ? 'page' : undefined}
                   className={cn(
-                    'shrink-0 rounded-full px-3 py-1.5 text-sm',
+                    'shrink-0 rounded-lg px-3 py-1.5 text-sm',
                     shownTab === id
                       ? 'bg-[var(--accent-soft)] font-semibold text-[var(--accent)]'
                       : 'text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]',

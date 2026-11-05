@@ -63,7 +63,7 @@ export const en: Strings = {
   },
   auth: {
     signInTitle: 'Sign in to Zeiko Drive',
-    signInSubtitle: 'Use your Zeiko Account — the same one as ZeikoAI and Zeiko Chat.',
+    signInSubtitle: 'Use your Zeiko Account, the same one as ZeikoAI and Zeiko Chat.',
     withZeiko: 'Sign in with Zeiko Account',
     createAccount: 'No account yet? Sign up free',
     checking: 'Checking your Zeiko Account…',
@@ -414,6 +414,14 @@ export const en: Strings = {
     en: 'English',
     saved: 'Language changed.',
   },
+  theme: {
+    label: 'Appearance',
+    dark: 'Dark',
+    light: 'Light',
+    toLight: 'Light appearance',
+    toDark: 'Dark appearance',
+    hint: 'Drive is dark until you choose light. The choice is for this device only.',
+  },
   a11y: {
     mainNav: 'Main navigation',
     bottomNav: 'Bottom navigation',
@@ -606,9 +614,9 @@ export const en: Strings = {
     emptyRecent: 'No recent files yet.',
     pasted: (n: number) => `${n} ${n === 1 ? 'item' : 'items'} pasted`,
     copiedToClipboard: (n: number) =>
-      `${n} ${n === 1 ? 'item' : 'items'} copied — press Ctrl+V in the folder you want`,
+      `${n} ${n === 1 ? 'item' : 'items'} copied. Press Ctrl+V in the folder you want`,
     cutToClipboard: (n: number) =>
-      `${n} ${n === 1 ? 'item' : 'items'} cut — press Ctrl+V in the folder you want`,
+      `${n} ${n === 1 ? 'item' : 'items'} cut. Press Ctrl+V in the folder you want`,
     filterAll: 'All',
     downloadZip: 'Download…',
     preparingZip: 'Preparing the ZIP…',
@@ -748,7 +756,7 @@ export const en: Strings = {
     details: 'Details (optional)',
     contact: 'How to reach you (optional, email/WhatsApp)',
     send: 'Send report',
-    sent: 'Thank you — we’ve got your report.',
+    sent: 'Thank you, we’ve got your report.',
     badLink: 'We don’t recognise that link. Paste the full link from Zeiko.',
   },
   compress: {
@@ -1350,7 +1358,7 @@ export const en: Strings = {
     formIntro: 'Fill in this PDF’s form fields, then save.',
     formPage: (n: number) => `Page ${n}`,
     formOther: 'Other',
-    formChoose: '— Choose —',
+    formChoose: 'Choose…',
     formFlatten: 'Lock the answers (they become part of the page and can’t be changed)',
     fontLatinOnly:
       'These letters can’t be written into the PDF yet. Use Latin letters, or place it as Text in the Fill & sign tab.',

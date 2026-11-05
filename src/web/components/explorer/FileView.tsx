@@ -24,23 +24,27 @@ import { t } from '../../lib/i18n';
 import { cn } from '../../lib/cn';
 import { type NodeDto } from '../../lib/files';
 import { ArchiveDialog } from './ArchiveDialog';
-import { FileIcon } from '../FileIcon';
+import { FileIcon, TypeTile } from '../FileIcon';
 import { Menu } from '../ui/Menu';
 import { toast } from '../ui/Toast';
 import { useNodeActions } from './useNodeActions';
 
 export type View = 'list' | 'grid';
 
+/** An icon button on the selection bar: a 44px square, the bar's ink. */
+const selBtn =
+  'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-[var(--hover)] active:bg-[var(--surface)]';
+
 export function StatusBadge({ node }: { node: NodeDto }) {
   if (node.status === 'scanning')
     return (
-      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-800">
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--warn-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--warn)]">
         <ShieldQuestion className="h-3 w-3" aria-hidden="true" /> {t.files.scanning}
       </span>
     );
   if (node.status === 'rejected')
     return (
-      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[11px] text-red-700">
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-[var(--err-bg)] px-2 py-0.5 text-[11px] font-semibold text-[var(--err)]">
         <ShieldAlert className="h-3 w-3" aria-hidden="true" /> {t.files.rejected}
       </span>
     );
@@ -58,11 +62,17 @@ function Thumb({ node, big }: { node: NodeDto; big?: boolean }) {
         alt=""
         loading="lazy"
         onError={() => setFailed(true)}
-        className={big ? 'h-full w-full object-cover' : 'h-8 w-8 shrink-0 rounded object-cover'}
+        width={big ? 320 : 40}
+        height={big ? 240 : 40}
+        className={
+          big
+            ? 'h-full w-full object-cover'
+            : 'h-10 w-10 shrink-0 rounded-lg border border-[var(--line)] object-cover'
+        }
       />
     );
   }
-  return <FileIcon node={node} className={big ? 'h-12 w-12' : 'h-5 w-5'} />;
+  return <TypeTile node={node} size={big ? 'lg' : 'md'} />;
 }
 
 export interface FileViewProps {
@@ -217,33 +227,39 @@ export function FileView({
     <button
       type="button"
       aria-label={t.a11y.actionsFor(node.name)}
-      className="shrink-0 rounded-full p-1.5 hover:bg-[var(--border)]"
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
       onClick={(e) => {
         e.stopPropagation();
         const r = e.currentTarget.getBoundingClientRect();
         setMenu({ x: r.left, y: r.bottom, ids: [node.id] });
       }}
     >
-      <MoreVertical className="h-4 w-4" />
+      <MoreVertical className="h-4 w-4" aria-hidden="true" />
     </button>
   );
 
   return (
     <div onKeyDown={onKey} className="outline-none">
       {sel.length > 0 && (
-        <div className="sticky top-[57px] z-10 mx-2 mb-1 flex items-center gap-1 rounded-full bg-brand-50 px-2 py-1 text-sm text-brand-800 md:mx-4 dark:bg-brand-800/40 dark:text-brand-100">
+        // Over the app's header, not in the list: a bar that pushed the rows down after the first
+        // click made a double-click open the row above.
+        <div
+          role="toolbar"
+          aria-label={t.files.selected(sel.length)}
+          className="fixed inset-x-0 top-0 z-30 flex h-16 items-center gap-0.5 border-b border-[var(--line-strong)] bg-[var(--select)] px-2 text-sm font-semibold text-[var(--ink)] md:left-64 md:px-4"
+        >
           <button
             type="button"
-            className="rounded-full p-1.5 hover:bg-brand-100 dark:hover:bg-brand-800"
+            className={selBtn}
             onClick={() => setSelected(new Set())}
             aria-label={t.files.clearSelection}
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
           <span className="flex-1 px-1">{t.files.selected(sel.length)}</span>
           <button
             type="button"
-            className="rounded-full p-2 hover:bg-brand-100 dark:hover:bg-brand-800"
+            className={selBtn}
             onClick={() =>
               sel.length === 1 && items.find((i) => i.id === sel[0])?.kind === 'file'
                 ? actions.open(items.find((i) => i.id === sel[0])!)
@@ -252,36 +268,36 @@ export function FileView({
             aria-label={t.common.download}
             title={t.common.download}
           >
-            <Download className="h-4 w-4" />
+            <Download className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"
-            className="rounded-full p-2 hover:bg-brand-100 dark:hover:bg-brand-800"
+            className={selBtn}
             onClick={() => setMenu({ x: window.innerWidth / 2, y: 120, ids: sel })}
             aria-label={t.common.share}
             title={t.common.share}
           >
-            <Share2 className="h-4 w-4" />
+            <Share2 className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"
-            className="rounded-full p-2 hover:bg-brand-100 dark:hover:bg-brand-800"
+            className={selBtn}
             onClick={() => void actions.trash(sel)}
             aria-label={t.files.moveToTrash}
             title={t.files.moveToTrash}
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
           </button>
           <button
             type="button"
-            className="rounded-full p-2 hover:bg-brand-100 dark:hover:bg-brand-800"
+            className={selBtn}
             aria-label={t.a11y.moreActions}
             onClick={(e) => {
               const r = e.currentTarget.getBoundingClientRect();
               setMenu({ x: r.left, y: r.bottom, ids: sel });
             }}
           >
-            <MoreVertical className="h-4 w-4" />
+            <MoreVertical className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       )}
@@ -289,16 +305,18 @@ export function FileView({
       {items.length === 0 && empty}
 
       {items.length > 0 && view === 'list' && (
+        // Plain rows divided by rules, like Zeiko's price lists: a tile, the name, then when and
+        // how big on wide screens (under the name on phones).
         <div
           role="listbox"
           aria-multiselectable="true"
           aria-label={label}
-          className="px-2 py-1 md:px-4"
+          className="px-2 pb-2 md:px-4"
         >
-          <div className="hidden grid-cols-[1fr_9rem_7rem_2.5rem] px-3 py-2 text-xs text-[var(--fg-muted)] md:grid">
+          <div className="hidden grid-cols-[1fr_10rem_6.5rem_2.5rem] gap-3 border-b border-[var(--line)] px-3 pt-3 pb-2 text-xs font-semibold text-[var(--muted)] md:grid">
             <span>{t.files.colName}</span>
             <span>{t.files.colModified}</span>
-            <span>{t.files.colSize}</span>
+            <span className="text-right">{t.files.colSize}</span>
             <span />
           </div>
           {items.map((node, i) => (
@@ -306,43 +324,48 @@ export function FileView({
               key={node.id}
               {...itemProps(node, i)}
               className={cn(
-                'grid cursor-default grid-cols-[1fr_2.5rem] items-center gap-2 rounded-xl px-3 py-2 outline-none select-none focus-visible:ring-2 focus-visible:ring-brand-500 md:grid-cols-[1fr_9rem_7rem_2.5rem]',
-                sel.includes(node.id)
-                  ? 'bg-brand-100 dark:bg-brand-800/40'
-                  : 'hover:bg-[var(--bg-subtle)]',
+                'grid min-h-14 cursor-default grid-cols-[1fr_2.5rem] items-center gap-3 border-b border-[var(--line)] px-3 py-2 outline-none select-none last:border-b-0 z-focus-inset md:grid-cols-[1fr_10rem_6.5rem_2.5rem]',
+                sel.includes(node.id) ? 'bg-[var(--select)]' : 'hover:bg-[var(--hover)]',
               )}
             >
               <span className="flex min-w-0 items-center gap-3">
                 <Thumb node={node} />
                 <span className="min-w-0">
                   <span className="flex items-center gap-1.5">
-                    <span className="truncate text-sm">{nameOf ? nameOf(node) : node.name}</span>
+                    <span
+                      className={cn(
+                        'truncate text-sm text-[var(--text)]',
+                        node.kind === 'folder' ? 'font-semibold' : 'font-medium',
+                      )}
+                    >
+                      {nameOf ? nameOf(node) : node.name}
+                    </span>
                     {node.starred && (
                       <Star
-                        className="h-3 w-3 shrink-0 fill-amber-400 text-amber-400"
+                        className="h-3.5 w-3.5 shrink-0 fill-current text-[var(--ink)]"
                         aria-label={t.files.star}
                       />
                     )}
                     <ExpiryMark node={node} />
                   </span>
-                  <span className="block truncate text-xs text-[var(--fg-muted)] md:hidden">
+                  <span className="block truncate text-xs text-[var(--muted)] tabular-nums md:hidden">
                     {formatDate(node.updatedAt)}
                     {node.kind === 'file' && ` · ${formatBytes(node.size)}`}
                   </span>
                   {extra?.(node)}
                   {subtitle?.(node) && (
-                    <span className="hidden truncate text-xs text-[var(--fg-muted)] md:block">
+                    <span className="hidden truncate text-xs text-[var(--muted)] md:block">
                       {subtitle(node)}
                     </span>
                   )}
                 </span>
                 <StatusBadge node={node} />
               </span>
-              <span className="hidden text-xs text-[var(--fg-muted)] md:block">
+              <span className="hidden text-xs text-[var(--muted)] tabular-nums md:block">
                 {formatDate(node.updatedAt)}
               </span>
-              <span className="hidden text-xs text-[var(--fg-muted)] md:block">
-                {node.kind === 'file' ? formatBytes(node.size) : '—'}
+              <span className="hidden text-right text-xs text-[var(--muted)] tabular-nums md:block">
+                {node.kind === 'file' ? formatBytes(node.size) : ''}
               </span>
               {kebab(node)}
             </div>
@@ -356,34 +379,39 @@ export function FileView({
           aria-multiselectable="true"
           aria-label={label}
           data-grid
-          className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6"
+          className="grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 md:p-4 lg:grid-cols-5 xl:grid-cols-6"
         >
           {items.map((node, i) => (
             <div
               key={node.id}
               {...itemProps(node, i)}
               className={cn(
-                'flex cursor-default flex-col overflow-hidden rounded-2xl border outline-none select-none focus-visible:ring-2 focus-visible:ring-brand-500',
+                'flex min-w-0 cursor-default flex-col overflow-hidden rounded-2xl border bg-[var(--surface)] outline-none select-none z-focus-inset',
                 sel.includes(node.id)
-                  ? 'border-brand-500 bg-brand-50 dark:bg-brand-800/30'
-                  : 'z-card transition-[transform,border-color] hover:-translate-y-0.5 hover:border-[var(--border-strong)]',
+                  ? 'border-[var(--ink)] bg-[var(--select)] ring-1 ring-[var(--ink)]'
+                  : 'border-[var(--line)] transition-colors hover:border-[var(--line-strong)]',
               )}
             >
-              <div className="flex items-center gap-2 px-3 py-2">
+              <div className="flex min-h-12 items-center gap-2 py-1 pr-1 pl-3">
                 <FileIcon node={node} className="h-4 w-4 shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-sm">
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 truncate text-sm text-[var(--text)]',
+                    node.kind === 'folder' ? 'font-semibold' : 'font-medium',
+                  )}
+                >
                   {nameOf ? nameOf(node) : node.name}
                 </span>
                 <ExpiryMark node={node} />
                 {kebab(node)}
               </div>
               {node.kind === 'file' && (
-                <div className="mx-2 mb-2 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-xl bg-[var(--bg-subtle)]">
+                <div className="mx-2 mb-2 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-[var(--ground)]">
                   <Thumb node={node} big />
                 </div>
               )}
               {node.kind === 'folder' && node.decor?.coverId && (
-                <div className="mx-2 mb-2 flex aspect-[3/1] items-center justify-center overflow-hidden rounded-xl bg-[var(--bg-subtle)]">
+                <div className="mx-2 mb-2 flex aspect-[3/1] items-center justify-center overflow-hidden rounded-lg bg-[var(--ground)]">
                   <Thumb node={node} big />
                 </div>
               )}
@@ -412,7 +440,7 @@ function ExpiryMark({ node }: { node: NodeDto }) {
   const label = t.expiry.on(formatDate(node.expiresAt));
   return (
     <span title={label} className="shrink-0">
-      <Clock className="h-3 w-3 text-[var(--fg-muted)]" aria-label={label} />
+      <Clock className="h-3.5 w-3.5 text-[var(--muted)]" aria-label={label} />
     </span>
   );
 }

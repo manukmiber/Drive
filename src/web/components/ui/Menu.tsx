@@ -62,7 +62,7 @@ export function Menu({
       ref={ref}
       role="menu"
       style={{ left: pos.left, top: pos.top }}
-      className="fixed z-50 min-w-48 rounded-xl border border-[var(--border)] bg-[var(--card)] py-1 shadow-lg"
+      className="fixed z-50 min-w-52 rounded-lg border border-[var(--line)] bg-[var(--surface)] py-1 shadow-lg"
     >
       {items.map((it) => (
         <button
@@ -75,11 +75,11 @@ export function Menu({
             it.onSelect();
           }}
           className={cn(
-            'flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-[var(--bg-subtle)] focus:bg-[var(--bg-subtle)] focus:outline-none disabled:opacity-40',
+            'flex min-h-11 w-full items-center gap-3 px-4 text-left text-sm text-[var(--text)] hover:bg-[var(--hover)] focus:bg-[var(--hover)] focus:outline-none disabled:opacity-40',
             it.danger && 'text-red-600',
           )}
         >
-          {it.icon && <it.icon className="h-4 w-4" />}
+          {it.icon && <it.icon className="h-4 w-4 shrink-0 opacity-80" aria-hidden="true" />}
           {it.label}
         </button>
       ))}

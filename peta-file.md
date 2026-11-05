@@ -169,7 +169,8 @@ wilayah iklan · `0004_zeiko_accounts_locale.sql` ★ kolom `users.locale`.
 | `pages/AiDecision.tsx` ★ | Paket, sisa request, balance, dan key Pranata V1 dari pintu; kartu Zeiko Chat. |
 | `pages/Settings.tsx` ★ | Akun Zeiko, pilihan bahasa, profil, notifikasi, lokasi iklan, data akun. |
 | `pages/{Drive,Lists,Trash,Billing,Family,Compress,Downloads,Advertiser,Report,Legal,NotFound}.tsx` | Halaman lain (sudah dua bahasa). `Landing.tsx` **dihapus** (pindah ke website). |
-| `components/AppShell.tsx` ★ | Sidebar (navigasi + "Produk Zeiko"), tombol bahasa, keluar (Better Auth + pintu). |
+| `components/AppShell.tsx` ★ | Sidebar (navigasi + "Produk Zeiko"), tombol bahasa, tema, keluar (Better Auth + pintu). |
+| `styles.css`, `fonts/`, `components/Logo.tsx`, `lib/theme.ts`, `public/theme.js` | Desain Zeiko (ADR-101): token dua tema, Plus Jakarta Sans, logo kawung (`Logo`, `Mark`), tema gelap default + terang per perangkat. |
 | `components/explorer/*`, `components/ui/*`, `components/*.tsx` | Explorer file, dialog, menu, toast, panel upload, meter, TOTP, Turnstile, iklan. |
 | `upload/*` | Antrean upload multipart + resume (IndexedDB), folder, thumbnail, share target. |
 | `editors/{files,ui,EditorHost}.ts(x)` | Editor (ADR-050): ambil bytes lewat URL pratinjau, simpan lewat antrean upload (baru / ganti asli → Sampah) atau unduh; bingkai layar penuh, dialog simpan; editor dimuat saat dibuka. |

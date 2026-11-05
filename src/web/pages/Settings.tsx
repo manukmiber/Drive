@@ -8,11 +8,13 @@ import {
   History,
   Languages,
   MapPin,
+  SunMoon,
 } from 'lucide-react';
 import { useState } from 'react';
 import { formatDate } from '../../shared/format';
 import { lang, setLang, t, type Lang } from '../lib/i18n';
 import { sitePage } from '../lib/zeiko';
+import { setTheme, useTheme } from '../lib/theme';
 import { AccessTokens } from '../components/AccessTokens';
 import { ContentSearchSettings } from '../components/ContentSearch';
 import { WebDavSetup } from '../components/WebDavSetup';
@@ -26,7 +28,10 @@ import { meQueryKey, useMe } from '../lib/session';
 
 const card = 'z-card rounded-2xl p-5';
 const input =
-  'h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 text-sm outline-none focus:border-brand-500';
+  'h-11 w-full rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-base outline-none focus:border-[var(--ink)] sm:text-sm';
+/** One choice of a few (language, appearance): 44px, the chosen one in ink. */
+const choice = (on: boolean) =>
+  `h-11 rounded-lg border px-4 text-sm transition-colors ${on ? 'border-[var(--ink)] bg-[var(--select)] font-bold text-[var(--ink)]' : 'border-[var(--line-strong)] text-[var(--text)] hover:bg-[var(--hover)]'}`;
 
 export function Settings() {
   const me = useMe();
@@ -47,11 +52,11 @@ export function Settings() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 p-4 md:p-6">
-      <h1 className="text-xl font-semibold">{t.nav.settings}</h1>
+      <h1 className="text-2xl">{t.nav.settings}</h1>
       {msg && (
         <p
           role="status"
-          className="rounded-xl bg-brand-50 dark:bg-brand-800/40 px-4 py-2 text-sm text-brand-800"
+          className="rounded-lg border border-[var(--line)] bg-[var(--select)] px-4 py-2 text-sm text-[var(--ink)]"
         >
           {msg}
         </p>
@@ -59,6 +64,7 @@ export function Settings() {
 
       <ZeikoAccount />
       <Language />
+      <Appearance />
       <Transfers />
       <DuplicateFiles />
       <VersionHistory />
@@ -117,14 +123,14 @@ function ZeikoAccount() {
         {links.data && (
           <a
             href={links.data}
-            className="inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium"
+            className="inline-flex h-9 items-center rounded-lg border border-[var(--border)] px-4 text-sm font-medium"
           >
             {t.auth.manageAccount}
           </a>
         )}
         <Link
           to="/ai"
-          className="inline-flex h-9 items-center gap-2 rounded-full border border-[var(--border)] px-4 text-sm font-medium"
+          className="inline-flex h-9 items-center gap-2 rounded-lg border border-[var(--border)] px-4 text-sm font-medium"
         >
           <Brain className="h-4 w-4" aria-hidden="true" /> {t.products.ai}
         </Link>
@@ -156,7 +162,7 @@ function DuplicateFiles() {
       <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.duplicates.hint}</p>
       <Link
         to="/kembar"
-        className="mt-3 inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium"
+        className="mt-3 inline-flex h-9 items-center rounded-lg border border-[var(--border)] px-4 text-sm font-medium"
       >
         {t.duplicates.find}
       </Link>
@@ -285,9 +291,36 @@ function Language() {
             role="radio"
             aria-checked={lang === l}
             onClick={() => void choose(l)}
-            className={`h-9 rounded-full border px-4 text-sm ${lang === l ? 'border-brand-500 bg-brand-50 font-medium text-brand-800 dark:bg-brand-800/40 dark:text-brand-100' : 'border-[var(--border)]'}`}
+            className={choice(lang === l)}
           >
             {t.lang[l]}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Light or dark on this device (ADR-101); phones reach it here, desktops also in the sidebar. */
+function Appearance() {
+  const theme = useTheme();
+  return (
+    <section className={card} aria-labelledby="tampilan">
+      <h2 id="tampilan" className="flex items-center gap-2 font-medium">
+        <SunMoon className="h-4 w-4" aria-hidden="true" /> {t.theme.label}
+      </h2>
+      <p className="mt-1 text-sm text-[var(--muted)]">{t.theme.hint}</p>
+      <div className="mt-3 flex gap-2" role="radiogroup" aria-labelledby="tampilan">
+        {(['dark', 'light'] as const).map((k) => (
+          <button
+            key={k}
+            type="button"
+            role="radio"
+            aria-checked={theme === k}
+            onClick={() => setTheme(k)}
+            className={choice(theme === k)}
+          >
+            {t.theme[k]}
           </button>
         ))}
       </div>
@@ -328,7 +361,7 @@ function AdLocation() {
       {link.data && (
         <a
           href={link.data}
-          className="mt-3 inline-flex h-9 items-center rounded-full border border-[var(--border)] px-4 text-sm font-medium"
+          className="mt-3 inline-flex h-9 items-center rounded-lg border border-[var(--border)] px-4 text-sm font-medium"
         >
           {t.ads.settingsChange}
         </a>
@@ -405,7 +438,7 @@ function AccountData() {
       <div className="mt-3 flex flex-wrap gap-2">
         <a
           href="/api/me/export"
-          className="inline-flex h-10 items-center rounded-full border border-[var(--border)] px-4 text-sm hover:bg-[var(--bg-subtle)]"
+          className="inline-flex h-10 items-center rounded-lg border border-[var(--border)] px-4 text-sm hover:bg-[var(--bg-subtle)]"
         >
           {t.account.exportJson}
         </a>

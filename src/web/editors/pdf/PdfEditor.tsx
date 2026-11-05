@@ -479,7 +479,7 @@ function Workspace({
               type="button"
               onClick={() => setHist((h) => ({ ...h, at: Math.max(0, h.at - 1) }))}
               disabled={hist.at === 0}
-              className="rounded-full px-3 py-2 text-sm hover:bg-[var(--bg-subtle)] disabled:opacity-40"
+              className="rounded-lg px-3 py-2 text-sm hover:bg-[var(--bg-subtle)] disabled:opacity-40"
             >
               {t.editor.undo}
             </button>
@@ -694,7 +694,7 @@ function PagesTab({
         <button
           type="button"
           onClick={() => setSel(none ? new Set(work.pages.map((p) => p.key)) : new Set())}
-          className="shrink-0 rounded-full px-3 py-1.5 text-xs hover:bg-[var(--bg-subtle)]"
+          className="shrink-0 rounded-lg px-3 py-1.5 text-xs hover:bg-[var(--bg-subtle)]"
         >
           {none ? t.editor.selectAll : t.editor.selectedPages(picked.length)}
         </button>

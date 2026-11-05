@@ -17,16 +17,19 @@ import {
   MessageCircle,
   MessagesSquare,
   Minimize2,
+  Moon,
   Search,
   Settings,
   Share2,
   Star,
+  Sun,
   Trash2,
   Users,
   Wand2,
 } from 'lucide-react';
 import { useEffect, useRef, type ComponentType } from 'react';
 import { lang, setLang, t } from '../lib/i18n';
+import { setTheme, useTheme } from '../lib/theme';
 import { authClient } from '../lib/auth-client';
 import { sendJson } from '../lib/api';
 import { meQueryKey, useMe } from '../lib/session';
@@ -92,8 +95,12 @@ async function switchLang() {
   setLang(next);
 }
 
+// A row in the sidebar: muted until hovered, ink and bold when it is the current place.
 const navLink =
-  'z-nav flex items-center gap-3 rounded-xl px-3.5 py-2 text-sm text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)]';
+  'z-nav flex min-h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]';
+
+/** A group's name in the sidebar: sentence case, small and bold, no tracking. */
+const groupLabel = 'px-3 pb-1 text-xs font-bold text-[var(--muted)]';
 
 /** Spaces shown by name in the sidebar; the rest are one click away on /spaces. */
 const SIDEBAR_SPACES = 6;
@@ -111,9 +118,9 @@ function SpacesNav({ open }: { open: boolean }) {
       <Link
         to="/spaces"
         activeOptions={{ exact: true }}
-        className="z-nav flex items-center gap-2 rounded-xl px-3.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fg-muted)] hover:text-[var(--fg)]"
+        className="z-nav flex min-h-8 items-center gap-2 rounded-lg px-3 text-xs font-bold text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
       >
-        <LayoutGrid className="h-3.5 w-3.5" />
+        <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
         {t.nav.spaces}
       </Link>
       {spaces.slice(0, SIDEBAR_SPACES).map((s) => (
@@ -124,7 +131,7 @@ function SpacesNav({ open }: { open: boolean }) {
           className={navLink}
           title={`${s.team.name} · ${s.name}`}
         >
-          <MessagesSquare className="h-4 w-4 shrink-0" />
+          <MessagesSquare className="h-4 w-4 shrink-0" aria-hidden="true" />
           <span className="truncate">{s.name}</span>
         </Link>
       ))}
@@ -168,14 +175,31 @@ export function AppShell() {
 
   if (me.isPending) {
     return (
-      <div className="flex h-full items-center justify-center text-[var(--fg-muted)]">
+      <div
+        role="status"
+        className="flex h-full flex-col items-center justify-center gap-4 text-sm text-[var(--muted)]"
+      >
+        <Logo compact />
         {t.common.loading}
       </div>
     );
   }
   if (me.isError) {
     return (
-      <div className="flex h-full items-center justify-center text-red-600">{t.errors.generic}</div>
+      <div
+        role="alert"
+        className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center text-sm"
+      >
+        <Logo compact />
+        <p className="text-[var(--err)]">{t.errors.generic}</p>
+        <button
+          type="button"
+          onClick={() => void me.refetch()}
+          className="z-primary h-11 rounded-lg px-5 text-sm"
+        >
+          {t.common.retry}
+        </button>
+      </div>
     );
   }
   if (!me.data) return <ToSignIn next={location.pathname} />;
@@ -198,97 +222,115 @@ export function AppShell() {
     else await navigate({ to: '/masuk' });
   }
 
+  const initial = (data.user.name || data.user.email).slice(0, 1).toUpperCase();
+
   return (
     <div className="z-shell flex h-full flex-col md:flex-row">
-      <aside className="z-side hidden min-h-0 w-64 shrink-0 flex-col gap-5 overflow-y-auto border-r border-[var(--border)] p-4 md:flex [&>*]:shrink-0">
-        <Link to="/" className="px-2 pt-1">
-          <Logo />
-        </Link>
-        <NewMenu variant="sidebar" />
-        <nav className="flex flex-col gap-0.5" aria-label={t.a11y.mainNav}>
-          {nav.map((n) => (
-            <Link key={n.to} to={n.to} className={navLink}>
-              <n.icon className="h-4 w-4" />
-              {n.label}
-            </Link>
-          ))}
-        </nav>
-        <SpacesNav open={spacesOpen} />
-        <div className="z-card rounded-2xl p-4">
-          <StorageMeter storage={data.storage} />
-          <Link
-            to="/paket"
-            className="mt-3 flex h-9 items-center justify-center rounded-lg border border-[var(--border-strong)] text-xs font-semibold text-brand-700 transition-colors hover:bg-[var(--bg-subtle)]"
-          >
-            {t.storage.addSpace}
-          </Link>
-          <Link
-            to="/kembar"
-            className="mt-2 block text-center text-xs text-[var(--fg-muted)] hover:text-[var(--fg)]"
-          >
-            {t.duplicates.find}
+      <aside className="z-side hidden min-h-0 w-64 shrink-0 flex-col border-r border-[var(--line)] md:flex">
+        <div className="flex h-16 shrink-0 items-center border-b border-[var(--line)] px-5">
+          <Link to="/" aria-label={t.a11y.home} className="rounded-lg">
+            <Logo />
           </Link>
         </div>
-        <AdCard placement="explorer_sidebar" />
-        <nav className="flex flex-col gap-0.5" aria-label={t.a11y.productsNav}>
-          <p className="px-3.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--fg-muted)]">
-            {t.products.title}
-          </p>
-          <Link to="/ai" className={navLink}>
-            <Brain className="h-4 w-4" />
-            {t.products.ai}
-          </Link>
-          {catalog.data?.capabilities?.s3 && (
-            <Link to="/s3" className={navLink}>
-              <Database className="h-4 w-4" />
-              {t.products.s3}
+        <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-3 [&>*]:shrink-0">
+          <NewMenu variant="sidebar" />
+          <nav className="flex flex-col gap-0.5" aria-label={t.a11y.mainNav}>
+            {nav.map((n) => (
+              <Link key={n.to} to={n.to} className={navLink}>
+                <n.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {n.label}
+              </Link>
+            ))}
+          </nav>
+          <SpacesNav open={spacesOpen} />
+          <section
+            className="border-t border-[var(--line)] px-3 pt-4"
+            aria-label={t.a11y.storageUsed}
+          >
+            <StorageMeter storage={data.storage} />
+            <div className="mt-3 flex items-center gap-3">
+              <Link
+                to="/paket"
+                className="flex h-9 items-center rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-xs font-semibold text-[var(--ink)] transition-colors hover:bg-[var(--hover)]"
+              >
+                {t.storage.addSpace}
+              </Link>
+              <Link
+                to="/kembar"
+                className="text-xs text-[var(--muted)] underline-offset-4 hover:text-[var(--ink)] hover:underline"
+              >
+                {t.duplicates.find}
+              </Link>
+            </div>
+          </section>
+          <AdCard placement="explorer_sidebar" />
+          <nav className="flex flex-col gap-0.5" aria-label={t.a11y.productsNav}>
+            <p className={groupLabel}>{t.products.title}</p>
+            <Link to="/ai" className={navLink}>
+              <Brain className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {t.products.ai}
             </Link>
-          )}
-          {links.data?.chat && (
-            <a href={links.data.chat} className={navLink} rel="noopener">
-              <MessageCircle className="h-4 w-4" />
-              {t.products.chat}
-            </a>
-          )}
-          {links.data?.account && (
-            <a href={links.data.account} className={navLink}>
-              <CircleUser className="h-4 w-4" />
-              {t.products.account}
-            </a>
-          )}
-        </nav>
-        <div className="mt-auto flex flex-col gap-0.5 border-t border-[var(--border)] pt-3">
-          <Link to="/pengaturan" className={navLink}>
-            <Settings className="h-4 w-4" />
-            {t.nav.settings}
-          </Link>
-          <button type="button" onClick={() => void switchLang()} className={navLink}>
-            <Languages className="h-4 w-4" />
-            {lang === 'id' ? t.lang.en : t.lang.id}
-          </button>
-          <button type="button" onClick={signOut} className={navLink}>
-            <LogOut className="h-4 w-4" />
-            {t.nav.signOut}
-          </button>
-          <p className="flex gap-3 px-3.5 pt-2 text-[11px] text-[var(--fg-muted)]">
-            <Link to="/kebijakan/$slug" params={{ slug: 'syarat' }} className="hover:underline">
-              {t.legal.terms}
+            {catalog.data?.capabilities?.s3 && (
+              <Link to="/s3" className={navLink}>
+                <Database className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {t.products.s3}
+              </Link>
+            )}
+            {links.data?.chat && (
+              <a href={links.data.chat} className={navLink} rel="noopener">
+                <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {t.products.chat}
+              </a>
+            )}
+            {links.data?.account && (
+              <a href={links.data.account} className={navLink}>
+                <CircleUser className="h-4 w-4 shrink-0" aria-hidden="true" />
+                {t.products.account}
+              </a>
+            )}
+          </nav>
+          <div className="mt-auto flex flex-col gap-0.5 border-t border-[var(--line)] pt-3">
+            <Link to="/pengaturan" className={navLink}>
+              <Settings className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {t.nav.settings}
             </Link>
-            <Link to="/kebijakan/$slug" params={{ slug: 'privasi' }} className="hover:underline">
-              {t.legal.privacy}
-            </Link>
-          </p>
+            <ThemeSwitch className={navLink} />
+            <button type="button" onClick={() => void switchLang()} className={navLink}>
+              <Languages className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {lang === 'id' ? t.lang.en : t.lang.id}
+            </button>
+            <button type="button" onClick={signOut} className={navLink}>
+              <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {t.nav.signOut}
+            </button>
+            <p className="flex gap-4 px-3 pt-2 pb-1 text-xs text-[var(--muted)]">
+              <Link
+                to="/kebijakan/$slug"
+                params={{ slug: 'syarat' }}
+                className="underline-offset-4 hover:text-[var(--ink)] hover:underline"
+              >
+                {t.legal.terms}
+              </Link>
+              <Link
+                to="/kebijakan/$slug"
+                params={{ slug: 'privasi' }}
+                className="underline-offset-4 hover:text-[var(--ink)] hover:underline"
+              >
+                {t.legal.privacy}
+              </Link>
+            </p>
+          </div>
         </div>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="z-glass sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 md:px-6">
-          <Link to="/" className="md:hidden" aria-label={t.a11y.home}>
+        <header className="z-glass sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b border-[var(--line)] px-3 md:gap-3 md:px-6">
+          <Link to="/" className="shrink-0 rounded-lg md:hidden" aria-label={t.a11y.home}>
             <Logo compact />
           </Link>
           <form
             role="search"
-            className="flex h-11 max-w-2xl flex-1 items-center gap-2.5 rounded-xl border border-[var(--border)] bg-[var(--bg-subtle)] px-4 text-sm transition-colors focus-within:border-brand-500 focus-within:bg-[var(--card)] focus-within:ring-4 focus-within:ring-brand-500/15"
+            className="flex h-11 max-w-2xl min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-[var(--line)] bg-[var(--ground)] px-3.5 text-sm transition-colors focus-within:border-[var(--ink)] focus-within:bg-[var(--surface)] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[var(--focus)]"
             onSubmit={(e) => {
               e.preventDefault();
               const q = new FormData(e.currentTarget).get('q');
@@ -296,39 +338,42 @@ export function AppShell() {
                 void navigate({ to: '/cari', search: { q: q.trim() } });
             }}
           >
-            <Search className="h-4 w-4 text-[var(--fg-muted)]" aria-hidden="true" />
+            <Search className="h-4 w-4 shrink-0 text-[var(--muted)]" aria-hidden="true" />
             <input
               name="q"
               type="search"
               enterKeyHint="search"
-              className="w-full bg-transparent outline-none placeholder:text-[var(--fg-muted)]"
+              className="z-inner-field w-full min-w-0 bg-transparent text-base text-[var(--text)] outline-none placeholder:text-[var(--muted)] sm:text-sm"
               placeholder={t.nav.searchPlaceholder}
               aria-label={t.nav.searchPlaceholder}
             />
           </form>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1">
             {spacesOpen && (
               <Link
                 to="/spaces"
-                className="flex h-9 w-9 items-center justify-center rounded-full text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)] hover:text-[var(--fg)] md:hidden"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)] md:hidden"
                 aria-label={t.nav.spaces}
               >
-                <LayoutGrid className="h-5 w-5" />
+                <LayoutGrid className="h-5 w-5" aria-hidden="true" />
               </Link>
             )}
             <Bell />
+            {/* The person's initial on the Zeiko tile, where the logo's shape stands for them. */}
             <Link
               to="/pengaturan"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-teal-500 text-sm font-semibold text-white shadow-[0_0_0_2px_var(--bg),0_0_0_3px_rgba(99,102,241,0.45)] transition-transform hover:scale-105"
+              className="group flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
               aria-label={t.nav.settings}
             >
-              {(data.user.name || data.user.email).slice(0, 1).toUpperCase()}
+              <span className="z-tile z-tile-ink h-9 w-9 text-sm font-bold transition-colors group-hover:bg-[color-mix(in_srgb,var(--ink)_86%,var(--bg))]">
+                {initial}
+              </span>
             </Link>
           </div>
         </header>
         <BillingBanner />
         <main
-          className={`min-h-0 flex-1 overflow-auto pb-16 ${fullHeight ? 'md:pb-0' : 'md:pb-24'}`}
+          className={`min-h-0 flex-1 overflow-auto pb-20 ${fullHeight ? 'md:pb-0' : 'md:pb-24'}`}
         >
           <Outlet />
         </main>
@@ -340,22 +385,34 @@ export function AppShell() {
       <ArchivePanel />
       <Toaster />
       <nav
-        className="z-glass fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-[var(--border)] pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="z-glass fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 border-t border-[var(--line)] pb-[env(safe-area-inset-bottom)] md:hidden"
         aria-label={t.a11y.bottomNav}
       >
         {TABS.map((n) => (
           <Link
             key={n.to}
             to={n.to}
-            className="group flex flex-col items-center gap-1 pt-2 pb-2.5 text-[11px] font-medium text-[var(--fg-muted)] [&.active]:text-brand-700"
+            className="group flex min-h-14 flex-col items-center justify-center gap-0.5 pt-1.5 pb-2 text-[11px] font-semibold text-[var(--muted)] [&.active]:text-[var(--ink)]"
           >
-            <span className="flex h-7 w-14 items-center justify-center rounded-full transition-colors group-[.active]:bg-[var(--accent-soft)]">
-              <n.icon className="h-5 w-5" />
+            <span className="flex h-7 w-12 items-center justify-center rounded-lg transition-colors group-[.active]:bg-[var(--select)]">
+              <n.icon className="h-5 w-5" aria-hidden="true" />
             </span>
             {n.label}
           </Link>
         ))}
       </nav>
     </div>
+  );
+}
+
+/** Light or dark, from the sidebar (phones have it in Settings). The label names what it does. */
+function ThemeSwitch({ className }: { className: string }) {
+  const light = useTheme() === 'light';
+  const Icon = light ? Moon : Sun;
+  return (
+    <button type="button" onClick={() => setTheme(light ? 'dark' : 'light')} className={className}>
+      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+      {light ? t.theme.toDark : t.theme.toLight}
+    </button>
   );
 }

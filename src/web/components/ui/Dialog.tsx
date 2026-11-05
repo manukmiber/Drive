@@ -28,11 +28,11 @@ export function Dialog({
       ref={ref}
       onClose={onClose}
       onClick={(e) => e.target === ref.current && onClose()}
-      className="m-auto w-[min(92vw,26rem)] z-card rounded-2xl p-0 text-[var(--fg)] backdrop:bg-black/40"
+      className="m-auto w-[min(92vw,26rem)] rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-0 text-[var(--text)] shadow-xl backdrop:bg-black/55"
     >
       {open && (
         <div className="p-5">
-          <h2 className="text-lg font-semibold">{title}</h2>
+          <h2 className="text-lg leading-snug font-bold">{title}</h2>
           <div className="mt-3 text-sm">{children}</div>
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             {footer ?? (
@@ -101,7 +101,7 @@ export function PromptDialog({
         <input
           ref={input}
           aria-label={title}
-          className="h-10 w-full rounded-xl border border-[var(--border)] bg-[var(--bg)] px-3 outline-none focus:border-brand-500"
+          className="h-11 w-full rounded-lg border border-[var(--line-strong)] bg-[var(--surface)] px-3 text-base outline-none focus:border-[var(--ink)] sm:text-sm"
           maxLength={255}
         />
       </form>

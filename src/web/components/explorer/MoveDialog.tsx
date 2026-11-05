@@ -54,7 +54,7 @@ export function MoveDialog({
               key={id}
               type="button"
               onClick={() => setFolderId(id!)}
-              className={`rounded-full border px-3 py-1 text-xs ${path[0]?.id === id ? 'border-brand-500 bg-brand-50 dark:bg-brand-800/40 text-brand-800' : 'border-[var(--border)]'}`}
+              className={`rounded-lg border px-3 py-1.5 text-xs ${path[0]?.id === id ? 'border-brand-500 bg-brand-50 dark:bg-brand-800/40 text-brand-800' : 'border-[var(--border)]'}`}
             >
               {label}
             </button>
@@ -86,7 +86,7 @@ export function MoveDialog({
           </li>
         ))}
         {q.isSuccess && !folders.length && (
-          <li className="px-3 py-4 text-center text-xs text-[var(--fg-muted)]">—</li>
+          <li className="px-3 py-4 text-center text-xs text-[var(--fg-muted)]">–</li>
         )}
       </ul>
     </Dialog>

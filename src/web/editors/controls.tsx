@@ -69,7 +69,7 @@ export function Chips<T extends string>({
             onClick={() => onChange(id)}
             aria-pressed={value === id}
             className={cn(
-              'shrink-0 rounded-full border border-[var(--border)] px-3 py-1.5 text-xs',
+              'shrink-0 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs',
               value === id && 'border-brand-500 bg-[var(--accent-soft)] text-[var(--accent)]',
             )}
           >

@@ -3023,3 +3023,41 @@ langsung; T4 sebelumnya menaruh W6 sesudah rilis pertama).
 **Belum:** kunci "sedang diedit" (W5) untuk editor teks dan editor lain, `.csv`/`.tsv` bersama, reconnect yang
 melewati satu ringkasan bisa kehilangan perubahan di spreadsheet (dokumen tidak), dan uji Durable Object sungguhan
 di staging.
+
+## ADR-101 — Tampilan Drive memakai desain Zeiko, dengan logo kawung
+
+**Konteks:** pemilik (2026-11-05): "Full rework UI drive, masukan logo juga". Website sudah pindah ke desain Zeiko
+(`proxychat/DESIGN.md`, 2026-11-02) dan logo kawung (`proxychat/brand/zeiko`, dipilih pemilik 2026-11-02), tetapi
+Drive masih memakai logo "Z" ungu, palet indigo, efek kaca, glow, gradasi, dan ikon file warna-warni. Roadmap Drive
+sudah menulis bahwa tampilan memakai desain Zeiko.
+
+**Keputusan:**
+- **Logo**: tanda kawung dan tulisan "Zeiko" sebagai garis (outline) persis dari `brand/zeiko`, lalu "Drive" dalam
+  Plus Jakarta Sans 500 di ukuran dan garis dasar yang sama (`components/Logo.tsx`; `Mark` = tanda saja). Ubin tetap
+  biru tua di dua tema, tulisan mengikuti warna teks. Favicon = `zeiko-icon-32.svg`, ikon aplikasi = PNG 180/512 dari
+  brand. QR share (ADR-059) menggambar tanda kawung (`shared/qr.ts`), dan masih terbaca di semua panjang link yang dites.
+  Halaman link share dari Worker dan email memakai tanda yang sama.
+- **Warna**: token di `styles.css` mengikuti website: tinta biru tua `#1f2639` (krem `#eee6d7` di tema gelap) untuk
+  teks, judul, tombol utama, dan yang sedang dipilih; netral `--ground`/`--line`; status `--ok`/`--warn`/`--err`.
+  Amber logo (`--amber`/`--marker`) hanya untuk pita harga (`.z-price`, halaman Paket) dan titik logo. Nama lama
+  (`--fg`, `--card`, `brand-*`, …) diarahkan ke token baru, jadi layar yang belum disentuh ikut berubah. Skala
+  `brand-*` punya nilai sendiri di tema gelap (tint, krem untuk teks, isi slate yang tetap terbaca dengan teks putih).
+- **Tema**: gelap tetap default apa pun pengaturan sistem (pemilik, 2026-11-03). Terang kalau dipilih, disimpan di
+  perangkat dengan kunci `zeiko-theme` seperti website (`lib/theme.ts`). `public/theme.js` memasangnya di `<head>`
+  sebelum app digambar, jadi tidak ada kedip. Saklar di sidebar desktop dan di Pengaturan → Tampilan (HP).
+- **Huruf**: Plus Jakarta Sans (variabel, 200–800) dan Cousine, file sendiri di `src/web/fonts/`. Judul halaman 800,
+  judul bagian 700, angka tabular.
+- **Bentuk**: sudut 8 px untuk kontrol dan baris, 14 px untuk kartu, panel, dialog (`rounded-xl`/`rounded-2xl` di tema
+  diarahkan ke dua nilai itu). Tanpa pil kecuali tag status. Datar: garis 1 px, bayangan hanya untuk yang melayang
+  (menu, dialog, panel, toast). Tanpa kaca, glow, atau gradasi.
+- **Explorer**: baris dipisah garis tipis seperti daftar harga website. Tiap baris diawali ubin berbentuk ubin logo:
+  thumbnail, glyph folder, atau ekstensi file dalam huruf kecil tebal ("pdf", "jpg"), jadi jenis file terbaca tanpa
+  kode warna. Ikon file tidak lagi berwarna-warni; warna diserahkan ke warna folder pilihan orang (ADR-058).
+  Folder kosong punya tombol "Upload file" yang langsung membuka pemilih file ke folder itu.
+- **Paket**: daftar paket jadi baris (ukuran, nama, harga di pita amber, satu tombol), bukan lima kartu. Paket yang
+  sedang dipakai diberi latar, tanpa glow.
+- **Ukuran sentuh**: tombol 44 px, baris file minimal 56 px, menu 44 px per baris.
+
+**Belum:** `components/spaces/{Chat,Composer,MessageExtras}.tsx` sedang diubah sesi lain (belum di-commit), jadi
+label huruf kapital di daftar topik chat belum diganti. Editor (foto, video, PDF, kolase) hanya ikut token; tata
+letaknya belum ditata ulang. Beberapa tombol kecil (36 px) masih ada di Pengaturan, S3, dan editor.

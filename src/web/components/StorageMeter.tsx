@@ -2,24 +2,22 @@ import { formatBytes, formatPercent, usageRatios } from '../../shared/format';
 import { t } from '../lib/i18n';
 import type { Me } from '../lib/types';
 
+// How full the person's storage is: the figure first, a bar in the ink fill, and the bar turns to
+// the warning and error colours at 80% and 95% (the only time it is not ink).
 export function StorageMeter({ storage }: { storage: Me['storage'] }) {
   const used = storage.usedBytes + storage.reservedBytes;
   const r = usageRatios(used, storage.limitBytes);
   const tone =
-    r.used >= 0.95
-      ? 'bg-red-500'
-      : r.used >= 0.8
-        ? 'bg-amber-500'
-        : 'bg-gradient-to-r from-teal-400 to-brand-500';
+    r.used >= 0.95 ? 'bg-[var(--err)]' : r.used >= 0.8 ? 'bg-[var(--warn)]' : 'bg-[var(--fill)]';
   return (
     <div className="space-y-2">
       {storage.limitBytes > 0 && (
-        <p className="text-sm font-semibold tabular-nums">
+        <p className="text-sm font-bold text-[var(--ink)] tabular-nums">
           {t.storage.of(formatBytes(used), formatBytes(storage.limitBytes))}
         </p>
       )}
       <div
-        className="h-2 overflow-hidden rounded-full bg-[var(--bg-subtle)] ring-1 ring-[var(--border)] ring-inset"
+        className="h-1.5 overflow-hidden rounded-full bg-[var(--line)]"
         role="meter"
         aria-valuemin={0}
         aria-valuemax={100}
@@ -32,11 +30,11 @@ export function StorageMeter({ storage }: { storage: Me['storage'] }) {
         />
       </div>
       {storage.limitBytes > 0 ? (
-        <p className="text-xs text-[var(--fg-muted)] tabular-nums">
+        <p className="text-xs text-[var(--muted)] tabular-nums">
           {t.storage.meter(formatPercent(r.used), formatPercent(r.free))}
         </p>
       ) : (
-        <p className="text-xs text-[var(--fg-muted)]">{t.storage.noPlan}</p>
+        <p className="text-xs text-[var(--muted)]">{t.storage.noPlan}</p>
       )}
     </div>
   );

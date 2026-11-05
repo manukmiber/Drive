@@ -157,7 +157,7 @@ export function Search({ q: query, type }: { q: string; type?: string | undefine
         <Link
           to="/galeri"
           search={{ q: query }}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] px-3 text-xs hover:bg-[var(--bg-subtle)]"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 text-xs hover:bg-[var(--bg-subtle)]"
         >
           <Images className="h-3.5 w-3.5" aria-hidden="true" />
           {t.gallery.showAsGallery}
@@ -168,7 +168,7 @@ export function Search({ q: query, type }: { q: string; type?: string | undefine
             type="button"
             onClick={() => go(query, ty)}
             className={cn(
-              'shrink-0 rounded-full border px-3 py-1 text-xs',
+              'shrink-0 rounded-lg border px-3 py-1 text-xs',
               type === ty
                 ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-800/40 dark:text-brand-100'
                 : 'border-[var(--border)] hover:bg-[var(--bg-subtle)]',
@@ -288,7 +288,7 @@ export function Shared() {
         {people && (
           <Link
             to="/untuk-saya"
-            className="inline-flex h-9 items-center rounded-full border border-[var(--border)] px-3 text-sm"
+            className="inline-flex h-9 items-center rounded-lg border border-[var(--border)] px-3 text-sm"
           >
             {t.nav.sharedWithMe}
           </Link>

@@ -12,21 +12,27 @@ export const QR_MARGIN = 2;
  */
 export const LOGO_SHARE = 0.09;
 
-const MARK_FILL = '#4338ca';
-const MARK_RGB = [0x43, 0x38, 0xca] as const;
-// The Z of the favicon (viewBox 0 0 64 64), as a polygon.
-const GLYPH: readonly (readonly [number, number])[] = [
-  [18, 20],
-  [46, 20],
-  [46, 26],
-  [28, 40],
-  [46, 40],
-  [46, 46],
-  [18, 46],
-  [18, 40],
-  [36, 26],
-  [18, 26],
+// The Zeiko mark (proxychat/brand/zeiko, viewBox 0 0 64 64): a navy tile, four cream kawung
+// petals and the amber dot in the middle.
+const TILE_FILL = '#1f2639';
+const PETAL_FILL = '#eee6d7';
+const DOT_FILL = '#f0ae48';
+const RGB = {
+  tile: [0x1f, 0x26, 0x39],
+  petal: [0xee, 0xe6, 0xd7],
+  dot: [0xf0, 0xae, 0x48],
+  white: [0xff, 0xff, 0xff],
+} as const;
+/** Each petal: centre, then its angle (degrees); every petal is 11 × 6.6 in radius. */
+const PETALS: readonly (readonly [number, number, number])[] = [
+  [21, 21, 45],
+  [43, 43, 45],
+  [43, 21, -45],
+  [21, 43, -45],
 ];
+const PETAL_RX = 11;
+const PETAL_RY = 6.6;
+const DOT = { cx: 32, cy: 32, r: 3.6 };
 
 export interface QrPlan {
   /** Modules across, quiet zone included. */
@@ -108,12 +114,14 @@ export function qrSvg(text: string, logo = true): string {
   if (plan.tile) {
     const m = markBox(plan.tile);
     const k = m.size / 64;
-    const glyph = GLYPH.map(
-      ([gx, gy], i) => `${i ? 'L' : 'M'}${f(m.at + gx * k)} ${f(m.at + gy * k)}`,
-    );
+    const petals = PETALS.map(
+      ([cx, cy, deg]) =>
+        `<ellipse cx="${f(m.at + cx * k)}" cy="${f(m.at + cy * k)}" rx="${f(PETAL_RX * k)}" ry="${f(PETAL_RY * k)}" transform="rotate(${deg} ${f(m.at + cx * k)} ${f(m.at + cy * k)})"/>`,
+    ).join('');
     mark =
-      `<path d="${roundRectPath(m.at, m.size, m.radius)}" fill="${MARK_FILL}"/>` +
-      `<path d="${glyph.join('')}Z" fill="#fff"/>`;
+      `<path d="${roundRectPath(m.at, m.size, m.radius)}" fill="${TILE_FILL}"/>` +
+      `<g fill="${PETAL_FILL}">${petals}</g>` +
+      `<circle cx="${f(m.at + DOT.cx * k)}" cy="${f(m.at + DOT.cy * k)}" r="${f(DOT.r * k)}" fill="${DOT_FILL}"/>`;
   }
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${plan.side} ${plan.side}">` +
@@ -130,14 +138,18 @@ function inRoundRect(px: number, py: number, at: number, size: number, r: number
   return (px - cx) ** 2 + (py - cy) ** 2 <= r * r;
 }
 
-function inGlyph(px: number, py: number): boolean {
-  let inside = false;
-  for (let i = 0, j = GLYPH.length - 1; i < GLYPH.length; j = i++) {
-    const [xi, yi] = GLYPH[i]!;
-    const [xj, yj] = GLYPH[j]!;
-    if (yi > py !== yj > py && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+/** Which part of the mark a point (in the mark's 64-unit space) falls on. */
+function markPart(x: number, y: number): 'dot' | 'petal' | 'tile' {
+  if ((x - DOT.cx) ** 2 + (y - DOT.cy) ** 2 <= DOT.r ** 2) return 'dot';
+  for (const [cx, cy, deg] of PETALS) {
+    const a = (-deg * Math.PI) / 180;
+    const dx = x - cx;
+    const dy = y - cy;
+    const u = dx * Math.cos(a) - dy * Math.sin(a);
+    const v = dx * Math.sin(a) + dy * Math.cos(a);
+    if ((u / PETAL_RX) ** 2 + (v / PETAL_RY) ** 2 <= 1) return 'petal';
   }
-  return inside;
+  return 'tile';
 }
 
 /**
@@ -179,12 +191,12 @@ export function qrRaster(
           for (let sx = 0; sx < S; sx++) {
             const mx = (x + (sx + 0.5) / S) / scale;
             const my = (y + (sy + 0.5) / S) / scale;
-            const onMark =
-              inRoundRect(mx, my, m.at, m.size, m.radius) &&
-              !inGlyph((mx - m.at) / k, (my - m.at) / k);
-            r += onMark ? MARK_RGB[0] : 255;
-            g += onMark ? MARK_RGB[1] : 255;
-            b += onMark ? MARK_RGB[2] : 255;
+            const c = inRoundRect(mx, my, m.at, m.size, m.radius)
+              ? RGB[markPart((mx - m.at) / k, (my - m.at) / k)]
+              : RGB.white;
+            r += c[0];
+            g += c[1];
+            b += c[2];
           }
         const i = (y * px + x) * 4;
         rgba[i] = r / (S * S);

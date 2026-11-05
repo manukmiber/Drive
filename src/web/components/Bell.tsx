@@ -42,26 +42,26 @@ export function Bell() {
       <button
         type="button"
         onClick={() => setOpen(!open)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-full hover:bg-[var(--bg-subtle)]"
+        className="relative flex h-11 w-11 items-center justify-center rounded-lg text-[var(--muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]"
         aria-label={unread ? `${t.nav.notifications} (${unread} baru)` : t.nav.notifications}
         aria-expanded={open}
       >
-        <BellIcon className="h-5 w-5" />
+        <BellIcon className="h-5 w-5" aria-hidden="true" />
         {unread > 0 && (
-          <span className="absolute top-1 right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white">
+          <span className="absolute top-1.5 right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--fill)] px-1 text-[10px] font-bold text-white tabular-nums">
             {unread > 9 ? '9+' : unread}
           </span>
         )}
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-[min(92vw,22rem)] overflow-hidden z-card rounded-2xl shadow-xl">
+        <div className="absolute right-0 z-50 mt-2 w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-xl">
           <div className="flex items-center justify-between border-b border-[var(--border)] px-4 py-2">
-            <p className="text-sm font-medium">{t.nav.notifications}</p>
+            <p className="text-sm font-bold text-[var(--ink)]">{t.nav.notifications}</p>
             {unread > 0 && (
               <button
                 type="button"
                 onClick={readAll}
-                className="text-xs text-brand-700 hover:underline dark:text-brand-100"
+                className="-my-2 min-h-11 text-xs font-semibold text-[var(--ink)] underline underline-offset-4"
               >
                 {t.notifications.readAll}
               </button>
@@ -73,7 +73,7 @@ export function Bell() {
                 key={n.id}
                 className={cn(
                   'border-b border-[var(--border)] px-4 py-3 last:border-0',
-                  !n.readAt && 'bg-brand-50/60 dark:bg-brand-800/20',
+                  !n.readAt && 'bg-[var(--select)]',
                 )}
               >
                 <a
@@ -95,6 +95,16 @@ export function Bell() {
                 </a>
               </li>
             ))}
+            {q.isPending && (
+              <li className="px-4 py-6 text-center text-sm text-[var(--muted)]">
+                {t.common.loading}
+              </li>
+            )}
+            {q.isError && (
+              <li className="px-4 py-6 text-center text-sm text-[var(--err)]">
+                {t.errors.generic}
+              </li>
+            )}
             {q.isSuccess && !q.data.items.length && (
               <li className="px-4 py-6 text-center text-sm text-[var(--fg-muted)]">
                 {t.notifications.empty}

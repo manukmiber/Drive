@@ -87,7 +87,7 @@ export function SearchFilters({ q, onChange }: { q: string; onChange: (q: string
           setOpen(true);
         }}
         className={cn(
-          'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs',
+          'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-xs',
           count
             ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-800/40 dark:text-brand-100'
             : 'border-[var(--border)] hover:bg-[var(--bg-subtle)]',
@@ -131,7 +131,7 @@ export function SearchFilters({ q, onChange }: { q: string; onChange: (q: string
                       })
                     }
                     className={cn(
-                      'rounded-full border px-3 py-1 text-xs',
+                      'rounded-lg border px-3 py-1 text-xs',
                       on
                         ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-800/40 dark:text-brand-100'
                         : 'border-[var(--border)]',

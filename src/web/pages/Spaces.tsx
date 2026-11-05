@@ -134,7 +134,7 @@ export function SpacesHome() {
     <div className="mx-auto max-w-3xl space-y-4 p-4 md:p-6">
       <header className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold">{t.spaces.title}</h1>
+          <h1 className="text-2xl">{t.spaces.title}</h1>
           <p className="mt-1 max-w-prose text-sm text-[var(--fg-muted)]">{t.spaces.intro}</p>
         </div>
         {open && (

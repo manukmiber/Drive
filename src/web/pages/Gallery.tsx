@@ -246,7 +246,9 @@ export function Tile({
         <span
           className={cn(
             'flex h-5 w-5 items-center justify-center rounded-full border-2',
-            selected ? 'border-brand-500 bg-brand-500 text-white' : 'border-white/90 bg-black/20',
+            selected
+              ? 'border-[var(--fill)] bg-[var(--fill)] text-white'
+              : 'border-white/90 bg-black/20',
           )}
         >
           {selected && <Check className="h-3 w-3" />}
@@ -348,7 +350,7 @@ const useWide = () => useSyncExternalStore(subscribeWide, () => window.matchMedi
 export function GalleryTabs({ current }: { current: 'photos' | 'albums' }) {
   const tab = (active: boolean) =>
     cn(
-      'rounded-full px-3 py-1 text-sm',
+      'rounded-lg px-3 py-1 text-sm',
       active
         ? 'bg-brand-50 font-medium text-brand-800 dark:bg-brand-800/40 dark:text-brand-100'
         : 'text-[var(--fg-muted)] hover:bg-[var(--bg-subtle)]',
@@ -511,7 +513,7 @@ export function Gallery({ q, space }: { q: string; space?: 'personal' | 'family'
               m.onSelect();
             }}
             className={cn(
-              'inline-flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--bg-subtle)]',
+              'inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs hover:bg-[var(--bg-subtle)]',
               m.danger && 'text-red-600',
             )}
           >

@@ -155,7 +155,7 @@ export function CurvesPanel({
                 key={p}
                 type="button"
                 onClick={() => set(CURVE_PRESETS[p])}
-                className="rounded-full border border-[var(--border)] px-3 py-1 text-xs hover:bg-[var(--bg-subtle)]"
+                className="rounded-lg border border-[var(--border)] px-3 py-1 text-xs hover:bg-[var(--bg-subtle)]"
               >
                 {t.editor.curvePresets[p]}
               </button>
@@ -520,7 +520,7 @@ export function SizePanel({
             onClick={() => edit({ scale: s })}
             aria-pressed={st.scale === s}
             className={cn(
-              'rounded-full border border-[var(--border)] px-3 py-1 text-xs',
+              'rounded-lg border border-[var(--border)] px-3 py-1 text-xs',
               st.scale === s && 'border-brand-500 bg-[var(--accent-soft)] text-[var(--accent)]',
             )}
           >

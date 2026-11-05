@@ -69,11 +69,13 @@ export function SignIn() {
   }, [attempt]);
 
   return (
-    <div className="flex min-h-full items-center justify-center bg-[var(--bg-subtle)] p-4">
-      <div className="w-full max-w-sm z-card rounded-2xl p-6 shadow-sm">
+    <main className="flex min-h-full flex-col items-center justify-center bg-[var(--ground)] px-4 py-10">
+      <div className="w-full max-w-sm rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-6 sm:p-8">
         <Logo />
-        <h1 className="mt-6 text-xl font-semibold">{t.auth.signInTitle}</h1>
-        <p className="mt-1 text-sm text-[var(--fg-muted)]">{t.auth.signInSubtitle}</p>
+        <h1 className="mt-8 text-2xl leading-tight font-extrabold tracking-[-0.015em]">
+          {t.auth.signInTitle}
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-[var(--muted)]">{t.auth.signInSubtitle}</p>
 
         {state === 'checking' && (
           <p role="status" className="mt-6 text-sm text-[var(--fg-muted)]">
@@ -85,19 +87,19 @@ export function SignIn() {
           <div className="mt-6 space-y-2">
             <a
               href={links.signIn}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-full bg-brand-700 text-sm font-medium text-white"
+              className="z-primary flex h-11 w-full items-center justify-center gap-2 rounded-lg text-sm"
             >
               <LogIn className="h-4 w-4" aria-hidden="true" />
               {t.auth.withZeiko}
             </a>
             <a
               href={links.signUp}
-              className="flex h-11 w-full items-center justify-center gap-2 rounded-full border border-[var(--border)] text-sm font-medium"
+              className="flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-[var(--line-strong)] text-sm font-semibold text-[var(--ink)] transition-colors hover:bg-[var(--hover)]"
             >
               <UserPlus className="h-4 w-4" aria-hidden="true" />
               {t.auth.createAccount}
             </a>
-            <p className="pt-2 text-xs text-[var(--fg-muted)]">{t.auth.otherTab}</p>
+            <p className="pt-2 text-xs leading-relaxed text-[var(--muted)]">{t.auth.otherTab}</p>
             {dev && <p className="text-xs text-amber-600">{t.auth.devHint}</p>}
           </div>
         )}
@@ -110,7 +112,7 @@ export function SignIn() {
             {links && (
               <a
                 href={links.account}
-                className="flex h-11 w-full items-center justify-center rounded-full bg-brand-700 text-sm font-medium text-white"
+                className="z-primary flex h-11 w-full items-center justify-center rounded-lg text-sm"
               >
                 {t.auth.openAccount}
               </a>
@@ -131,7 +133,7 @@ export function SignIn() {
             </Button>
           </div>
         )}
-        <p className="mt-8 text-xs text-[var(--fg-muted)]">
+        <p className="mt-8 border-t border-[var(--line)] pt-4 text-xs leading-relaxed text-[var(--muted)]">
           {t.legal.agreeBefore}
           <Link to="/kebijakan/$slug" params={{ slug: 'syarat' }} className="underline">
             {t.legal.termsLong}
@@ -143,6 +145,6 @@ export function SignIn() {
           .
         </p>
       </div>
-    </div>
+    </main>
   );
 }

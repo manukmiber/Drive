@@ -13,14 +13,16 @@ export function escapeHtml(s: string): string {
 }
 
 function layout(m: Strings['mail'], title: string, bodyHtml: string): string {
-  return `<!doctype html><html lang="${m.lang}"><body style="margin:0;background:#f6f7fb;font-family:system-ui,sans-serif;color:#111827">
+  // Zeiko's light scheme (ADR-101): navy ink on white, the kawung mark from the website (the same
+  // 96px image the Zeiko Account's own emails use).
+  return `<!doctype html><html lang="${m.lang}"><body style="margin:0;background:#f4f5f8;font-family:'Plus Jakarta Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;color:#1f2639">
 <div style="max-width:480px;margin:0 auto;padding:24px">
-<div style="background:#fff;border-radius:16px;padding:24px;border:1px solid #e5e7eb">
-<p style="margin:0 0 16px;font-weight:600;color:#4338ca">Zeiko</p>
-<h1 style="font-size:18px;margin:0 0 12px">${escapeHtml(title)}</h1>
+<div style="background:#fff;border-radius:14px;padding:24px;border:1px solid #e3e5eb">
+<p style="margin:0 0 20px;font-weight:800;font-size:16px;color:#1f2639"><img src="https://zeiko.biz.id/img/mark-mail.png" width="28" height="28" alt="" style="width:28px;height:28px;vertical-align:middle;margin-right:8px;border:0">Zeiko Drive</p>
+<h1 style="font-size:20px;font-weight:800;line-height:1.25;margin:0 0 12px;color:#1f2639">${escapeHtml(title)}</h1>
 ${bodyHtml}
 </div>
-<p style="font-size:12px;color:#6b7280;text-align:center;margin-top:16px">${escapeHtml(m.footer)}</p>
+<p style="font-size:12px;color:#586074;text-align:center;margin-top:16px">${escapeHtml(m.footer)}</p>
 </div></body></html>`;
 }
 
@@ -55,12 +57,12 @@ export function shareEmail(
     m,
     subject,
     `<p style="font-size:14px">${m.shareLead(escapeHtml(p.senderName), `<b>${escapeHtml(p.title)}</b>`, escapeHtml(p.sizeText))}</p>
-${p.message ? `<blockquote style="margin:12px 0;padding:12px;border-left:3px solid #c7d2fe;background:#eef2ff;white-space:pre-wrap;font-size:14px">${escapeHtml(p.message)}</blockquote>` : ''}
-<p><a href="${escapeHtml(p.url)}" style="display:inline-block;background:#4338ca;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600">${escapeHtml(m.shareDownload)}</a></p>
-${p.expiresText ? `<p style="font-size:13px;color:#6b7280">${escapeHtml(m.shareUntil(p.expiresText))}</p>` : ''}
-<p style="font-size:12px;color:#6b7280;margin-top:20px">${escapeHtml(m.shareSentFor(p.senderEmail))} ·
-<a href="${escapeHtml(p.reportUrl)}" style="color:#6b7280">${escapeHtml(m.shareReport)}</a> ·
-<a href="${escapeHtml(p.unsubscribeUrl)}" style="color:#6b7280">${escapeHtml(m.unsubscribe)}</a></p>`,
+${p.message ? `<blockquote style="margin:12px 0;padding:12px 14px;border:1px solid #e3e5eb;border-radius:8px;background:#f4f5f8;white-space:pre-wrap;font-size:14px">${escapeHtml(p.message)}</blockquote>` : ''}
+<p><a href="${escapeHtml(p.url)}" style="display:inline-block;background:#1f2639;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">${escapeHtml(m.shareDownload)}</a></p>
+${p.expiresText ? `<p style="font-size:13px;color:#586074">${escapeHtml(m.shareUntil(p.expiresText))}</p>` : ''}
+<p style="font-size:12px;color:#586074;margin-top:20px">${escapeHtml(m.shareSentFor(p.senderEmail))} ·
+<a href="${escapeHtml(p.reportUrl)}" style="color:#586074">${escapeHtml(m.shareReport)}</a> ·
+<a href="${escapeHtml(p.unsubscribeUrl)}" style="color:#586074">${escapeHtml(m.unsubscribe)}</a></p>`,
   );
   return { subject, text, html };
 }
@@ -79,9 +81,9 @@ export function noticeEmail(
   const html = layout(
     strings(lang).mail,
     p.title,
-    `${p.paragraphs.map((x) => `<p style="font-size:14px;color:#374151">${escapeHtml(x)}</p>`).join('\n')}
+    `${p.paragraphs.map((x) => `<p style="font-size:14px;color:#1f2639">${escapeHtml(x)}</p>`).join('\n')}
 ${p.image ? `<p style="text-align:center"><img src="${escapeHtml(p.image.src)}" alt="${escapeHtml(p.image.alt)}" width="260" height="260" style="width:260px;height:260px;image-rendering:pixelated"></p>` : ''}
-${p.cta ? `<p><a href="${escapeHtml(p.cta.url)}" style="display:inline-block;background:#4338ca;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:600">${escapeHtml(p.cta.label)}</a></p>` : ''}`,
+${p.cta ? `<p><a href="${escapeHtml(p.cta.url)}" style="display:inline-block;background:#1f2639;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700">${escapeHtml(p.cta.label)}</a></p>` : ''}`,
   );
   return { subject: p.title, text, html };
 }

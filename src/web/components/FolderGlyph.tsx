@@ -92,7 +92,7 @@ export function FolderGlyph({
   return (
     <Icon
       aria-hidden="true"
-      className={cn(className, 'shrink-0', color ? 'decor-color' : 'text-brand-600')}
+      className={cn(className, 'shrink-0', color ? 'decor-color' : 'text-[var(--ink)]')}
       style={decorVars(color)}
     />
   );
