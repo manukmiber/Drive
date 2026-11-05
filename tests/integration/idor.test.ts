@@ -6,6 +6,7 @@ import { signIn } from '../helpers/session';
 import { imageBody, operator } from '../helpers/ops';
 import { createFolder, grantPlan, rootOf, uploadText } from '../helpers/files';
 import { fileNotice, noticesOf } from '../helpers/notices';
+import { invalidateConfigMemo } from '../../src/worker/services/config';
 
 const DAV = 'https://dav.zeiko.test';
 
@@ -383,6 +384,45 @@ describe('IDOR (SPEC §14.1)', () => {
     expect(bGallery.items).toEqual([]);
     const bListing = await (await asB('PROPFIND', '/Drive%20Saya/', { depth: '1' })).text();
     for (const secret of ['ktp.txt', 'Pribadi']) expect(bListing).not.toContain(secret);
+    // W1 (ADR-095): A's team and Space are not found by B, whatever B does with their ids.
+    rt.d1.sqlite
+      .prepare(
+        `INSERT INTO app_config (key, value_json, updated_by, updated_at) VALUES ('spaces_open', 'true', 'test', 0)
+         ON CONFLICT (key) DO UPDATE SET value_json = excluded.value_json`,
+      )
+      .run();
+    await rt.env.CONFIG_KV.delete('config:v1');
+    invalidateConfigMemo(rt.env);
+    const teamRes = await a.req('POST', '/api/teams', { name: 'Tim A' });
+    expect(teamRes.status, await teamRes.clone().text()).toBe(201);
+    const teamId = ((await teamRes.json()) as { team: { id: string } }).team.id;
+    const spaceRes = await a.req('POST', `/api/teams/${teamId}/spaces`, { name: 'Ruang A' });
+    const spaceId = ((await spaceRes.json()) as { space: { id: string } }).space.id;
+    for (const [m, path, body] of [
+      ['GET', `/api/teams/${teamId}`, undefined],
+      ['PATCH', `/api/teams/${teamId}`, { name: 'diambil' }],
+      ['DELETE', `/api/teams/${teamId}`, undefined],
+      ['POST', `/api/teams/${teamId}/members`, { email: 'penyerang@example.com' }],
+      ['PATCH', `/api/teams/${teamId}/members/${a.userId}`, { role: 'member' }],
+      ['DELETE', `/api/teams/${teamId}/members/${a.userId}`, undefined],
+      ['POST', `/api/teams/${teamId}/owner`, { userId: b.userId }],
+      ['POST', `/api/teams/${teamId}/spaces`, { name: 'x' }],
+      ['GET', `/api/spaces/${spaceId}`, undefined],
+      ['PATCH', `/api/spaces/${spaceId}`, { name: 'diambil' }],
+      ['DELETE', `/api/spaces/${spaceId}`, undefined],
+      ['POST', `/api/spaces/${spaceId}/members`, { email: 'penyerang@example.com', role: 'guest' }],
+      ['PATCH', `/api/spaces/${spaceId}/members/${b.userId}`, { role: 'guest' }],
+      ['DELETE', `/api/spaces/${spaceId}/members/${a.userId}`, undefined],
+    ] as const) {
+      const res = await b.req(m, path, body);
+      if (res.status < 400 || res.status >= 500) leaks.push(`${m} ${path} → ${res.status}`);
+    }
+    expect(await (await a.req('GET', `/api/teams/${teamId}`)).json()).toMatchObject({
+      team: { name: 'Tim A' },
+      members: [{ userId: a.userId, role: 'owner' }],
+      spaces: [{ id: spaceId, name: 'Ruang A' }],
+    });
+    expect(await (await b.req('GET', '/api/teams')).json()).toEqual({ teams: [], spaces: [] });
     // Marking someone else's notifications read is a silent no-op (204), but must not touch theirs.
     expect((await b.req('POST', '/api/notifications/read', { ids: ['n1'] })).status).toBe(204);
     await rt.settle();

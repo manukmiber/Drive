@@ -2785,3 +2785,41 @@ Tanggal: 2026-11-02. Status: diterima (roadmap A6; pemilik: kerjakan S5, D10, A6
 - **UI:** Pengaturan → Webhook (tambah, pilih event, rahasia, kirim tes, matikan/nyalakan, ganti rahasia, log 7 hari);
   `/s3` → Notifikasi bucket (webhook, objek dibuat/dihapus, prefix/suffix, log S3). Cron malam membuang log > 7 hari.
   Hapus akun menghapus endpoint dan lognya.
+
+## ADR-095 — W1a: Zeiko Spaces, tim dan Space di D1 akses
+
+Tanggal: 2026-11-05. Status: diterima (pemilik: "Mari kita nyicil pekerjaannya", setelah menjawab pertanyaan Zeiko
+Spaces: nama, di dalam app Drive, tamu gratis tanpa kursi, anggota luar, Workers Free dulu). Ini potongan pertama W1:
+server saja. Tampilan, undangan lewat link/email, anggota luar, dan tab Files menyusul.
+
+**Keputusan:**
+- **Tempat:** `teams`, `team_members`, `spaces`, `space_members` di **D1 akses** (`migrations-access/0006`), bukan D1
+  utama (ADR-064). Alasannya sama dengan `node_grants` (ADR-085): isinya "siapa boleh membuka apa". Tidak pernah di-join
+  dengan `users`/`nodes`: id dulu, lalu nama dari `users` lewat `json_each`. Tanpa `ACCESS_DB` fiturnya tidak ada
+  (`spacesDb`, fitur readiness `spaces`).
+- **Angka paket disalin ke tim:** `seats`, `max_spaces`, `max_guests` (per Space), `status`. Sekarang diisi dari config
+  saat tim dibuat (`team_default_seats` 5, `team_default_max_spaces` 5, `team_default_max_guests` 10). Setelah paket tim
+  dijual, relay yang mengisinya (sumber kebenaran batas paket ada di relay, seperti R0 no. 4). Keanggotaan tetap di sini.
+- **Dibuka pemilik:** `spaces_open` (config, default mati). Selama mati, tim baru tidak bisa dibuat dan katalog publik
+  bilang `capabilities.spaces = false`, jadi app menyembunyikannya. Tim yang sudah ada tetap jalan. `team_max_owned`
+  (3) membatasi tim per orang selama belum ada paket.
+- **Peran tim:** pemilik (satu, juga baris `team_members`), admin, anggota; masing-masing satu kursi. Admin menambah dan
+  mengeluarkan anggota. Hanya pemilik yang mengangkat atau mengeluarkan admin, menghapus tim, dan menyerahkan tim
+  (`POST /api/teams/:id/owner`: pemilik baru jadi `owner`, yang lama jadi admin). Siapa pun selain pemilik boleh keluar
+  sendiri; pemilik keluar dengan menyerahkan tim dulu.
+- **Peran Space:** pemilik dan admin tim adalah admin di semua Space timnya tanpa baris. Anggota tim yang ditambahkan ke
+  Space = `member`. Orang di luar tim = `guest`: tanpa kursi, dibatasi `max_guests` per Space, dan `GET /api/spaces/:id`
+  tidak memberinya daftar orang. Anggota tim tidak pernah jadi tamu: tamu yang masuk tim otomatis jadi `member` di
+  Space tim itu, dan keluar dari tim berarti keluar dari Space-nya.
+- **Yang tidak berhak tidak tahu ada:** orang di luar tim/Space mendapat 404 untuk semua route tim/Space (masuk suite
+  IDOR); anggota yang perannya kurang mendapat 403.
+- **Status tim** (`active` / `readonly` / `frozen`) sudah ada di tabel. Selain `active`, perubahan (Space baru, tambah
+  orang, ganti nama) ditolak `READ_ONLY`. Siklus beku dan kompresinya dibuat bersama paket tim (W2).
+- **Hapus akun:** tim yang dimilikinya ikut dihapus beserta Space-nya; ia keluar dari tim dan Space lain. Ekspor data
+  menyertakan tim dan Space orang itu (`spaces`).
+- **Menambah orang hanya lewat email akun Drive yang sudah ada** (`reason: no_account` kalau belum). Undangan untuk orang
+  yang belum pernah masuk Drive datang di potongan berikutnya.
+
+**Belum:** tampilan di app, undangan link/email dan notifikasinya, anggota luar (butuh relay: punya paket berbayar Zeiko
+yang aktif), cakupan tamu per folder/topik, index R2 `s/{spaceId}/` dan tab Files (menunggu keputusan kuota tim), chat
+dan ruang realtime.

@@ -6,6 +6,7 @@ import { DAY_MS } from '../../shared/constants';
 import { deleteActivity, exportActivity } from './activity';
 import { exportTexts } from './content-index';
 import { deleteGrantsOfUser, exportGrants } from './grants';
+import { deleteTeamsOfUser, exportTeams } from './spaces';
 import { deleteRequestsOfUser, exportRequests } from './file-requests';
 import { deleteUserIndex } from './drive-index-sync';
 import type { Ctx } from '../context';
@@ -86,6 +87,8 @@ export async function exportData(ctx: Ctx, userId: string): Promise<Record<strin
     people: await exportGrants(ctx, userId),
     // D3: file request links (ADR-086).
     fileRequests: await exportRequests(ctx, userId),
+    // W1: the teams and Spaces the person is in (ADR-095).
+    spaces: await exportTeams(ctx, userId),
     shares: await qa(
       'SELECT title, kind, expires_at, download_count, revoked_at, created_at FROM shares WHERE created_by = ?1',
       userId,
@@ -254,6 +257,7 @@ export async function processAccountDeletions(ctx: Ctx, limit = 20): Promise<num
     await deleteUserIndex(ctx, id);
     await deleteActivity(ctx, { user: id });
     await deleteGrantsOfUser(ctx, id);
+    await deleteTeamsOfUser(ctx, id);
     await deleteRequestsOfUser(ctx, id);
     await deleteUserWebhooks(ctx, id);
     log.info('account_deleted', { userId: id });

@@ -113,6 +113,15 @@ export const configSchema = z.object({
   share_email_daily_limit: int().min(0).default(20),
   /** D2 (ADR-085): addresses a person may share items with per day. */
   person_share_daily_limit: int().min(0).default(50),
+  // ── Zeiko Spaces (W1, ADR-095) ──
+  /** Whether people may make teams. Off until the owner opens Spaces; teams already made keep working. */
+  spaces_open: z.boolean().default(false),
+  /** Teams one person may own. */
+  team_max_owned: int().min(0).default(3),
+  /** What a new team gets until team plans are sold (the relay's numbers replace these, W2). */
+  team_default_seats: int().min(1).max(1000).default(5),
+  team_default_max_spaces: int().min(1).max(1000).default(5),
+  team_default_max_guests: int().min(0).max(1000).default(10),
   /** D3 (ADR-086): open file request links per person. */
   file_request_max_open: int().min(0).default(50),
   /** ADR-088: unfinished drops one link may have at once, and from one address. */

@@ -38,7 +38,8 @@ export type FeatureId =
   | 'app_links'
   | 'people_shares'
   | 'webdav'
-  | 'webhooks';
+  | 'webhooks'
+  | 'spaces';
 
 export interface Feature {
   id: FeatureId;
@@ -345,6 +346,20 @@ export async function readiness(ctx: Ctx): Promise<Feature[]> {
         ),
       ],
     },
+    {
+      id: 'spaces',
+      title: 'Zeiko Spaces',
+      what: 'Teams with Spaces per project: members, admins and guests (ADR-095). Opened by the business number spaces_open.',
+      hidden: true,
+      after: [],
+      needs: [
+        deploy(
+          'ACCESS_DB',
+          Boolean(env.ACCESS_DB),
+          'Teams and Spaces live in the access database: apply migrations-access/ (0006 adds them) to zeiko-access-<env> and deploy (DEPLOY.md).',
+        ),
+      ],
+    },
   ];
 
   const ready = new Map<FeatureId, boolean>();
@@ -379,6 +394,8 @@ export async function capabilities(ctx: Ctx) {
     webdavUrl: env.DAV_ORIGIN ?? null,
     /** A6 (ADR-094): webhook endpoints live in the access database. */
     webhooks: Boolean(env.ACCESS_DB),
+    /** W1 (ADR-095): teams and Spaces, in the access database, once the owner opens them. */
+    spaces: Boolean(env.ACCESS_DB) && (await ctx.config()).spaces_open,
   };
 }
 

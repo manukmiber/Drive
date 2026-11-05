@@ -36,6 +36,10 @@ Baca dulu: `docs/SPEC.md` (sumber kebenaran), `PLAN.md`, `PROGRESS.md`, `DECISIO
   `kind != 'version'`. Mengganti isi file menukar `blob_id` di node yang sama (id dan link tetap).
 - **Share ke orang (D2, ADR-085)**: izin di `node_grants` (D1 akses), dicek di `nodeAccess` hanya kalau aturan biasa
   menolak (`Access.shared`). Item baru di ruang pribadi selalu milik pemilik ruang (`spaceOwner`), bukan pembuatnya.
+- **Zeiko Spaces (W1, ADR-095)**: tim dan Space (`teams`, `team_members`, `spaces`, `space_members`) di D1 akses, aturan
+  peran di `services/spaces.ts`. Pemilik dan admin tim adalah admin di semua Space timnya tanpa baris; orang di luar tim
+  adalah tamu tanpa kursi. Angka paket (kursi, Space, tamu, status) disalin ke tim; nanti relay yang mengisinya. Tim baru
+  hanya bisa dibuat kalau config `spaces_open` menyala.
 
 ## Mesin ini
 - HP Android (PRoot, aarch64). **workerd tidak bisa jalan** → jangan pakai `wrangler dev`,

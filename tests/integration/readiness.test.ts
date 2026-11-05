@@ -43,6 +43,8 @@ describe('feature readiness', () => {
       webdavUrl: 'http://dav.localhost:8790',
       // A6 (ADR-094): webhook endpoints, in the access database.
       webhooks: true,
+      // W1 (ADR-095): the access database is there, but Spaces wait for the owner to open them.
+      spaces: false,
     });
     // The website draws its Zeiko S3 section from the same catalog: prices, nothing more.
     const res = await rt.fetch(new Request(`${APP}/api/public/catalog`));

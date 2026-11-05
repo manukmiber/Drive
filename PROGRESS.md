@@ -2,6 +2,14 @@
 
 Centang item yang sudah selesai (kode + test hijau + commit). Lihat `PLAN.md` untuk detail tiap fase.
 
+## Zeiko Spaces — W1a: tim dan Space (ADR-095, 2026-11-05)
+- [x] `teams`, `team_members`, `spaces`, `space_members` di D1 akses (`migrations-access/0006`).
+- [x] API `/api/teams`, `/api/spaces`: buat/ganti nama/hapus, anggota dan admin, serahkan tim, Space, anggota dan tamu.
+- [x] Kursi, Space per tim, tamu per Space, tim per orang dari config; `spaces_open` (mati) dan fitur readiness `spaces`.
+- [x] Hapus akun dan ekspor data; test `spaces.test.ts`; suite IDOR.
+- [ ] Tampilan di app, undangan link/email, anggota luar, tab Files (menunggu kuota tim), chat.
+- [ ] Pemilik: migrasi `migrations-access/0006` di D1 akses remote, deploy, lalu nyalakan `spaces_open` kalau sudah mau dibuka.
+
 ## Arah baru: Drive tanpa D1 (ADR-064, pemilik 2026-10-26)
 Diagram pemilik meminta satu index per user di R2; sejak ADR-002 Drive memakai D1, dan cadangan `u/{userId}/index.json`
 dari SPEC **tidak pernah dibuat** (hanya penanda `manifest_dirty` yang ditulis). Pemilik memutuskan: satu user = satu

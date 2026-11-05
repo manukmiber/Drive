@@ -42,6 +42,7 @@ import { assetLinks } from './routes/well-known';
 import { v1 } from './routes/v1';
 import { notifications } from './routes/notifications';
 import { family } from './routes/family';
+import { spaces, teams } from './routes/spaces';
 import { s3 } from './routes/s3';
 import { handleS3, resolveS3Host } from './routes/s3-api';
 import { handleDav, isDavHost } from './routes/webdav';
@@ -132,6 +133,8 @@ export function createApp() {
   api.route('/billing', billing);
   api.route('/notifications', notifications);
   api.route('/family', family);
+  api.route('/teams', teams);
+  api.route('/spaces', spaces);
   api.route('/s3', s3);
   api.route('/tokens', tokens);
   api.route('/oauth', oauth);
